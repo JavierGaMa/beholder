@@ -1,0 +1,12 @@
+[package]
+name = "bh-ca"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bh-core = { workspace = true }
+rcgen = "0.13"
+x509-parser = "0.16"
+md5 = "0.7"
+thiserror = { workspace = true }
+pem = "3"
