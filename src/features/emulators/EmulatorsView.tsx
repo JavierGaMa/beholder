@@ -6,21 +6,17 @@ import { Badge, Panel } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
 import { OnboardingPanel } from "./OnboardingPanel";
 
-interface OnboardingTarget {
-  avdName: string;
-  createdNew: boolean;
-}
-
 export function EmulatorsView() {
   const setInstallLog = useTraffic((s) => s.setInstallLog);
   const installLog = useTraffic((s) => s.installLog);
+  const onboarding = useTraffic((s) => s.onboarding);
+  const setOnboarding = useTraffic((s) => s.setOnboarding);
   const [avds, setAvds] = useState<AvdInfo[]>([]);
   const [images, setImages] = useState<SystemImage[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
-  const [onboarding, setOnboarding] = useState<OnboardingTarget | null>(null);
 
   const [name, setName] = useState("Beholder_Dev");
   const [imagePkg, setImagePkg] = useState<string>("");

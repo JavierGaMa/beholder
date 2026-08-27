@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FileDown, ArrowDown } from "lucide-react";
+import { FileDown, ArrowDown, PanelRight } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
 import { invoke } from "../../lib/tauri";
 import { loadFilters, loadFollow, loadSlowMs, saveFilters, saveFollow } from "../../lib/prefs";
@@ -18,6 +18,10 @@ export function RequestsView() {
   const [follow, setFollow] = useState(loadFollow);
   const [newCount, setNewCount] = useState(0);
   const [flashIds, setFlashIds] = useState<Set<number>>(new Set());
+  const [filtersCollapsed, setFiltersCollapsed] = useState(
+    () => localStorage.getItem("beholder.filtersOpen") === "false",
+  );
+  const [detailCollapsed, setDetailCollapsed] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,6 +160,13 @@ export function RequestsView() {
           if (!v) setNewCount(0);
         }}
         searchRef={searchRef}
+        collapsed={filtersCollapsed}
+        onToggleCollapsed={() => {
+          setFiltersCollapsed((c) => {
+            localStorage.setItem("beholder.filtersOpen", String(!c));
+            return !c;
+          });
+        }}
       />
       <div className="relative flex flex-1 gap-0 overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col">
@@ -211,7 +222,24 @@ export function RequestsView() {
             )}
           </div>
         </div>
-        {selectedEx && <DetailPane ex={selectedEx} onClose={() => setSelected(null)} />}
+        {selectedEx && !detailCollapsed && (
+          <DetailPane
+            ex={selectedEx}
+            onClose={() => setSelected(null)}
+            onCollapse={() => setDetailCollapsed(true)}
+          />
+        )}
+        {selectedEx && detailCollapsed && (
+          <button
+            type="button"
+            title="Show detail"
+            onClick={() => setDetailCollapsed(false)}
+            className="flex w-7 shrink-0 flex-col items-center justify-center gap-2 border-l border-line bg-surface text-muted hover:text-accent"
+          >
+            <PanelRight size={14} className="rotate-180" />
+            <span className="text-[10px] [writing-mode:vertical-rl]">detail</span>
+          </button>
+        )}
       </div>
     </div>
   );

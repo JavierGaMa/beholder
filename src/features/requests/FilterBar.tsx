@@ -1,8 +1,7 @@
 import clsx from "clsx";
-import { Pin, PinOff } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, PinOff, Trash2 } from "lucide-react";
 import type { Filters } from "./filters";
 import { IconButton } from "../../components/ui/primitives";
-import { Trash2 } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
 
 const STATUS_OPTIONS: Filters["status"][] = ["all", "2xx", "3xx", "4xx", "5xx"];
@@ -19,6 +18,8 @@ export function FilterBar({
   follow,
   onFollowChange,
   searchRef,
+  collapsed,
+  onToggleCollapsed,
 }: {
   filters: Filters;
   onChange: (f: Filters) => void;
@@ -26,8 +27,19 @@ export function FilterBar({
   follow: boolean;
   onFollowChange: (v: boolean) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const clear = useTraffic((s) => s.clear);
+
+  const activeSummary: string[] = [];
+  if (filters.method) activeSummary.push(filters.method.toUpperCase());
+  if (filters.status !== "all") activeSummary.push(filters.status);
+  if (filters.failuresOnly) activeSummary.push("failures");
+  if (filters.slowOnly) activeSummary.push("slow");
+  if (filters.inBodies) activeSummary.push("content");
+  if (filters.includeDomains.length > 0) activeSummary.push(`${filters.includeDomains.length} domains`);
+  if (filters.excludeDomains.length > 0) activeSummary.push(`-${filters.excludeDomains.length}`);
 
   function toggleDomain(host: string, mode: "include" | "exclude") {
     const list = mode === "include" ? filters.includeDomains : filters.excludeDomains;
@@ -50,63 +62,98 @@ export function FilterBar({
   return (
     <div className="flex flex-col gap-2 border-b border-line bg-surface px-3 py-2">
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title={collapsed ? "Expand filters" : "Collapse filters"}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+        </button>
+        {collapsed && activeSummary.length > 0 && (
+          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+            {activeSummary.map((s) => (
+              <span key={s} className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted">
+                {s}
+              </span>
+            ))}
+          </div>
+        )}
         <input
           ref={searchRef}
           value={filters.text}
           onChange={(e) => onChange({ ...filters, text: e.target.value })}
           placeholder="Filter by host, path or content"
-          className="h-7 w-72 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
+          className={clsx(
+            "h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none",
+            collapsed ? "w-72" : "w-72",
+          )}
         />
-        <label className="flex cursor-pointer items-center gap-1 text-[11px] text-muted">
-          <input
-            type="checkbox"
-            checked={filters.inBodies}
-            onChange={(e) => onChange({ ...filters, inBodies: e.target.checked })}
-            className="h-3 w-3 accent-[var(--accent)]"
-          />
-          content
-        </label>
-        <input
-          value={filters.method}
-          onChange={(e) => onChange({ ...filters, method: e.target.value })}
-          placeholder="Method"
-          className="h-7 w-20 rounded-md border border-line bg-bg px-2 font-mono text-[12px] uppercase text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
-        />
-        <div className="flex overflow-hidden rounded-md border border-line">
-          {STATUS_OPTIONS.map((s) => (
+        {collapsed && (
+          <label className="flex cursor-pointer items-center gap-1 text-[11px] text-muted">
+            <input
+              type="checkbox"
+              checked={filters.inBodies}
+              onChange={(e) => onChange({ ...filters, inBodies: e.target.checked })}
+              className="h-3 w-3 accent-[var(--accent)]"
+            />
+            content
+          </label>
+        )}
+        {!collapsed && (
+          <>
+            <label className="flex cursor-pointer items-center gap-1 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                checked={filters.inBodies}
+                onChange={(e) => onChange({ ...filters, inBodies: e.target.checked })}
+                className="h-3 w-3 accent-[var(--accent)]"
+              />
+              content
+            </label>
+            <input
+              value={filters.method}
+              onChange={(e) => onChange({ ...filters, method: e.target.value })}
+              placeholder="Method"
+              className="h-7 w-20 rounded-md border border-line bg-bg px-2 font-mono text-[12px] uppercase text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
+            />
+            <div className="flex overflow-hidden rounded-md border border-line">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onChange({ ...filters, status: s })}
+                  className={clsx(
+                    "h-7 px-2 text-[11px] font-medium transition-colors",
+                    filters.status === s ? "bg-accent text-accent-fg" : "bg-bg text-muted hover:text-txt",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
             <button
-              key={s}
               type="button"
-              onClick={() => onChange({ ...filters, status: s })}
+              onClick={() => onChange({ ...filters, failuresOnly: !filters.failuresOnly })}
               className={clsx(
-                "h-7 px-2 text-[11px] font-medium transition-colors",
-                filters.status === s ? "bg-accent text-accent-fg" : "bg-bg text-muted hover:text-txt",
+                "h-7 rounded-md border px-2 text-[11px] font-medium transition-colors",
+                filters.failuresOnly ? "border-danger bg-danger/10 text-danger" : "border-line text-muted hover:text-txt",
               )}
             >
-              {s}
+              failures
             </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => onChange({ ...filters, failuresOnly: !filters.failuresOnly })}
-          className={clsx(
-            "h-7 rounded-md border px-2 text-[11px] font-medium transition-colors",
-            filters.failuresOnly ? "border-danger bg-danger/10 text-danger" : "border-line text-muted hover:text-txt",
-          )}
-        >
-          failures
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange({ ...filters, slowOnly: !filters.slowOnly })}
-          className={clsx(
-            "h-7 rounded-md border px-2 text-[11px] font-medium transition-colors",
-            filters.slowOnly ? "border-warn bg-warn/10 text-warn" : "border-line text-muted hover:text-txt",
-          )}
-        >
-          slow
-        </button>
+            <button
+              type="button"
+              onClick={() => onChange({ ...filters, slowOnly: !filters.slowOnly })}
+              className={clsx(
+                "h-7 rounded-md border px-2 text-[11px] font-medium transition-colors",
+                filters.slowOnly ? "border-warn bg-warn/10 text-warn" : "border-line text-muted hover:text-txt",
+              )}
+            >
+              slow
+            </button>
+          </>
+        )}
         <div className="flex-1" />
         <button
           type="button"
@@ -123,7 +170,7 @@ export function FilterBar({
           <Trash2 size={14} />
         </IconButton>
       </div>
-      {domains.length > 0 && (
+      {!collapsed && domains.length > 0 && (
         <div className="flex flex-wrap items-center gap-1">
           {domains.map((d) => {
             const state = chipFor(d.host);

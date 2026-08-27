@@ -102,7 +102,7 @@ export function OnboardingPanel({
     }
   }
 
-  function retry() {
+  async function retry() {
     setStatuses((prev) => {
       const next = [...prev];
       const failedIdx = next.findIndex((s) => s === "error");
@@ -195,10 +195,10 @@ export function OnboardingPanel({
             </button>
             <button
               type="button"
-              onClick={() => setActiveView("setup")}
+              onClick={onCancel}
               className="text-[12px] text-muted underline-offset-2 hover:text-txt hover:underline"
             >
-              Open Setup anyway
+              Dismiss
             </button>
           </div>
         </div>

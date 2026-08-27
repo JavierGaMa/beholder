@@ -1,7 +1,12 @@
 import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 
-export type View = "requests" | "websockets" | "emulators" | "setup" | "settings";
+export type View = "requests" | "websockets" | "emulators";
+
+export interface OnboardingTarget {
+  avdName: string;
+  createdNew: boolean;
+}
 
 export interface WsFrame {
   seq: number;
@@ -27,11 +32,18 @@ interface TrafficState {
   capturePort: number | null;
   requestCount: number;
   installLog: string | null;
+  settingsOpen: boolean;
+  targetSerial: string | null;
+  targetAvd: string | null;
+  onboarding: OnboardingTarget | null;
   setActiveView: (v: View) => void;
   setCapture: (on: boolean, port?: number | null) => void;
   ingest: (events: TrafficEvent[]) => void;
   clear: () => void;
   setInstallLog: (line: string | null) => void;
+  setSettingsOpen: (open: boolean) => void;
+  setTarget: (serial: string | null, avd: string | null) => void;
+  setOnboarding: (t: OnboardingTarget | null) => void;
 }
 
 export const useTraffic = create<TrafficState>((set) => ({
@@ -43,9 +55,16 @@ export const useTraffic = create<TrafficState>((set) => ({
   capturePort: null,
   requestCount: 0,
   installLog: null,
+  settingsOpen: false,
+  targetSerial: null,
+  targetAvd: null,
+  onboarding: null,
   setActiveView: (v) => set({ activeView: v }),
   setCapture: (on, port = null) => set({ captureOn: on, capturePort: on ? port : null }),
   setInstallLog: (line) => set({ installLog: line }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setTarget: (serial, avd) => set({ targetSerial: serial, targetAvd: avd }),
+  setOnboarding: (t) => set({ onboarding: t }),
   clear: () =>
     set({
       exchanges: new Map(),

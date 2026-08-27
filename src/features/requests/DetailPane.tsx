@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { ClipboardCopy, Terminal } from "lucide-react";
+import { ClipboardCopy, ChevronRight, Terminal } from "lucide-react";
 import type { HttpExchange } from "../../store/types";
 import { invoke } from "../../lib/tauri";
 import { formatMs, statusClass } from "../../lib/format";
@@ -31,7 +31,7 @@ function HeaderTable({ rows }: { rows: { name: string; value: string }[] }) {
   );
 }
 
-export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => void }) {
+export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onClose: () => void; onCollapse: () => void }) {
   const [tab, setTab] = useState<Tab>("headers");
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -99,6 +99,9 @@ export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => v
         </IconButton>
         <IconButton title="Copy response body" onClick={copyBody}>
           <ClipboardCopy size={14} />
+        </IconButton>
+        <IconButton title="Collapse detail" onClick={onCollapse}>
+          <ChevronRight size={14} />
         </IconButton>
         <IconButton title="Close" onClick={onClose}>
           ✕

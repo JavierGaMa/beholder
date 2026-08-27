@@ -1,7 +1,10 @@
 import { useState } from "react";
 import clsx from "clsx";
+import { ShieldOff, Undo2 } from "lucide-react";
 import { ACCENTS, ACCENT_SWATCHES, applyTheme, loadTheme, THEMES, THEME_LABELS, type AccentName, type ThemeName } from "../../lib/theme/themes";
 import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
+import { invoke } from "../../lib/tauri";
+import { useTraffic } from "../../store/traffic";
 import { Panel } from "../../components/ui/primitives";
 
 export function SettingsView() {
@@ -118,6 +121,71 @@ export function SettingsView() {
           <span className="text-[12px] text-muted">ms</span>
         </div>
       </Panel>
+
+      <DeviceMaintenance />
     </div>
+  );
+}
+
+function DeviceMaintenance() {
+  const setCapture = useTraffic((s) => s.setCapture);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function revertProxy() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await invoke("capture_stop");
+      setCapture(false);
+      setMsg("Proxy reverted on all emulators.");
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fullCleanup() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await invoke("full_cleanup");
+      setCapture(false);
+      setMsg("Proxy reverted and CA removed from all emulators.");
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel className="p-4">
+      <p className="text-[12px] font-medium text-txt">Device maintenance</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted">
+        The proxy is reverted automatically on stop and quit. The CA stays installed for faster
+        sessions — remove it with full cleanup.
+      </p>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={revertProxy}
+          className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-txt disabled:opacity-40"
+        >
+          <Undo2 size={12} /> Revert proxy
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={fullCleanup}
+          className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-danger disabled:opacity-40"
+        >
+          <ShieldOff size={12} /> Full cleanup
+        </button>
+      </div>
+      {msg && <p className="mt-2 break-words text-[11px] text-muted">{msg}</p>}
+    </Panel>
   );
 }
