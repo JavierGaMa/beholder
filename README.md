@@ -11,6 +11,7 @@ Watch your app's traffic — hands off your app's code. No interceptors, no mani
 - Copy as cURL for any request
 - HAR export of a captured session (opens in Chrome DevTools)
 - Curated dark themes (Obsidian, Carbon, Eclipse) with swappable accents
+- Emulator management: list AVDs, see which are Beholder-ready (rootable), launch them, and create new ones with the right image (newest `google_apis` arm64) — including in-app system image download with live progress
 
 ## How it stays non-invasive
 
