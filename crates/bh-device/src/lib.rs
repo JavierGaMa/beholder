@@ -105,37 +105,117 @@ impl<'a> AdbDevice<'a> {
         if out.success {
             return Ok(());
         }
-        self.runner.run(&["-s", &self.serial, "disable-verity"])?;
-        self.runner.run(&["-s", &self.serial, "reboot"])?;
-        self.runner.run(&["-s", &self.serial, "wait-for-device"])?;
-        self.runner.run(&["-s", &self.serial, "root"])?;
-        let retry = self.runner.run(&["-s", &self.serial, "remount"])?;
-        if !retry.success {
-            return Err(DeviceError::Other(
-                "remount failed after disable-verity + reboot".into(),
-            ));
+        Err(DeviceError::Other(format!(
+            "adb remount failed: {}{}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
+    }
+
+    fn shell_ok(&self, cmd: &str) -> Result<Output, DeviceError> {
+        let out = self.shell(cmd)?;
+        if !out.success {
+            return Err(DeviceError::Other(format!(
+                "shell '{}' failed: {}{}",
+                cmd,
+                out.stdout.trim(),
+                out.stderr.trim()
+            )));
+        }
+        Ok(out)
+    }
+
+    fn stage_certs(&self, cert_pem: &str, filename: &str) -> Result<(), DeviceError> {
+        let tmp = std::env::temp_dir().join(format!("beholder-{}", filename));
+        std::fs::write(&tmp, cert_pem)
+            .map_err(|e| DeviceError::Other(format!("write temp cert: {e}")))?;
+        let src = tmp.to_string_lossy().to_string();
+        let out = self.runner.run(&[
+            "-s",
+            &self.serial,
+            "shell",
+            "ls /data/local/tmp/beholder-ca-stage",
+        ])?;
+        if !out.success || out.stdout.trim().is_empty() {
+            self.shell_ok("mkdir -p /data/local/tmp/beholder-ca-stage")?;
+            let _ = self.shell(
+                "cp /system/etc/security/cacerts/* /data/local/tmp/beholder-ca-stage/ 2>/dev/null",
+            );
+        }
+        let push = self.runner.run(&[
+            "-s",
+            &self.serial,
+            "push",
+            &src,
+            &format!("/data/local/tmp/beholder-ca-stage/{}", filename),
+        ])?;
+        if !push.success {
+            return Err(DeviceError::CommandFailed {
+                program: "adb push".into(),
+                args: vec![src],
+                stderr: push.stderr,
+            });
         }
         Ok(())
+    }
+
+    fn try_direct_push(&self, filename: &str) -> bool {
+        self.shell(&format!(
+            "cp /data/local/tmp/beholder-ca-stage/{filename} /system/etc/security/cacerts/{filename} && chmod 644 /system/etc/security/cacerts/{filename}"
+        ))
+        .map(|o| o.success)
+        .unwrap_or(false)
+    }
+
+    fn try_tmpfs_install(&self) -> Result<(), DeviceError> {
+        let mount =
+            self.shell("nsenter -t 1 -m -- mount -t tmpfs tmpfs /system/etc/security/cacerts");
+        if let Ok(o) = &mount {
+            if !o.success && !format!("{}{}", o.stdout, o.stderr).contains("mount point") {
+                return Err(DeviceError::Other(format!(
+                    "tmpfs mount failed: {}{}",
+                    o.stdout.trim(),
+                    o.stderr.trim()
+                )));
+            }
+        }
+        self.shell_ok("cp /data/local/tmp/beholder-ca-stage/* /system/etc/security/cacerts/")?;
+        self.shell_ok("chmod 644 /system/etc/security/cacerts/*")?;
+        self.shell_ok("chown root:root /system/etc/security/cacerts/*")?;
+        Ok(())
+    }
+
+    fn propagate_to_zygote(&self) {
+        for zygote in ["zygote64", "zygote"] {
+            let Ok(out) = self.shell(&format!("pidof {zygote}")) else {
+                continue;
+            };
+            let pid = out.stdout.trim().split_whitespace().next().unwrap_or("");
+            if pid.is_empty() {
+                continue;
+            }
+            let _ = self.shell(&format!(
+                "nsenter -t {pid} -m -- mount --bind /proc/1/root/system/etc/security/cacerts /system/etc/security/cacerts"
+            ));
+        }
     }
 }
 
 impl<'a> CertificateInstaller for AdbDevice<'a> {
     fn install_system_cert(&self, filename: &str, pem: &str) -> Result<(), DeviceError> {
-        let tmp = std::env::temp_dir().join(format!("beholder-{}", filename));
-        std::fs::write(&tmp, pem)
-            .map_err(|e| DeviceError::Other(format!("write temp cert: {e}")))?;
-        let src = tmp.to_string_lossy().to_string();
-        let dst = format!("/system/etc/security/cacerts/{}", filename);
-        let out = self.runner.run(&["-s", &self.serial, "push", &src, &dst])?;
-        if !out.success {
-            return Err(DeviceError::CommandFailed {
-                program: "adb push".into(),
-                args: vec![src, dst],
-                stderr: out.stderr,
-            });
+        self.stage_certs(pem, filename)?;
+        if self.try_direct_push(filename) {
+            return Ok(());
         }
-        self.shell(&format!("chmod 644 {}", dst))?;
-        Ok(())
+        self.try_tmpfs_install()?;
+        self.propagate_to_zygote();
+        if self.is_cert_installed(filename)? {
+            Ok(())
+        } else {
+            Err(DeviceError::Other(
+                "certificate not present in system store after install".into(),
+            ))
+        }
     }
 
     fn is_cert_installed(&self, filename: &str) -> Result<bool, DeviceError> {
@@ -144,7 +224,9 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
     }
 
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError> {
-        self.shell(&format!("rm -f /system/etc/security/cacerts/{}", filename))?;
+        let _ = self.shell(&format!("rm -f /system/etc/security/cacerts/{}", filename));
+        let _ = self.shell("nsenter -t 1 -m -- umount /system/etc/security/cacerts");
+        let _ = self.shell("rm -rf /data/local/tmp/beholder-ca-stage");
         Ok(())
     }
 }

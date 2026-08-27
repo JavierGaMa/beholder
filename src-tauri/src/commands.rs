@@ -280,7 +280,6 @@ pub async fn capture_start(
         .map_err(|e| e.to_string())?;
     if !installed {
         device.root().map_err(|e| e.to_string())?;
-        device.remount().map_err(|e| e.to_string())?;
         CertificateInstaller::install_system_cert(&device, &filename, &ca.cert_pem)
             .map_err(|e| e.to_string())?;
     }
