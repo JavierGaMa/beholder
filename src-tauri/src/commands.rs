@@ -262,6 +262,30 @@ pub async fn create_avd(name: String, pkg: String, profile: String) -> Result<()
 }
 
 #[tauri::command]
+pub async fn clear_stale_proxies(state: State<'_, AppState>) -> Result<u32, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let scanner = bh_device::AdbScanner::new(runner.as_ref());
+    let devices = scanner.list().map_err(|e| e.to_string())?;
+    let active = state.proxy.lock().await.as_ref().map(|h| h.port);
+    let mut cleared = 0;
+    for d in devices
+        .iter()
+        .filter(|d| d.is_emulator && d.state == DeviceState::Online)
+    {
+        let device = bh_device::AdbDevice::new(runner.as_ref(), &d.serial);
+        if let Ok(Some(proxy)) = ProxyConfigurator::current_proxy(&device) {
+            if let Some(port) = proxy.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
+                if Some(port) != active && !port_alive(port) {
+                    let _ = ProxyConfigurator::clear_proxy(&device);
+                    cleared += 1;
+                }
+            }
+        }
+    }
+    Ok(cleared)
+}
+
+#[tauri::command]
 pub async fn run_doctor(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

@@ -28,6 +28,7 @@ pub fn run() {
             commands::create_avd,
             commands::run_doctor,
             commands::apply_doctor_fix,
+            commands::clear_stale_proxies,
             commands::capture_start,
             commands::capture_stop,
             commands::full_cleanup,

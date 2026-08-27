@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { ChevronDown, CircleDot, MonitorSmartphone, Plus, Settings, Square, Play } from "lucide-react";
-import { invoke } from "../../lib/tauri";
+import { invoke, isTauri } from "../../lib/tauri";
 import type { AvdInfo } from "../../store/types";
 import { isFailed } from "../requests/filters";
 import { ErrorBox } from "../../components/ui/ErrorBox";
@@ -44,6 +44,9 @@ export function CommandBar() {
 
   useEffect(() => {
     loadAvds();
+    if (isTauri) {
+      invoke("clear_stale_proxies").catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
