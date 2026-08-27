@@ -37,6 +37,9 @@ fn detects_dead_proxy_and_offers_fix() {
         outputs: Mutex::new(VecDeque::new()),
     });
     runner.push("1\n", true);
+    runner.push("uid=0(root)\n", true);
+    runner.push("userdebug\n", true);
+    runner.push("1\n", true);
     runner.push("0\n", true);
     runner.push("", true);
     runner.push("", true);
@@ -58,6 +61,9 @@ fn healthy_emulator_all_ok() {
         outputs: Mutex::new(VecDeque::new()),
     });
     runner.push("1\n", true);
+    runner.push("uid=0(root)\n", true);
+    runner.push("userdebug\n", true);
+    runner.push("1\n", true);
     runner.push("0\n", true);
     runner.push("", true);
     runner.push("", true);
@@ -78,7 +84,7 @@ fn healthy_emulator_all_ok() {
         "{:?}",
         checks
     );
-    assert_eq!(checks.len(), 8);
+    assert_eq!(checks.len(), 9);
 }
 
 #[test]
@@ -86,6 +92,9 @@ fn own_active_proxy_is_ok() {
     let runner = Arc::new(ScriptedRunner {
         outputs: Mutex::new(VecDeque::new()),
     });
+    runner.push("1\n", true);
+    runner.push("uid=0(root)\n", true);
+    runner.push("userdebug\n", true);
     runner.push("1\n", true);
     runner.push("0\n", true);
     runner.push("", true);
@@ -113,6 +122,9 @@ fn dns_warn_with_ip_ok() {
         outputs: Mutex::new(VecDeque::new()),
     });
     runner.push("1\n", true);
+    runner.push("uid=2000(shell)\n", true);
+    runner.push("userdebug\n", true);
+    runner.push("1\n", true);
     runner.push("0\n", true);
     runner.push("", true);
     runner.push("", false);
@@ -126,4 +138,50 @@ fn dns_warn_with_ip_ok() {
     assert_eq!(dns.status, CheckStatus::Warn);
     let pdns = checks.iter().find(|c| c.id == "private_dns").unwrap();
     assert_eq!(pdns.fix, Some(FixId::ClearPrivateDns));
+}
+
+#[test]
+fn user_build_fails_root_check() {
+    let runner = Arc::new(ScriptedRunner {
+        outputs: Mutex::new(VecDeque::new()),
+    });
+    runner.push("1\n", true);
+    runner.push("uid=2000(shell)\n", true);
+    runner.push("user\n", true);
+    runner.push("0\n", true);
+    runner.push("0\n", true);
+    runner.push("", true);
+    runner.push("", true);
+    runner.push("", true);
+    runner.push(":0\n", true);
+    runner.push("off\n", true);
+
+    let always_alive = |_: u16| true;
+    let checks = run_checks(runner.as_ref(), "emulator-5554", None, &always_alive, None);
+    let root = checks.iter().find(|c| c.id == "root").unwrap();
+    assert_eq!(root.status, CheckStatus::Fail);
+    assert!(root.detail.contains("refuses root"));
+}
+
+#[test]
+fn shell_user_on_debuggable_image_is_ok() {
+    let runner = Arc::new(ScriptedRunner {
+        outputs: Mutex::new(VecDeque::new()),
+    });
+    runner.push("1\n", true);
+    runner.push("uid=2000(shell)\n", true);
+    runner.push("userdebug\n", true);
+    runner.push("1\n", true);
+    runner.push("0\n", true);
+    runner.push("", true);
+    runner.push("", true);
+    runner.push("", true);
+    runner.push(":0\n", true);
+    runner.push("off\n", true);
+
+    let always_alive = |_: u16| true;
+    let checks = run_checks(runner.as_ref(), "emulator-5554", None, &always_alive, None);
+    let root = checks.iter().find(|c| c.id == "root").unwrap();
+    assert_eq!(root.status, CheckStatus::Ok);
+    assert!(root.detail.contains("will root on capture"));
 }

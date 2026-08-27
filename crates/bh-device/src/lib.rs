@@ -93,13 +93,18 @@ impl<'a> AdbDevice<'a> {
 
     pub fn root(&self) -> Result<(), DeviceError> {
         let out = self.runner.run(&["-s", &self.serial, "root"])?;
-        if !out.success {
-            return Err(DeviceError::Other(
-                "adbd cannot run as root: use a Google APIs or AOSP emulator image (Google Play images refuse root)".into(),
-            ));
+        let combined = format!("{}{}", out.stdout, out.stderr).to_lowercase();
+        let already = combined.contains("already running as root");
+        let restarting = combined.contains("restarting adbd as root");
+        if out.success || already || restarting {
+            self.runner.run(&["-s", &self.serial, "wait-for-device"])?;
+            return Ok(());
         }
-        self.runner.run(&["-s", &self.serial, "wait-for-device"])?;
-        Ok(())
+        Err(DeviceError::Other(format!(
+            "adb root failed: {} {} (Google Play images refuse root — use a Google APIs or AOSP image)",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
     }
 
     pub fn remount(&self) -> Result<(), DeviceError> {

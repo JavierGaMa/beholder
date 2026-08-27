@@ -78,6 +78,32 @@ pub fn run_checks(
         fix: None,
     });
 
+    let id_out = sh(runner, serial, "id").stdout;
+    let build_type = getprop(runner, serial, "ro.build.type");
+    let debuggable = getprop(runner, serial, "ro.debuggable") == "1";
+    let is_root = id_out.contains("uid=0");
+    let root_status = if is_root {
+        (CheckStatus::Ok, "adbd is running as root".to_string())
+    } else if debuggable && build_type != "user" {
+        (
+            CheckStatus::Ok,
+            format!("Image is {build_type} — adbd will root on capture start"),
+        )
+    } else {
+        (
+            CheckStatus::Fail,
+            "Image refuses root (user build) — recreate this AVD with a google_apis image"
+                .to_string(),
+        )
+    };
+    checks.push(DoctorCheck {
+        id: "root".into(),
+        title: "Root access".into(),
+        status: root_status.0,
+        detail: root_status.1,
+        fix: None,
+    });
+
     let airplane_raw = sh(runner, serial, "settings get global airplane_mode_on")
         .stdout
         .trim()
