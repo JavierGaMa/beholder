@@ -1,0 +1,34 @@
+---
+# https://vitepress.dev/reference/default-theme-home
+hero:
+  name: Beholder
+  text: Watch your app's traffic, hands off.
+  tagline: Non-invasive HTTPS and WebSocket inspection for React Native apps running on Android emulators. Built with Tauri.
+  actions:
+    - theme: brand
+      text: Get started
+      link: /guide/getting-started
+    - theme: alt
+      text: Configuration
+      link: /config/
+
+features:
+  - icon: 🔍
+    title: Full HTTPS visibility
+    details: Request and response bodies, headers, cookies, and timing. Copy as cURL, JSON path copy, HAR export.
+  - icon: 🛡️
+    title: Zero changes to your app
+    details: The CA installs as an Android system certificate into the Conscrypt apex. No code, no manifest, no interceptors.
+  - icon: 📱
+    title: Emulator management
+    details: Create Beholder-ready emulators with the right image, launch them, and diagnose broken ones with Doctor.
+  - icon: ⚡
+    title: DevTools-grade UX
+    details: Follow mode, domain chips, body search, keyboard navigation, right-click actions, curated dark themes.
+  - icon: 📤
+    title: Export anywhere
+    details: HAR for Chrome DevTools, Postman collections, and Bruno collections designed for git versioning.
+  - icon: 🎨
+    title: Ghostty-style config
+    details: A single config.toml with live reload. Fonts, sizes, row height, and every color. Defaults to a high-contrast theme.
+---

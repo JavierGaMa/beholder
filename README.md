@@ -1,45 +1,42 @@
 # Beholder
 
-Non-invasive network traffic inspector for React Native apps running on Android emulators. macOS desktop app built with Tauri 2.
+[![Documentation](https://img.shields.io/badge/docs-vitepress-000000)](https://CHANGE_ME.github.io/beholder/)
 
-Watch your app's traffic — hands off your app's code. No interceptors, no manifest changes, no Flipper.
+Non-invasive network traffic inspector for React Native apps on Android emulators. macOS desktop app built with Tauri 2.
 
-## What it does
+**Watch your app's traffic — hands off your app's code.** No interceptors, no manifest changes, no Flipper.
 
-- Full HTTP/HTTPS request and response bodies, headers, cookies, and timing
-- WebSocket connections with a live frame timeline
-- Copy as cURL for any request
-- HAR export of a captured session (opens in Chrome DevTools)
-- Curated dark themes (Obsidian, Carbon, Eclipse) with swappable accents
-- Emulator management: list AVDs, see which are Beholder-ready (rootable), launch them, and create new ones with the right image (newest `google_apis` arm64) — including in-app system image download with live progress
+![Beholder hero screenshot](docs/public/screenshot.png)
 
-## How it stays non-invasive
+## Highlights
 
-Beholder runs a local MITM proxy and configures the **emulator**, never your app:
+- **Full HTTPS and WebSocket visibility** — bodies, headers, cookies, timing, and a JSON tree with click-to-copy paths
+- **Zero changes to your app** — the CA installs as an Android system certificate (Conscrypt apex on Android 14+); the emulator proxy is reverted on stop and quit
+- **Emulator management** — create Beholder-ready emulators (Google APIs + arm64), launch them, and repair broken ones with the built-in Doctor
+- **DevTools-grade UX** — follow mode, domain chips, body search, keyboard navigation, right-click actions
+- **Exports** — HAR, Postman collections, and Bruno collections with deterministic file names for git versioning
+- **Ghostty-style configuration** — one `config.toml` with live reload; fonts, sizes, and every color, defaulting to a high-contrast theme inspired by [Nicer High Contrast](https://github.com/rafmsou/nicer-high-contrast)
 
-1. Detects running AVDs via `adb`
-2. `adb root` + `remount`, installs the Beholder CA as an Android **system** certificate (`/system/etc/security/cacerts/`)
-3. Sets the emulator global proxy to `10.0.2.2:<port>` (the host loopback as seen from the emulator)
-4. On stop/quit, the proxy setting is always reverted. The CA stays installed for faster next sessions — "Full cleanup" removes it
-
-Requirements: a **Google APIs or AOSP** emulator image. Google Play images refuse `adb root` — the Setup view detects this and tells you.
-
-## Development
+## Quick start
 
 ```bash
+git clone https://github.com/CHANGE_ME/beholder.git
+cd beholder
 npm install
-npm run tauri dev      # run the app
-npm run check          # tsc
-npm test               # vitest
-npm run lint           # eslint
-cargo test --workspace # rust tests
-npm run tauri build    # production bundle
+npm run tauri dev
 ```
 
-Rust workspace: `crates/bh-core` (domain + events), `crates/bh-ca` (CA lifecycle + Android cert naming), `crates/bh-device` (adb orchestration behind traits), `crates/bh-proxy` (hudsucker MITM engine), `src-tauri` (Tauri shell).
+1. Pick your emulator in the command bar dropdown
+2. Press **Capture**
+3. Open your React Native app on the emulator — traffic appears in real time
 
-Frontend: React 19 + Tailwind v4 + TanStack Virtual + zustand. Run `npm run dev` (plain Vite, no Tauri) for UI work with a mock traffic generator.
+See the [documentation](https://CHANGE_ME.github.io/beholder/) for guides, configuration, and troubleshooting.
 
-## Privacy
+## Requirements
 
-The CA is generated locally and stored in the app data directory. Traffic never leaves your machine; nothing is sent anywhere.
+- macOS on Apple Silicon
+- Android Studio with platform-tools and a **Google APIs** emulator image (Google Play images refuse `adb root`)
+
+## License
+
+[MIT](LICENSE) © The Beholder Authors
