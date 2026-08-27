@@ -35,10 +35,10 @@ pub struct UiConfig {
 }
 
 fn default_theme() -> String {
-    "obsidian".into()
+    "contrast".into()
 }
 fn default_accent() -> String {
-    "cyan".into()
+    "lime".into()
 }
 fn default_ui_size() -> u32 {
     13

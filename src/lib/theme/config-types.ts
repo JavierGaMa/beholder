@@ -22,8 +22,8 @@ export interface UiConfig {
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
-  theme: "obsidian",
-  accent: "cyan",
+  theme: "contrast",
+  accent: "lime",
   ui_font_size: 13,
   mono_font_size: 12,
   row_height: 34,

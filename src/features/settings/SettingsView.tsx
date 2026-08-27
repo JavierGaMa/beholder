@@ -1,68 +1,13 @@
 import { useState } from "react";
 import clsx from "clsx";
-import { FileCode2, RotateCcw } from "lucide-react";
+import { FileCode2 } from "lucide-react";
 import { ACCENTS, ACCENT_SWATCHES, THEMES, THEME_LABELS } from "../../lib/theme/themes";
 import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
-import { DEFAULT_CONFIG, type ColorOverrides, type UiConfig } from "../../lib/theme/config-types";
+import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import { applyUiConfig } from "../../lib/theme/applyConfig";
 import { invoke, isTauri } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
 import { Panel } from "../../components/ui/primitives";
-
-const COLOR_LABELS: { key: keyof ColorOverrides; label: string }[] = [
-  { key: "bg", label: "Background" },
-  { key: "surface", label: "Surface" },
-  { key: "surface_2", label: "Surface 2" },
-  { key: "line", label: "Border" },
-  { key: "text", label: "Text" },
-  { key: "muted", label: "Muted text" },
-  { key: "accent", label: "Accent" },
-  { key: "ok", label: "Success" },
-  { key: "warn", label: "Warning" },
-  { key: "danger", label: "Danger" },
-];
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[11px] text-muted">
-        {label} <span className="text-muted/60">({suffix})</span>
-      </span>
-      <div className="flex items-center gap-2">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="h-1.5 w-32 accent-[var(--accent)]"
-        />
-        <input
-          type="number"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="h-7 w-16 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
-        />
-      </div>
-    </div>
-  );
-}
 
 export function SettingsView() {
   const uiConfig = useTraffic((s) => s.uiConfig);
@@ -98,51 +43,8 @@ export function SettingsView() {
       <h1 className="text-sm font-semibold text-txt">Settings</h1>
 
       <Panel className="p-4">
-        <p className="text-[12px] font-medium text-txt">Customize</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted">
-          Everything lives in <code className="font-mono">config.toml</code> — edit it here or by hand,
-          changes apply live.
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
-          <NumberField
-            label="UI text"
-            suffix="px"
-            value={config.ui_font_size}
-            min={11}
-            max={16}
-            onChange={(v) => save({ ...config, ui_font_size: v })}
-          />
-          <NumberField
-            label="Mono text"
-            suffix="px"
-            value={config.mono_font_size}
-            min={10}
-            max={15}
-            onChange={(v) => save({ ...config, mono_font_size: v })}
-          />
-          <NumberField
-            label="Row height"
-            suffix="px"
-            value={config.row_height}
-            min={28}
-            max={44}
-            onChange={(v) => save({ ...config, row_height: v })}
-          />
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted">Mono font family</span>
-            <input
-              value={config.mono_font_family ?? ""}
-              placeholder="JetBrains Mono"
-              onChange={(e) => save({ ...config, mono_font_family: e.target.value })}
-              className="h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/50 focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-      </Panel>
-
-      <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Theme</p>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           {THEMES.map((t) => (
             <button
               key={t}
@@ -183,38 +85,11 @@ export function SettingsView() {
 
       <Panel className="p-4">
         <div className="flex items-center justify-between">
-          <p className="text-[12px] font-medium text-txt">Colors</p>
-          <button
-            type="button"
-            onClick={() => save({ ...config, colors: {} })}
-            className="flex items-center gap-1 text-[11px] text-muted hover:text-txt"
-          >
-            <RotateCcw size={11} /> Reset overrides
-          </button>
-        </div>
-        <p className="mt-1 text-[11px] text-muted">Empty = use theme value. Overrides beat the theme.</p>
-        <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
-          {COLOR_LABELS.map(({ key, label }) => (
-            <label key={key} className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted">{label}</span>
-              <input
-                type="color"
-                value={config.colors?.[key] ?? "#000000"}
-                onChange={(e) =>
-                  save({ ...config, colors: { ...config.colors, [key]: e.target.value } as ColorOverrides })
-                }
-                className="h-6 w-10 cursor-pointer rounded border border-line bg-transparent"
-              />
-            </label>
-          ))}
-        </div>
-      </Panel>
-
-      <Panel className="p-4">
-        <div className="flex items-center justify-between">
           <div>
             <p className="text-[12px] font-medium text-txt">config.toml</p>
-            <p className="mt-1 text-[11px] text-muted">Ghostty-style: plain text, git-friendly, live reload.</p>
+            <p className="mt-1 text-[11px] text-muted">
+              Ghostty-style: plain text, git-friendly, live reload. Edit it directly.
+            </p>
           </div>
           {isTauri && (
             <button
@@ -226,14 +101,24 @@ export function SettingsView() {
             </button>
           )}
         </div>
-        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "${config.theme}"
-accent = "${config.accent}"
-ui-font-size = ${config.ui_font_size}
-mono-font-size = ${config.mono_font_size}
-row-height = ${config.row_height}
+        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "contrast"          # contrast | obsidian | carbon | eclipse
+accent = "lime"             # lime | cyan | amber | violet
+ui-font-size = 13           # px, general UI text
+mono-font-size = 12         # px, requests and payloads
+row-height = 34             # px, request list rows
+mono-font-family = ""       # e.g. "JetBrains Mono"
 
-[colors]
-${COLOR_LABELS.filter(({ key }) => config.colors?.[key]).map(({ key }) => `${key.replace("_", "-")} = "${config.colors?.[key]}"`).join("\n") || "# accent = \"#22d3ee\""}`}</pre>
+[colors]                    # optional overrides, empty = theme value
+# bg = "#000000"
+# surface = "#101010"
+# surface-2 = "#171715"
+# line = "#3b3b37"
+# text = "#ffffff"
+# muted = "#8b8a84"
+# accent = "#c6fd00"
+# ok = "#89d185"
+# warn = "#ffcc00"
+# danger = "#f44747"`}</pre>
       </Panel>
 
       <Panel className="p-4">
