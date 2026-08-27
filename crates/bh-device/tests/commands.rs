@@ -75,7 +75,7 @@ fn cert_install_falls_back_to_tmpfs_when_readonly() {
     runner.enqueue_ok("1");
     runner.enqueue_fail("");
     runner.enqueue_fail("");
-    runner.enqueue_ok("abcd1234.0");
+    runner.enqueue_ok("PEMDATA");
     let dev = AdbDevice::new(&runner, "emulator-5554");
     dev.install_system_cert("abcd1234.0", "PEMDATA").unwrap();
     let calls = runner.calls.lock().unwrap();
@@ -89,4 +89,33 @@ fn cert_install_falls_back_to_tmpfs_when_readonly() {
     assert!(joined
         .iter()
         .any(|c| c.contains("chmod 644 /system/etc/security/cacerts/*")));
+}
+
+#[test]
+fn cert_installed_compares_content_not_just_name() {
+    let runner = bh_device::FakeRunner::new();
+    runner
+        .enqueue_ok("-----BEGIN CERTIFICATE-----\r\nAAAA\r\nBBBB\r\n-----END CERTIFICATE-----\r\n");
+    let dev = AdbDevice::new(&runner, "emulator-5554");
+    assert!(dev
+        .is_cert_installed(
+            "h.0",
+            "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----\n"
+        )
+        .unwrap());
+
+    let runner2 = bh_device::FakeRunner::new();
+    runner2.enqueue_ok("-----BEGIN CERTIFICATE-----\nZZZZ\n-----END CERTIFICATE-----\n");
+    let dev2 = AdbDevice::new(&runner2, "emulator-5554");
+    assert!(!dev2
+        .is_cert_installed(
+            "h.0",
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"
+        )
+        .unwrap());
+
+    let runner3 = bh_device::FakeRunner::new();
+    runner3.enqueue_fail("not found");
+    let dev3 = AdbDevice::new(&runner3, "emulator-5554");
+    assert!(!dev3.is_cert_installed("h.0", "x").unwrap());
 }

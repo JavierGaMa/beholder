@@ -18,7 +18,7 @@ pub trait DeviceScanner {
 
 pub trait CertificateInstaller {
     fn install_system_cert(&self, filename: &str, pem: &str) -> Result<(), DeviceError>;
-    fn is_cert_installed(&self, filename: &str) -> Result<bool, DeviceError>;
+    fn is_cert_installed(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError>;
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError>;
 }
 
@@ -225,7 +225,7 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
         }
         self.try_tmpfs_install()?;
         self.propagate_to_zygote();
-        if self.is_cert_installed(filename)? {
+        if self.is_cert_installed(filename, pem)? {
             Ok(())
         } else {
             Err(DeviceError::Other(
@@ -234,9 +234,19 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
         }
     }
 
-    fn is_cert_installed(&self, filename: &str) -> Result<bool, DeviceError> {
-        let out = self.shell(&format!("ls /system/etc/security/cacerts/{}", filename))?;
-        Ok(out.success)
+    fn is_cert_installed(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError> {
+        let out = self.shell(&format!("cat /system/etc/security/cacerts/{}", filename))?;
+        if !out.success {
+            return Ok(false);
+        }
+        let normalize = |pem: &str| -> String {
+            pem.lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty() && !l.starts_with("-----"))
+                .collect::<Vec<_>>()
+                .join("")
+        };
+        Ok(normalize(&out.stdout) == normalize(cert_pem))
     }
 
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError> {
