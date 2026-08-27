@@ -198,6 +198,9 @@ impl<'a> AdbDevice<'a> {
         let _ = self.shell(
             "chcon u:object_r:system_security_cacerts_file:s0 /system/etc/security/cacerts/*",
         );
+        let _ = self.shell(
+            "nsenter -t 1 -m -- mount --bind /system/etc/security/cacerts /apex/com.android.conscrypt/cacerts",
+        );
         Ok(())
     }
 
@@ -212,6 +215,9 @@ impl<'a> AdbDevice<'a> {
             }
             let _ = self.shell(&format!(
                 "nsenter -t {pid} -m -- mount --bind /proc/1/root/system/etc/security/cacerts /system/etc/security/cacerts"
+            ));
+            let _ = self.shell(&format!(
+                "nsenter -t {pid} -m -- mount --bind /system/etc/security/cacerts /apex/com.android.conscrypt/cacerts"
             ));
         }
     }
@@ -251,6 +257,7 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
 
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError> {
         let _ = self.shell(&format!("rm -f /system/etc/security/cacerts/{}", filename));
+        let _ = self.shell("nsenter -t 1 -m -- umount /apex/com.android.conscrypt/cacerts");
         let _ = self.shell("nsenter -t 1 -m -- umount /system/etc/security/cacerts");
         let _ = self.shell("rm -rf /data/local/tmp/beholder-ca-stage");
         Ok(())

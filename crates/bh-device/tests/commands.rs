@@ -72,7 +72,9 @@ fn cert_install_falls_back_to_tmpfs_when_readonly() {
     runner.enqueue_ok("");
     runner.enqueue_ok("");
     runner.enqueue_ok("");
+    runner.enqueue_ok("");
     runner.enqueue_ok("1");
+    runner.enqueue_fail("");
     runner.enqueue_fail("");
     runner.enqueue_fail("");
     runner.enqueue_ok("PEMDATA");
