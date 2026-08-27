@@ -72,12 +72,12 @@ export function SettingsView() {
               type="button"
               onClick={() => save({ ...config, accent: a })}
               className={clsx(
-                "h-6 w-6 rounded-full border-2 transition-colors",
+                "flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors",
                 config.accent === a ? "border-txt" : "border-transparent hover:border-line",
               )}
               title={a}
             >
-              <span className="block h-4 w-4 rounded-full" style={{ background: ACCENT_SWATCHES[a] }} />
+              <span className="block h-3.5 w-3.5 rounded-full" style={{ background: ACCENT_SWATCHES[a] }} />
             </button>
           ))}
         </div>
