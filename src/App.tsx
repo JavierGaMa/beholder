@@ -28,15 +28,25 @@ export default function App() {
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
+    let disposeInstall: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
     });
     if (!isTauri) {
       stopMockFn = startMock((events) => ingest(events));
+    } else {
+      import("@tauri-apps/api/event").then(({ listen }) => {
+        listen<string>("install-log", (e) => {
+          useTraffic.getState().setInstallLog(e.payload);
+        }).then((un) => {
+          disposeInstall = un;
+        });
+      });
     }
     return () => {
       dispose?.();
+      disposeInstall?.();
       stopMockFn?.();
     };
   }, [ingest]);

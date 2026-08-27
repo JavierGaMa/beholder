@@ -26,10 +26,12 @@ interface TrafficState {
   captureOn: boolean;
   capturePort: number | null;
   requestCount: number;
+  installLog: string | null;
   setActiveView: (v: View) => void;
   setCapture: (on: boolean, port?: number | null) => void;
   ingest: (events: TrafficEvent[]) => void;
   clear: () => void;
+  setInstallLog: (line: string | null) => void;
 }
 
 export const useTraffic = create<TrafficState>((set) => ({
@@ -40,8 +42,10 @@ export const useTraffic = create<TrafficState>((set) => ({
   captureOn: false,
   capturePort: null,
   requestCount: 0,
+  installLog: null,
   setActiveView: (v) => set({ activeView: v }),
   setCapture: (on, port = null) => set({ captureOn: on, capturePort: on ? port : null }),
+  setInstallLog: (line) => set({ installLog: line }),
   clear: () =>
     set({
       exchanges: new Map(),

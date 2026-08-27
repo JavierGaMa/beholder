@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { CheckCircle2, CircleDashed, Download, Play, RefreshCw, Rocket } from "lucide-react";
-import { invoke, isTauri } from "../../lib/tauri";
+import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
 
 export function EmulatorsView() {
   const setActiveView = useTraffic((s) => s.setActiveView);
+  const setInstallLog = useTraffic((s) => s.setInstallLog);
+  const installLog = useTraffic((s) => s.installLog);
   const [avds, setAvds] = useState<AvdInfo[]>([]);
   const [images, setImages] = useState<SystemImage[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [installLog, setInstallLog] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
 
   const [name, setName] = useState("Beholder_Dev");
@@ -44,18 +45,6 @@ export function EmulatorsView() {
 
   useEffect(() => {
     refresh();
-    if (!isTauri) return;
-    let dispose: (() => void) | undefined;
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<string>("install-log", (e) => {
-        const line = e.payload;
-        setInstallLog(line);
-        if (line === "done") setInstalling(null);
-      }).then((un) => {
-        dispose = un;
-      });
-    });
-    return () => dispose?.();
   }, []);
 
   async function launch(avdName: string) {
@@ -72,6 +61,7 @@ export function EmulatorsView() {
     setInstallLog("starting...");
     try {
       await invoke("install_image", { pkg });
+      setInstalling(null);
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -86,7 +76,10 @@ export function EmulatorsView() {
     try {
       const selected = images.find((i) => i.pkg === imagePkg);
       if (selected && !selected.installed) {
+        setInstalling(imagePkg);
+        setInstallLog("starting...");
         await invoke("install_image", { pkg: imagePkg });
+        setInstalling(null);
       }
       await invoke("create_avd", { name: name.trim(), pkg: imagePkg, profile });
       await invoke("launch_avd", { name: name.trim() });
@@ -94,6 +87,7 @@ export function EmulatorsView() {
       await refresh();
     } catch (e) {
       setError(String(e));
+      setInstalling(null);
     } finally {
       setBusy(false);
     }

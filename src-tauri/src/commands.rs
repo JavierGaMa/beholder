@@ -85,39 +85,43 @@ pub async fn list_device_profiles() -> Result<Vec<String>, String> {
     manager.list_device_profiles().map_err(|e| e.to_string())
 }
 
-async fn run_sdkmanager_streaming(
-    app: &tauri::AppHandle,
-    bin: &Path,
-    args: &[&str],
-) -> Result<bool, String> {
+async fn stream_process<F>(bin: &Path, args: &[&str], on_line: F) -> Result<(bool, String), String>
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    use tokio::io::AsyncReadExt;
+
     let mut child = tokio::process::Command::new(bin)
         .args(args)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| e.to_string())?;
 
     let mut stdout = child.stdout.take().ok_or("no stdout".to_string())?;
     let mut stderr = child.stderr.take().ok_or("no stderr".to_string())?;
-    let app_out = app.clone();
+
+    let on_out = std::sync::Arc::new(on_line);
+    let on_err = on_out.clone();
 
     let emit_task = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
         let mut buf = [0u8; 4096];
-        let mut line = String::new();
+        let mut line: Vec<u8> = Vec::new();
         loop {
             match stdout.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
                     for &b in &buf[..n] {
                         if b == b'\r' || b == b'\n' {
-                            let trimmed = line.trim();
-                            if !trimmed.is_empty() {
-                                let _ = app_out.emit("install-log", trimmed.to_string());
+                            let s = String::from_utf8_lossy(&line).trim().to_string();
+                            if !s.is_empty() {
+                                on_out(&s);
                             }
                             line.clear();
                         } else {
-                            line.push(b as char);
+                            line.push(b);
                         }
                     }
                 }
@@ -126,23 +130,56 @@ async fn run_sdkmanager_streaming(
     });
 
     let stderr_task = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut err = String::new();
-        let _ = stderr.read_to_string(&mut err).await;
-        err
+        let mut err_buf = [0u8; 4096];
+        let mut err_all = String::new();
+        let mut line: Vec<u8> = Vec::new();
+        loop {
+            match stderr.read(&mut err_buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    err_all.push_str(&String::from_utf8_lossy(&err_buf[..n]));
+                    for &b in &err_buf[..n] {
+                        if b == b'\r' || b == b'\n' {
+                            let s = String::from_utf8_lossy(&line).trim().to_string();
+                            if !s.is_empty() {
+                                on_err(&s);
+                            }
+                            line.clear();
+                        } else {
+                            line.push(b);
+                        }
+                    }
+                }
+            }
+        }
+        err_all
     });
 
     let status = child.wait().await.map_err(|e| e.to_string())?;
     let _ = emit_task.await;
     let stderr = stderr_task.await.unwrap_or_default();
 
-    if status.success() {
+    Ok((status.success(), stderr))
+}
+
+async fn run_sdkmanager_streaming(
+    app: &tauri::AppHandle,
+    bin: &Path,
+    args: &[&str],
+) -> Result<bool, String> {
+    let app_out = app.clone();
+    let (ok, stderr) = stream_process(bin, args, move |line: &str| {
+        let _ = app_out.emit("install-log", line.to_string());
+    })
+    .await?;
+
+    if ok {
         Ok(true)
     } else if stderr.to_lowercase().contains("license") {
         Ok(false)
     } else {
         Err(if stderr.trim().is_empty() {
-            format!("sdkmanager exited with {status}")
+            "sdkmanager exited with an error".to_string()
         } else {
             stderr.trim().to_string()
         })
@@ -273,4 +310,42 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_process;
+    use std::sync::Mutex;
+
+    #[tokio::test]
+    async fn streams_lines_split_on_cr_and_ln() {
+        let lines = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let captured = lines.clone();
+        let sink = move |l: &str| captured.lock().unwrap().push(l.to_string());
+        let (ok, _stderr) = stream_process(
+            std::path::Path::new("/bin/sh"),
+            &["-c", "printf 'downloading 10%%\\rdownloading 50%%\\rwarning to stderr\\n' ; echo 'err line' >&2 ; exit 0"],
+            sink,
+        )
+        .await
+        .unwrap();
+        assert!(ok);
+        let got = lines.lock().unwrap().clone();
+        assert!(got.contains(&"downloading 10%".to_string()));
+        assert!(got.contains(&"downloading 50%".to_string()));
+        assert!(got.contains(&"warning to stderr".to_string()));
+        assert!(got.contains(&"err line".to_string()));
+    }
+
+    #[tokio::test]
+    async fn reports_failure_and_stderr() {
+        let (_ok, stderr) = stream_process(
+            std::path::Path::new("/bin/sh"),
+            &["-c", "echo 'license not accepted' >&2 ; exit 1"],
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(stderr.contains("license not accepted"));
+    }
 }
