@@ -127,7 +127,7 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
   const maxTotal = Math.max(t.ttfb_ms ?? 0, t.download_ms ?? 0, t.total_ms ?? 1);
 
   return (
-    <div className="flex w-[480px] shrink-0 flex-col border-l border-line bg-surface">
+    <div className="flex w-[480px] max-w-[55vw] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-start gap-2 border-b border-line px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

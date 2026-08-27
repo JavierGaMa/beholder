@@ -111,7 +111,7 @@ export function EmulatorsView() {
   const selectedImage = images.find((i) => i.pkg === imagePkg);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
+    <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
       <h1 className="text-sm font-semibold text-txt">Emulators</h1>
 
       <Panel className="p-4">
