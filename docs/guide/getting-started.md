@@ -17,7 +17,7 @@ Google Play emulator images refuse `adb root`, which Beholder needs to install i
 ## Install from source
 
 ```bash
-git clone https://github.com/CHANGE_ME/beholder.git
+git clone https://github.com/JavierGaMa/beholder.git
 cd beholder
 npm install
 npm run tauri dev

@@ -1,6 +1,6 @@
 # Beholder
 
-[![Documentation](https://img.shields.io/badge/docs-vitepress-000000)](https://CHANGE_ME.github.io/beholder/)
+[![Documentation](https://img.shields.io/badge/docs-vitepress-000000)](https://JavierGaMa.github.io/beholder/)
 
 Non-invasive network traffic inspector for React Native apps on Android emulators. macOS desktop app built with Tauri 2.
 
@@ -20,7 +20,7 @@ Non-invasive network traffic inspector for React Native apps on Android emulator
 ## Quick start
 
 ```bash
-git clone https://github.com/CHANGE_ME/beholder.git
+git clone https://github.com/JavierGaMa/beholder.git
 cd beholder
 npm install
 npm run tauri dev
@@ -30,7 +30,7 @@ npm run tauri dev
 2. Press **Capture**
 3. Open your React Native app on the emulator — traffic appears in real time
 
-See the [documentation](https://CHANGE_ME.github.io/beholder/) for guides, configuration, and troubleshooting.
+See the [documentation](https://JavierGaMa.github.io/beholder/) for guides, configuration, and troubleshooting.
 
 ## Requirements
 

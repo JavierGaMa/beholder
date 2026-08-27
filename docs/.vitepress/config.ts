@@ -44,7 +44,7 @@ export default defineConfig({
     },
 
     outline: { level: [2, 3] },
-    socialLinks: [{ icon: "github", link: "https://github.com/CHANGE_ME/beholder" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/JavierGaMa/beholder" }],
 
     footer: {
       message: "Released under the MIT License.",
