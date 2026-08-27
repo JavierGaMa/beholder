@@ -41,10 +41,10 @@ export function RequestRow({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={clsx(
-        "flex cursor-default items-center gap-2 border-b border-line/40 px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
+        "flex cursor-default items-center gap-2 border-b border-line px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
         selected ? "bg-surface-2 text-txt" : "text-muted hover:bg-surface/80",
-        failed && !selected && "border-l-2 border-l-danger",
         flash && "animate-pulse bg-accent/5",
+        failed && !selected && "shadow-[inset_3px_0_0_0_var(--danger)]",
       )}
     >
       <span className={clsx("w-14 shrink-0 text-[11px] font-bold tracking-wide", methodClass(ex.request.method))}>
@@ -52,10 +52,10 @@ export function RequestRow({
       </span>
       <span className="min-w-0 flex-1 truncate">
         {hideDomain ? (
-          <span className={clsx(selected ? "text-txt" : "text-txt/85")}>{ex.request.path}</span>
+          <span className={clsx(selected ? "text-txt" : "text-txt/90")}>{ex.request.path}</span>
         ) : (
           <>
-            <span className={clsx(selected ? "text-txt" : "text-txt/85")}>{ex.request.host}</span>
+            <span className={clsx(selected ? "text-txt" : "text-txt/90")}>{ex.request.host}</span>
             <span className="text-muted">{ex.request.path}</span>
           </>
         )}

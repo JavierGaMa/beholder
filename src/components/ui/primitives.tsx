@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import clsx from "clsx";
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={clsx("rounded-lg border border-line bg-surface", className)}>{children}</div>;
+  return <div className={clsx("rounded-md border border-line bg-surface", className)}>{children}</div>;
 }
 
 export function Badge({

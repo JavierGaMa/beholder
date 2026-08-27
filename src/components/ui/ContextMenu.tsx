@@ -49,7 +49,7 @@ export function ContextMenu({
     <div
       ref={ref}
       style={style}
-      className="fixed z-50 min-w-52 overflow-hidden rounded-lg border border-line bg-surface-2 py-1 shadow-xl"
+      className="fixed z-50 min-w-52 overflow-hidden rounded-md border border-line bg-surface-2 py-1 shadow-xl"
     >
       {items.map((item) => {
         const Icon = item.icon;

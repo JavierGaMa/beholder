@@ -95,7 +95,7 @@ export function DoctorPanel({
   const failing = checks.some((c) => c.status !== "ok");
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-5">
+    <div className="rounded-md border border-line bg-surface p-5">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-semibold text-txt">Doctor · {avdName}</p>

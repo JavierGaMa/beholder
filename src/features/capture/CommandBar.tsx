@@ -122,7 +122,7 @@ export function CommandBar() {
           <ChevronDown size={13} className="text-muted" />
         </button>
         {open && (
-          <div className="absolute left-0 top-10 w-80 rounded-lg border border-line bg-surface-2 p-1.5 shadow-xl">
+          <div className="absolute left-0 top-10 w-80 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
             {adbError && (
               <p className="px-2 py-2 text-[11px] leading-relaxed text-danger">
                 {adbError}

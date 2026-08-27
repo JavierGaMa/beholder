@@ -17,11 +17,11 @@
 
 :root[data-theme="contrast"] {
   --bg: #000000;
-  --surface: #101010;
-  --surface-2: #171715;
+  --surface: #0d0d0d;
+  --surface-2: #1d1d1b;
   --line: #3b3b37;
   --txt: #ffffff;
-  --muted: #8b8a84;
+  --muted: #a3a29b;
   --accent: var(--accent-choice);
   --accent-fg: #000000;
   --ok: #89d185;
@@ -98,6 +98,8 @@ body {
   color: var(--txt);
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: var(--ui-size, 13px);
+  letter-spacing: 0.01em;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
