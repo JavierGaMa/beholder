@@ -1,6 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { ACCENTS, ACCENT_SWATCHES, applyTheme, loadTheme, THEMES, THEME_LABELS, type AccentName, type ThemeName } from "../../lib/theme/themes";
+import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
 import { Panel } from "../../components/ui/primitives";
 
 export function SettingsView() {
@@ -10,6 +11,7 @@ export function SettingsView() {
   const [bodyCapMb, setBodyCapMb] = useState<number>(
     () => Number(localStorage.getItem("beholder.bodyCapMb")) || 2,
   );
+  const [slowMs, setSlowMs] = useState<number>(loadSlowMs);
 
   function changeTheme(t: ThemeName) {
     setTheme(t);
@@ -25,6 +27,12 @@ export function SettingsView() {
     if (Number.isNaN(mb) || mb < 0) return;
     setBodyCapMb(mb);
     localStorage.setItem("beholder.bodyCapMb", String(mb));
+  }
+
+  function changeSlow(ms: number) {
+    if (Number.isNaN(ms) || ms < 50) return;
+    setSlowMs(ms);
+    saveSlowMs(ms);
   }
 
   return (
@@ -90,6 +98,24 @@ export function SettingsView() {
             className="h-7 w-24 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
           />
           <span className="text-[12px] text-muted">MB</span>
+        </div>
+      </Panel>
+
+      <Panel className="p-4">
+        <p className="text-[12px] font-medium text-txt">Slow request threshold</p>
+        <p className="mt-1 text-[11px] text-muted">
+          Requests slower than this are highlighted in the list, the slow filter, and timing bars.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={50}
+            step={50}
+            value={slowMs}
+            onChange={(e) => changeSlow(Number(e.target.value))}
+            className="h-7 w-24 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
+          />
+          <span className="text-[12px] text-muted">ms</span>
         </div>
       </Panel>
     </div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import type { BodyCapture } from "../../store/types";
 import { Badge } from "../../components/ui/primitives";
+import { JsonTree } from "./JsonTree";
 
 export function BodyView({ body }: { body: BodyCapture | null | undefined }) {
   const [expanded, setExpanded] = useState(false);
@@ -15,21 +16,28 @@ export function BodyView({ body }: { body: BodyCapture | null | undefined }) {
       </p>
     );
   }
-  let text = body.text;
-  const isJson = body.mime?.includes("json") || /^\s*[[{]/.test(text);
-  if (isJson) {
+  const isJson = body.mime?.includes("json") || /^\s*[[{]/.test(body.text);
+  if (isJson && !body.truncated) {
     try {
-      text = JSON.stringify(JSON.parse(text), null, 2);
+      const parsed = JSON.parse(body.text);
+      return (
+        <div className="flex flex-col">
+          <JsonTree data={parsed} />
+          <p className="border-t border-line/50 px-3 py-1 text-[10px] text-muted/70">
+            click any key to copy its JSON path
+          </p>
+        </div>
+      );
     } catch {
-      // leave raw
+      // fall through to raw
     }
   }
-  const long = text.length > 5000 && !expanded;
+  const long = body.text.length > 5000 && !expanded;
   return (
     <div className="flex flex-col">
       {body.truncated && (
         <div className="border-b border-line px-3 py-1.5">
-          <Badge tone="warn">truncated at {body.size} bytes</Badge>
+          <Badge tone="warn">truncated at {body.size} bytes — JSON tree disabled</Badge>
         </div>
       )}
       <pre
@@ -39,7 +47,7 @@ export function BodyView({ body }: { body: BodyCapture | null | undefined }) {
           long && "cursor-pointer",
         )}
       >
-        {long ? text.slice(0, 5000) + "\n… click to expand" : text}
+        {long ? body.text.slice(0, 5000) + "\n… click to expand" : body.text}
       </pre>
     </div>
   );

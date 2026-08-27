@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { Terminal } from "lucide-react";
+import { ClipboardCopy, Terminal } from "lucide-react";
 import type { HttpExchange } from "../../store/types";
 import { invoke } from "../../lib/tauri";
 import { formatMs, statusClass } from "../../lib/format";
+import { loadSlowMs } from "../../lib/prefs";
 import { Badge, IconButton } from "../../components/ui/primitives";
 import { BodyView } from "./BodyView";
 
@@ -64,6 +65,12 @@ export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => v
     setTimeout(() => setCopiedCurl(false), 1500);
   }
 
+  async function copyBody() {
+    const text = ex.response?.body?.text ?? ex.request.body?.text ?? "";
+    if (text) await navigator.clipboard.writeText(text);
+  }
+
+  const slowMs = loadSlowMs();
   const status = ex.response?.status ?? null;
   const t = ex.timing;
   const maxTotal = Math.max(t.ttfb_ms ?? 0, t.download_ms ?? 0, t.total_ms ?? 1);
@@ -89,6 +96,9 @@ export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => v
         </div>
         <IconButton title="Copy as cURL" onClick={copyCurl}>
           <Terminal size={14} />
+        </IconButton>
+        <IconButton title="Copy response body" onClick={copyBody}>
+          <ClipboardCopy size={14} />
         </IconButton>
         <IconButton title="Close" onClick={onClose}>
           ✕
@@ -140,18 +150,23 @@ export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => v
               { label: "TTFB", ms: t.ttfb_ms },
               { label: "Download", ms: t.download_ms },
               { label: "Total", ms: t.total_ms },
-            ].map((row) => (
-              <div key={row.label} className="flex items-center gap-3">
-                <span className="w-20 text-[12px] text-muted">{row.label}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-2">
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{ width: `${Math.round(((row.ms ?? 0) / maxTotal) * 100)}%` }}
-                  />
+            ].map((row) => {
+              const isSlow = row.ms != null && row.ms > slowMs;
+              return (
+                <div key={row.label} className="flex items-center gap-3">
+                  <span className="w-20 text-[12px] text-muted">{row.label}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-2">
+                    <div
+                      className={clsx("h-full rounded-full", isSlow ? "bg-danger" : "bg-accent")}
+                      style={{ width: `${Math.round(((row.ms ?? 0) / maxTotal) * 100)}%` }}
+                    />
+                  </div>
+                  <span className={clsx("w-16 text-right font-mono text-[12px]", isSlow && "text-danger")}>
+                    {formatMs(row.ms)}
+                  </span>
                 </div>
-                <span className="w-16 text-right font-mono text-[12px]">{formatMs(row.ms)}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
