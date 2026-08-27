@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleDashed, Download, Play, RefreshCw, Rocket, Stethoscope } from "lucide-react";
+import { CircleCheck, CircleDashed, Download, Play, RefreshCw, Rocket, Stethoscope } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
@@ -185,10 +185,25 @@ export function EmulatorsView() {
       ) : (
       <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Create emulator</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted">
-          Recommended: newest <code className="font-mono">google_apis</code> image for arm64 — Google Play
-          images refuse <code className="font-mono">adb root</code> and cannot be inspected by Beholder.
-        </p>
+        <div className="mt-2 rounded-md border border-line bg-bg p-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted/70">
+            Beholder requirements — applied automatically
+          </p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            <li className="flex items-center gap-1.5 text-[11px] text-muted">
+              <CircleCheck size={12} className="shrink-0 text-ok" />
+              <code className="font-mono text-txt/80">google_apis</code> image — allows adb root (Play images refuse it)
+            </li>
+            <li className="flex items-center gap-1.5 text-[11px] text-muted">
+              <CircleCheck size={12} className="shrink-0 text-ok" />
+              <code className="font-mono text-txt/80">arm64-v8a</code> — matches your Apple Silicon Mac
+            </li>
+            <li className="flex items-center gap-1.5 text-[11px] text-muted">
+              <CircleCheck size={12} className="shrink-0 text-ok" />
+              System CA into Conscrypt apex + proxy — installed on every capture start
+            </li>
+          </ul>
+        </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-[11px] text-muted">Name</span>

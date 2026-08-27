@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { FileDown, ArrowDown, PanelRight } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
+import type { HttpExchange } from "../../store/types";
+
+type HttpExchangeLike = HttpExchange;
 import { invoke } from "../../lib/tauri";
 import { loadFilters, loadFollow, loadSlowMs, saveFilters, saveFollow } from "../../lib/prefs";
 import { EmptyState, IconButton } from "../../components/ui/primitives";
 import { matchFilters, type Filters } from "./filters";
-import { RequestRow } from "./RequestRow";
+import { RequestRow, RequestListHeader } from "./RequestRow";
+import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
+import { Copy, FileJson, Link2, Terminal } from "lucide-react";
 import { DetailPane } from "./DetailPane";
 import { FilterBar, type DomainChip } from "./FilterBar";
 
@@ -22,6 +27,7 @@ export function RequestsView() {
     () => localStorage.getItem("beholder.filtersOpen") === "false",
   );
   const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,6 +140,37 @@ export function RequestsView() {
 
   const selectedEx = selected != null ? exchanges.get(selected) ?? null : null;
 
+  function buildCtxItems(ex: HttpExchangeLike, close: () => void): MenuItem[] {
+    void close;
+    return [
+      {
+        label: "Copy URL",
+        icon: Link2,
+        onSelect: () => navigator.clipboard.writeText(ex.request.url),
+      },
+      {
+        label: "Copy as cURL",
+        icon: Terminal,
+        onSelect: async () => {
+          const cmd = await invoke<string>("format_curl", { exchange: ex });
+          await navigator.clipboard.writeText(cmd);
+        },
+      },
+      {
+        label: "Copy response body",
+        icon: FileJson,
+        disabled: !ex.response?.body?.text,
+        onSelect: () => navigator.clipboard.writeText(ex.response?.body?.text ?? ""),
+      },
+      {
+        label: "Copy request body",
+        icon: Copy,
+        disabled: !ex.request.body?.text,
+        onSelect: () => navigator.clipboard.writeText(ex.request.body?.text ?? ""),
+      },
+    ];
+  }
+
   async function exportHar() {
     const all = order
       .map((id) => exchanges.get(id))
@@ -178,6 +215,7 @@ export function RequestsView() {
               <FileDown size={13} />
             </IconButton>
           </div>
+          <RequestListHeader />
           <div className="relative flex-1">
             <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto">
               {rows.length === 0 ? (
@@ -197,6 +235,11 @@ export function RequestsView() {
                         flash={flashIds.has(ex.id)}
                         slowMs={slowMs}
                         onSelect={() => setSelected(ex.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setSelected(ex.id);
+                          setCtxMenu({ x: e.clientX, y: e.clientY, id: ex.id });
+                        }}
                         style={{
                           position: "absolute",
                           top: 0,
@@ -229,7 +272,15 @@ export function RequestsView() {
             onCollapse={() => setDetailCollapsed(true)}
           />
         )}
-        {selectedEx && detailCollapsed && (
+        {ctxMenu && exchanges.get(ctxMenu.id) && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={buildCtxItems(exchanges.get(ctxMenu.id)!, () => setCtxMenu(null))}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
+      {selectedEx && detailCollapsed && (
           <button
             type="button"
             title="Show detail"

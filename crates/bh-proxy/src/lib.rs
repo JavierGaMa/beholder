@@ -34,7 +34,14 @@ impl ProxyHandle {
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }
-        let _ = self.join.await;
+        let mut join = self.join;
+        tokio::select! {
+            _ = &mut join => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {
+                join.abort();
+                let _ = join.await;
+            }
+        }
     }
 }
 
