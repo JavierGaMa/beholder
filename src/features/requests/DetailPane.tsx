@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { Check, ChevronDown, ChevronRight, ClipboardCopy, ClipboardList, Terminal } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ClipboardCopy, ClipboardList, Terminal, TextQuote, Type } from "lucide-react";
 import type { Header, HttpExchange } from "../../store/types";
 import { invoke } from "../../lib/tauri";
 import { formatMs } from "../../lib/format";
 import { loadSlowMs } from "../../lib/prefs";
 import { Badge, IconButton } from "../../components/ui/primitives";
+import { ContextMenu } from "../../components/ui/ContextMenu";
 import { BodyView } from "./BodyView";
 
 type Tab = "headers" | "cookies" | "body" | "timing";
@@ -43,31 +44,67 @@ function CopyButton({ label, icon: Icon, onCopy }: { label: string; icon: typeof
 }
 
 function HeaderRow({ header }: { header: Header }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  async function copy(text: string, what: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(what);
+    setTimeout(() => setCopied(null), 1000);
+  }
+
   return (
     <div className="group grid grid-cols-[170px_1fr_24px] items-start gap-2 rounded px-1.5 py-1 font-mono text-[12px] hover:bg-surface-2/60">
-      <span className="truncate text-muted" title={header.name}>
-        {header.name}
-      </span>
-      <span className="break-all text-txt/90" title={header.value}>
-        {header.value}
-      </span>
       <button
         type="button"
-        title={`Copy "${header.name}"`}
-        onClick={async () => {
-          await navigator.clipboard.writeText(`${header.name}: ${header.value}`);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1000);
+        title="Copy name"
+        onClick={() => copy(header.name, "name")}
+        className={clsx(
+          "truncate text-left text-muted hover:text-accent",
+          copied === "name" && "text-ok",
+        )}
+      >
+        {header.name}
+      </button>
+      <button
+        type="button"
+        title="Copy value"
+        onClick={() => copy(header.value, "value")}
+        className={clsx(
+          "break-all text-left text-txt/90 hover:text-accent",
+          copied === "value" && "text-ok",
+        )}
+      >
+        {header.value}
+      </button>
+      <button
+        type="button"
+        title="Copy options"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenu({ x: e.clientX, y: e.clientY });
         }}
         className={clsx(
           "flex h-5 w-6 items-center justify-center rounded text-muted/50 transition-opacity",
           "opacity-0 group-hover:opacity-100 hover:!opacity-100 hover:text-accent",
-          copied && "!opacity-100 text-ok",
+          menu && "!opacity-100 text-accent",
+          copied === "full" && "!opacity-100 text-ok",
         )}
       >
-        {copied ? <Check size={11} /> : <ClipboardList size={11} />}
+        {copied === "full" ? <Check size={11} /> : <ClipboardList size={11} />}
       </button>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[
+            { label: `Copy name`, icon: Type, onSelect: () => copy(header.name, "name") },
+            { label: "Copy value", icon: TextQuote, onSelect: () => copy(header.value, "value") },
+            { label: "Copy name: value", icon: ClipboardList, onSelect: () => copy(`${header.name}: ${header.value}`, "full") },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
