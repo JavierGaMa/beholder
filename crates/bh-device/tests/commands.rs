@@ -1,6 +1,19 @@
 use bh_device::{AdbDevice, CertificateInstaller, ProxyConfigurator};
 
 #[test]
+fn boot_completed_parses_getprop() {
+    let runner = bh_device::FakeRunner::new();
+    runner.enqueue_ok("1\n");
+    let dev = AdbDevice::new(&runner, "emulator-5554");
+    assert!(dev.boot_completed().unwrap());
+
+    let runner2 = bh_device::FakeRunner::new();
+    runner2.enqueue_ok("\n");
+    let dev2 = AdbDevice::new(&runner2, "emulator-5554");
+    assert!(!dev2.boot_completed().unwrap());
+}
+
+#[test]
 fn set_proxy_uses_10_0_2_2() {
     let runner = bh_device::FakeRunner::new();
     runner.enqueue_ok("");

@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import clsx from "clsx";
-import { CheckCircle2, CircleDashed, Download, Play, RefreshCw, Rocket } from "lucide-react";
+import { CircleDashed, Download, Play, RefreshCw, Rocket } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
+import { OnboardingPanel } from "./OnboardingPanel";
+
+interface OnboardingTarget {
+  avdName: string;
+  createdNew: boolean;
+}
 
 export function EmulatorsView() {
-  const setActiveView = useTraffic((s) => s.setActiveView);
   const setInstallLog = useTraffic((s) => s.setInstallLog);
   const installLog = useTraffic((s) => s.installLog);
   const [avds, setAvds] = useState<AvdInfo[]>([]);
@@ -16,11 +20,11 @@ export function EmulatorsView() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingTarget | null>(null);
 
   const [name, setName] = useState("Beholder_Dev");
   const [imagePkg, setImagePkg] = useState<string>("");
   const [profile, setProfile] = useState<string>("");
-  const [created, setCreated] = useState<string | null>(null);
 
   async function refresh() {
     setBusy(true);
@@ -50,6 +54,7 @@ export function EmulatorsView() {
   async function launch(avdName: string) {
     try {
       await invoke("launch_avd", { name: avdName });
+      setOnboarding({ avdName, createdNew: false });
       setTimeout(refresh, 1500);
     } catch (e) {
       setError(String(e));
@@ -83,7 +88,8 @@ export function EmulatorsView() {
       }
       await invoke("create_avd", { name: name.trim(), pkg: imagePkg, profile });
       await invoke("launch_avd", { name: name.trim() });
-      setCreated(name.trim());
+
+      setOnboarding({ avdName: name.trim(), createdNew: true });
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -149,6 +155,13 @@ export function EmulatorsView() {
         </div>
       </Panel>
 
+      {onboarding ? (
+        <OnboardingPanel
+          avdName={onboarding.avdName}
+          createdNew={onboarding.createdNew}
+          onCancel={() => setOnboarding(null)}
+        />
+      ) : (
       <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Create emulator</p>
         <p className="mt-1 text-[11px] leading-relaxed text-muted">
@@ -225,15 +238,6 @@ export function EmulatorsView() {
           >
             <Rocket size={13} /> Create &amp; Launch
           </button>
-          {created && (
-            <button
-              type="button"
-              onClick={() => setActiveView("setup")}
-              className={clsx("flex items-center gap-1 text-[12px] text-accent hover:underline")}
-            >
-              <CheckCircle2 size={13} /> {created} created — continue in Setup
-            </button>
-          )}
         </div>
         {error && (
           <p className="mt-3 whitespace-pre-wrap rounded-md border border-danger/40 bg-danger/10 p-2 text-[12px] text-danger">
@@ -241,6 +245,7 @@ export function EmulatorsView() {
           </p>
         )}
       </Panel>
+      )}
     </div>
   );
 }

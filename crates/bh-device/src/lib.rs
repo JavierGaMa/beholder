@@ -84,6 +84,11 @@ impl<'a> AdbDevice<'a> {
         self.runner.run(&["-s", &self.serial, "shell", cmd])
     }
 
+    pub fn boot_completed(&self) -> Result<bool, DeviceError> {
+        let out = self.shell("getprop sys.boot_completed")?;
+        Ok(out.stdout.trim() == "1")
+    }
+
     pub fn root(&self) -> Result<(), DeviceError> {
         let out = self.runner.run(&["-s", &self.serial, "root"])?;
         if !out.success {

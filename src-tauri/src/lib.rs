@@ -20,6 +20,8 @@ pub fn run() {
             commands::current_proxy,
             commands::list_avds,
             commands::launch_avd,
+            commands::resolve_serial_for_avd,
+            commands::wait_booted,
             commands::list_images,
             commands::list_device_profiles,
             commands::install_image,

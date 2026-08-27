@@ -32,6 +32,15 @@ pub async fn current_proxy(
     ProxyConfigurator::current_proxy(&device).map_err(|e| e.to_string())
 }
 
+fn emu_avd_name(runner: &std::sync::Arc<bh_device::RealRunner>, serial: &str) -> Option<String> {
+    let out = runner.run(&["-s", serial, "emu", "avd", "name"]).ok()?;
+    out.stdout
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && *l != "OK")
+        .map(|s| s.to_string())
+}
+
 #[tauri::command]
 pub async fn list_avds(state: State<'_, AppState>) -> Result<Vec<bh_device::AvdInfo>, String> {
     let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
@@ -45,24 +54,53 @@ pub async fn list_avds(state: State<'_, AppState>) -> Result<Vec<bh_device::AvdI
                 .iter()
                 .filter(|d| d.is_emulator && d.state == DeviceState::Online)
             {
-                if let Ok(out) = runner.run(&["-s", &d.serial, "emu", "avd", "name"]) {
-                    if let Some(name) = out
-                        .stdout
-                        .lines()
-                        .map(str::trim)
-                        .find(|l| !l.is_empty() && *l != "OK")
+                if let Some(name) = emu_avd_name(&runner, &d.serial) {
+                    if let Some(avd) = avds.iter_mut().find(|a| a.name.eq_ignore_ascii_case(&name))
                     {
-                        if let Some(avd) =
-                            avds.iter_mut().find(|a| a.name.eq_ignore_ascii_case(name))
-                        {
-                            avd.running = true;
-                        }
+                        avd.running = true;
                     }
                 }
             }
         }
     }
     Ok(avds)
+}
+
+#[tauri::command]
+pub async fn resolve_serial_for_avd(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<String, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let scanner = bh_device::AdbScanner::new(runner.as_ref());
+    let devices = scanner.list().map_err(|e| e.to_string())?;
+    for d in devices
+        .iter()
+        .filter(|d| d.is_emulator && d.state == DeviceState::Online)
+    {
+        if let Some(avd) = emu_avd_name(&runner, &d.serial) {
+            if avd.eq_ignore_ascii_case(&name) {
+                return Ok(d.serial.clone());
+            }
+        }
+    }
+    Err("emulator is not visible to adb yet".into())
+}
+
+#[tauri::command]
+pub async fn wait_booted(state: State<'_, AppState>, serial: String) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let start = std::time::Instant::now();
+    loop {
+        let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
+        if device.boot_completed().unwrap_or(false) {
+            return Ok(());
+        }
+        if start.elapsed() >= std::time::Duration::from_secs(180) {
+            return Err("emulator did not finish booting within 3 minutes".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 #[tauri::command]
