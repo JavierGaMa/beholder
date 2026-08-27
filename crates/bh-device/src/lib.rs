@@ -195,6 +195,9 @@ impl<'a> AdbDevice<'a> {
         self.shell_ok("cp /data/local/tmp/beholder-ca-stage/* /system/etc/security/cacerts/")?;
         self.shell_ok("chmod 644 /system/etc/security/cacerts/*")?;
         self.shell_ok("chown root:root /system/etc/security/cacerts/*")?;
+        let _ = self.shell(
+            "chcon u:object_r:system_security_cacerts_file:s0 /system/etc/security/cacerts/*",
+        );
         Ok(())
     }
 

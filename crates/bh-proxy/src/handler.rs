@@ -74,6 +74,9 @@ impl HttpHandler for RecordingHttpHandler {
         _ctx: &HttpContext,
         req: Request<Body>,
     ) -> RequestOrResponse {
+        if req.method() == hudsucker::hyper::Method::CONNECT {
+            return req.into();
+        }
         let id = self.shared.next_exchange.fetch_add(1, Ordering::SeqCst);
         self.current = Some(id);
         self.start = Some(Instant::now());
