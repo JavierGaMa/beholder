@@ -17,8 +17,7 @@ pub struct Ca {
 }
 
 pub fn generate_ca() -> Result<Ca, CaError> {
-    let mut params = rcgen::CertificateParams::new(vec!["Beholder CA".to_string()])
-        .map_err(|e| CaError::Generation(e.to_string()))?;
+    let mut params = rcgen::CertificateParams::default();
     params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     params
         .distinguished_name
@@ -33,14 +32,29 @@ pub fn generate_ca() -> Result<Ca, CaError> {
     })
 }
 
+fn cert_has_san(cert_pem: &str) -> bool {
+    let Ok(block) = pem::parse(cert_pem) else {
+        return false;
+    };
+    let Ok((_, cert)) = x509_parser::parse_x509_certificate(block.contents()) else {
+        return false;
+    };
+    cert.extensions()
+        .iter()
+        .any(|ext| format!("{}", ext.oid) == "2.5.29.17")
+}
+
 pub fn load_or_create(dir: &Path) -> Result<Ca, CaError> {
     let cert_path = dir.join("beholder-ca.pem");
     let key_path = dir.join("beholder-ca.key");
     if cert_path.exists() && key_path.exists() {
-        return Ok(Ca {
-            cert_pem: std::fs::read_to_string(cert_path)?,
-            key_pem: std::fs::read_to_string(key_path)?,
-        });
+        let ca = Ca {
+            cert_pem: std::fs::read_to_string(&cert_path)?,
+            key_pem: std::fs::read_to_string(&key_path)?,
+        };
+        if !cert_has_san(&ca.cert_pem) {
+            return Ok(ca);
+        }
     }
     let ca = generate_ca()?;
     std::fs::create_dir_all(dir)?;
@@ -104,6 +118,31 @@ mod tests {
         let second = load_or_create(&dir).unwrap();
         assert_eq!(first.cert_pem, second.cert_pem);
         assert_eq!(first.key_pem, second.key_pem);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn generated_ca_has_no_san() {
+        let ca = generate_ca().unwrap();
+        assert!(!cert_has_san(&ca.cert_pem));
+    }
+
+    #[test]
+    fn legacy_ca_with_san_is_regenerated() {
+        let dir = std::env::temp_dir().join(format!("bh-ca-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["Beholder CA".to_string()]).unwrap();
+        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        assert!(cert_has_san(&cert.pem()));
+        std::fs::write(dir.join("beholder-ca.pem"), cert.pem()).unwrap();
+        std::fs::write(dir.join("beholder-ca.key"), key.serialize_pem()).unwrap();
+
+        let migrated = load_or_create(&dir).unwrap();
+        assert!(!cert_has_san(&migrated.cert_pem));
+        assert_ne!(migrated.cert_pem, cert.pem());
         std::fs::remove_dir_all(&dir).ok();
     }
 }
