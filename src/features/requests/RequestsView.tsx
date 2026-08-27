@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FileDown, ArrowDown, PanelRight } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
 import type { HttpExchange } from "../../store/types";
 
 type HttpExchangeLike = HttpExchange;
-import { invoke } from "../../lib/tauri";
+import { invoke, isTauri } from "../../lib/tauri";
 import { loadFilters, loadFollow, loadSlowMs, saveFilters, saveFollow } from "../../lib/prefs";
-import { EmptyState, IconButton } from "../../components/ui/primitives";
+import { EmptyState } from "../../components/ui/primitives";
 import { matchFilters, type Filters } from "./filters";
 import { RequestRow, RequestListHeader } from "./RequestRow";
 import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
-import { Copy, FileJson, Link2, Terminal } from "lucide-react";
+import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Terminal } from "lucide-react";
 import { DetailPane } from "./DetailPane";
 import { FilterBar, type DomainChip } from "./FilterBar";
 
@@ -28,6 +27,8 @@ export function RequestsView() {
   );
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,18 +172,45 @@ export function RequestsView() {
     ];
   }
 
-  async function exportHar() {
-    const all = order
-      .map((id) => exchanges.get(id))
-      .filter((e): e is NonNullable<typeof e> => Boolean(e));
-    const har = await invoke<string>("export_har", { exchanges: all });
-    const blob = new Blob([har], { type: "application/json" });
+  function downloadBlob(content: string, filename: string) {
+    const blob = new Blob([content], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `beholder-${new Date().toISOString().replace(/[:.]/g, "-")}.har`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function filteredRows(): HttpExchange[] {
+    return rows;
+  }
+
+  async function exportHar() {
+    downloadBlob(
+      await invoke<string>("export_har", { exchanges: filteredRows() }),
+      `beholder-${new Date().toISOString().replace(/[:.]/g, "-")}.har`,
+    );
+  }
+
+  async function exportPostman() {
+    downloadBlob(
+      await invoke<string>("export_postman", { exchanges: filteredRows() }),
+      `beholder-${new Date().toISOString().replace(/[:.]/g, "-")}.postman_collection.json`,
+    );
+  }
+
+  async function exportBruno() {
+    if (!isTauri) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const dir = await open({ directory: true, title: "Export Bruno collection to folder" });
+    if (typeof dir !== "string") return;
+    const written = await invoke<number>("export_bruno_folder", {
+      exchanges: filteredRows(),
+      dir,
+    });
+    setExportNote(`${written} files written to ${dir}`);
+    setTimeout(() => setExportNote(null), 3500);
   }
 
   return (
@@ -211,9 +239,17 @@ export function RequestsView() {
             <span>
               {rows.length} requests{filters.includeDomains.length > 0 ? ` · ${filters.includeDomains.length} domains included` : ""}
             </span>
-            <IconButton title="Export session as HAR" onClick={exportHar}>
-              <FileDown size={13} />
-            </IconButton>
+            <button
+              type="button"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setExportMenu({ x: r.left, y: r.bottom + 4 });
+              }}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium hover:text-accent"
+            >
+              <FileDown size={11} /> Export
+            </button>
+            {exportNote && <span className="text-[10px] normal-case text-accent">{exportNote}</span>}
           </div>
           <RequestListHeader />
           <div className="relative flex-1">
@@ -272,7 +308,19 @@ export function RequestsView() {
             onCollapse={() => setDetailCollapsed(true)}
           />
         )}
-        {ctxMenu && exchanges.get(ctxMenu.id) && (
+        {exportMenu && (
+        <ContextMenu
+          x={exportMenu.x}
+          y={exportMenu.y}
+          items={[
+            { label: "HAR — session", icon: FileJson, onSelect: exportHar },
+            { label: "Postman collection", icon: Package, onSelect: exportPostman },
+            { label: "Bruno — git friendly (suggested)", icon: FolderGit2, onSelect: exportBruno },
+          ]}
+          onClose={() => setExportMenu(null)}
+        />
+      )}
+      {ctxMenu && exchanges.get(ctxMenu.id) && (
         <ContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}

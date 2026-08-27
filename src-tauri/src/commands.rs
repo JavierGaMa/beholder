@@ -405,6 +405,36 @@ pub fn export_har(exchanges: Vec<HttpExchange>) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn export_postman(
+    exchanges: Vec<HttpExchange>,
+    name: Option<String>,
+) -> Result<String, String> {
+    let name = name.unwrap_or_else(|| "Beholder export".to_string());
+    Ok(bh_core::postman_collection_to_string(&exchanges, &name))
+}
+
+#[tauri::command]
+pub fn export_bruno_folder(
+    exchanges: Vec<HttpExchange>,
+    dir: String,
+    name: Option<String>,
+) -> Result<usize, String> {
+    let name = name.unwrap_or_else(|| "Beholder capture".to_string());
+    let files = bh_core::build_bruno_collection(&exchanges, &name);
+    let root = std::path::Path::new(&dir);
+    let mut written = 0;
+    for file in &files {
+        let path = root.join(&file.path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, &file.content).map_err(|e| e.to_string())?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+#[tauri::command]
 pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     capture_stop(state.clone()).await?;
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;

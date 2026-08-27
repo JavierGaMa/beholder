@@ -22,4 +22,5 @@ bh-core = { workspace = true }
 bh-ca = { workspace = true }
 bh-device = { workspace = true }
 bh-proxy = { workspace = true }
+tauri-plugin-dialog = "2.7.2"
 

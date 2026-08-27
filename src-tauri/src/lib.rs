@@ -9,6 +9,7 @@ use tauri::Manager;
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let sink = Arc::new(batch::BatchSink::spawn(app.handle().clone()));
             app.manage(state::AppState::new(sink));
@@ -33,7 +34,9 @@ pub fn run() {
             commands::capture_stop,
             commands::full_cleanup,
             commands::format_curl,
-            commands::export_har
+            commands::export_har,
+            commands::export_postman,
+            commands::export_bruno_folder
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
