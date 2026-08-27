@@ -1,17 +1,19 @@
 import { useEffect } from "react";
 import clsx from "clsx";
-import { Cable, Radio, Settings, ShieldCheck, Waves } from "lucide-react";
+import { Cable, MonitorSmartphone, Radio, Settings, ShieldCheck, Waves } from "lucide-react";
 import { useTraffic, type View } from "./store/traffic";
 import { isTauri, listenTraffic } from "./lib/tauri";
 import { startMock } from "./lib/mock";
 import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
+import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { SetupView } from "./features/wizard/SetupView";
 import { SettingsView } from "./features/settings/SettingsView";
 
 const NAV: { id: View; label: string; icon: typeof Radio }[] = [
   { id: "requests", label: "Requests", icon: Radio },
   { id: "websockets", label: "WebSockets", icon: Waves },
+  { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
   { id: "setup", label: "Setup", icon: ShieldCheck },
   { id: "settings", label: "Settings", icon: Settings },
 ];
@@ -80,6 +82,7 @@ export default function App() {
       <main className="min-w-0 flex-1">
         {activeView === "requests" && <RequestsView />}
         {activeView === "websockets" && <WebSocketsView />}
+        {activeView === "emulators" && <EmulatorsView />}
         {activeView === "setup" && <SetupView />}
         {activeView === "settings" && <SettingsView />}
       </main>

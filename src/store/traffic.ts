@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 
-export type View = "requests" | "websockets" | "setup" | "settings";
+export type View = "requests" | "websockets" | "emulators" | "setup" | "settings";
 
 export interface WsFrame {
   seq: number;

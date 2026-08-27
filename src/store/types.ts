@@ -61,3 +61,21 @@ export interface Device {
   state: "Online" | "Offline" | "Unauthorized" | "Unknown";
   is_emulator: boolean;
 }
+
+export interface AvdInfo {
+  name: string;
+  device: string | null;
+  image_tag: string | null;
+  abi: string | null;
+  api_level: number | null;
+  beholder_ready: boolean;
+  running: boolean;
+}
+
+export interface SystemImage {
+  pkg: string;
+  api: number;
+  tag: string;
+  abi: string;
+  installed: boolean;
+}
