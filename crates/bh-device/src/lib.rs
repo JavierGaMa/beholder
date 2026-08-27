@@ -1,8 +1,14 @@
+pub mod avd;
 pub mod runner;
 pub mod types;
 
+pub use avd::{
+    accept_licenses, create_avd_with_stdin, enrich_avds_from_config, launch_emulator_detached,
+    parse_avdmanager_list, parse_device_profiles, parse_sdkmanager_images, AvdManager,
+    FakeSdkRunner, RealSdkRunner, SdkTool, SdkToolRunner,
+};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
-pub use types::{Device, DeviceState};
+pub use types::{AvdInfo, Device, DeviceState, SystemImage};
 
 pub trait DeviceScanner {
     fn list(&self) -> Result<Vec<Device>, DeviceError>;
