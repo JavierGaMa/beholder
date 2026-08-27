@@ -46,7 +46,6 @@ pub async fn list_avds(state: State<'_, AppState>) -> Result<Vec<bh_device::AvdI
     let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
     let manager = AvdManager::new(&sdk);
     let mut avds = manager.list_avds().map_err(|e| e.to_string())?;
-
     if let Ok(runner) = state.get_runner().await {
         let scanner = bh_device::AdbScanner::new(runner.as_ref());
         if let Ok(devices) = scanner.list() {
@@ -58,6 +57,7 @@ pub async fn list_avds(state: State<'_, AppState>) -> Result<Vec<bh_device::AvdI
                     if let Some(avd) = avds.iter_mut().find(|a| a.name.eq_ignore_ascii_case(&name))
                     {
                         avd.running = true;
+                        avd.serial = Some(d.serial.clone());
                     }
                 }
             }

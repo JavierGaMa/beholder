@@ -100,10 +100,16 @@ impl<'a> AdbDevice<'a> {
             self.runner.run(&["-s", &self.serial, "wait-for-device"])?;
             return Ok(());
         }
+        let hint = if combined.contains("production builds") || combined.trim().is_empty() {
+            " (Google Play images refuse root — use a Google APIs or AOSP image)"
+        } else {
+            ""
+        };
         Err(DeviceError::Other(format!(
-            "adb root failed: {} {} (Google Play images refuse root — use a Google APIs or AOSP image)",
+            "adb root failed: {} {}{}",
             out.stdout.trim(),
-            out.stderr.trim()
+            out.stderr.trim(),
+            hint
         )))
     }
 

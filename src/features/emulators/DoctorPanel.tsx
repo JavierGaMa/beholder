@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, RefreshCw, RotateCcw, Zap, X, XCircle } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { Badge } from "../../components/ui/primitives";
+import { ErrorBox } from "../../components/ui/ErrorBox";
 
 type CheckStatus = "ok" | "warn" | "fail";
 
@@ -152,11 +153,7 @@ export function DoctorPanel({
         </ul>
       )}
 
-      {error && (
-        <p className="mt-3 whitespace-pre-wrap rounded-md border border-danger/40 bg-danger/10 p-2 text-[12px] text-danger">
-          {error}
-        </p>
-      )}
+      {error && <ErrorBox message={error} className="mt-3" />}
 
       {checks.length > 0 && (
         <div className="mt-4 flex items-center gap-2 border-t border-line pt-3">

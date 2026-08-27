@@ -3,6 +3,7 @@ import { CircleDashed, Download, Play, RefreshCw, Rocket, Stethoscope } from "lu
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
+import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { DoctorPanel } from "./DoctorPanel";
@@ -259,11 +260,7 @@ export function EmulatorsView() {
             <Rocket size={13} /> Create &amp; Launch
           </button>
         </div>
-        {error && (
-          <p className="mt-3 whitespace-pre-wrap rounded-md border border-danger/40 bg-danger/10 p-2 text-[12px] text-danger">
-            {error}
-          </p>
-        )}
+        {error && <ErrorBox message={error} className="mt-3" />}
       </Panel>
       )}
     </div>

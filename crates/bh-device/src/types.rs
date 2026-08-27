@@ -24,6 +24,7 @@ pub struct AvdInfo {
     pub api_level: Option<u32>,
     pub beholder_ready: bool,
     pub running: bool,
+    pub serial: Option<String>,
     #[serde(skip_serializing)]
     pub path: Option<std::path::PathBuf>,
 }

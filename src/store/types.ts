@@ -70,6 +70,7 @@ export interface AvdInfo {
   api_level: number | null;
   beholder_ready: boolean;
   running: boolean;
+  serial: string | null;
 }
 
 export interface SystemImage {

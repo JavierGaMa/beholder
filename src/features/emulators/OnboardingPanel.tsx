@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { AlertCircle, ArrowRight, Check, Loader2, RotateCcw, X } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
+import { ErrorBox } from "../../components/ui/ErrorBox";
 
 type StepStatus = "pending" | "active" | "done" | "error";
 
@@ -90,6 +91,7 @@ export function OnboardingPanel({
         const p = await invoke<number>("capture_start", { serial: serialRef.current });
         setPort(p);
         setCapture(true, p);
+        useTraffic.getState().setTarget(serialRef.current, avdName);
         setStatus(STEP_CAPTURE, "done");
         setStatus(STEP_DONE, "done");
         setDetail("");
@@ -184,7 +186,7 @@ export function OnboardingPanel({
 
       {failed && (
         <div className="mt-4 rounded-md border border-danger/40 bg-danger/10 p-3">
-          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
+          <ErrorBox message={error ?? ""} className="border-0 bg-transparent p-0" />
           <div className="mt-2.5 flex items-center gap-3">
             <button
               type="button"

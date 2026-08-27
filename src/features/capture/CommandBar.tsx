@@ -4,6 +4,7 @@ import { ChevronDown, CircleDot, MonitorSmartphone, Plus, Settings, Square, Play
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo } from "../../store/types";
 import { isFailed } from "../requests/filters";
+import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
 
 export function CommandBar() {
@@ -60,7 +61,7 @@ export function CommandBar() {
 
   async function selectAvd(avd: AvdInfo) {
     setOpen(false);
-    setTarget(avd.running ? avd.name : null, avd.name);
+    setTarget(avd.running ? avd.serial : null, avd.name);
     if (!avd.running) {
       try {
         await invoke("launch_avd", { name: avd.name });
@@ -171,11 +172,7 @@ export function CommandBar() {
         {captureOn ? "Stop" : "Capture"}
       </button>
 
-      {error && (
-        <p className="max-w-72 truncate text-[11px] text-danger" title={error}>
-          {error}
-        </p>
-      )}
+      {error && <ErrorBox message={error} compact className="max-w-80" />}
 
       <div className="flex-1" />
 

@@ -170,6 +170,7 @@ pub fn parse_avdmanager_list(stdout: &str) -> Vec<AvdInfo> {
                 api_level: None,
                 beholder_ready: false,
                 running: false,
+                serial: None,
                 path: None,
             });
         } else if let Some(avd) = current.as_mut() {
