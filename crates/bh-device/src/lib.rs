@@ -1,4 +1,5 @@
 pub mod avd;
+pub mod doctor;
 pub mod runner;
 pub mod types;
 
@@ -7,6 +8,7 @@ pub use avd::{
     parse_avdmanager_list, parse_device_profiles, parse_sdkmanager_images, AvdManager,
     FakeSdkRunner, RealSdkRunner, SdkTool, SdkToolRunner,
 };
+pub use doctor::{apply_basic_fix, run_checks, CheckStatus, DoctorCheck, FixId};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
 pub use types::{AvdInfo, Device, DeviceState, SystemImage};
 

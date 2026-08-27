@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { CircleDashed, Download, Play, RefreshCw, Rocket } from "lucide-react";
+import { CircleDashed, Download, Play, RefreshCw, Rocket, Stethoscope } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
 import { OnboardingPanel } from "./OnboardingPanel";
+import { DoctorPanel } from "./DoctorPanel";
 
 export function EmulatorsView() {
   const setInstallLog = useTraffic((s) => s.setInstallLog);
@@ -17,6 +18,7 @@ export function EmulatorsView() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [doctor, setDoctor] = useState<{ avdName: string; serial: string } | null>(null);
 
   const [name, setName] = useState("Beholder_Dev");
   const [imagePkg, setImagePkg] = useState<string>("");
@@ -46,6 +48,16 @@ export function EmulatorsView() {
   useEffect(() => {
     refresh();
   }, []);
+
+  async function openDoctor(avdName: string) {
+    setError(null);
+    try {
+      const serial = await invoke<string>("resolve_serial_for_avd", { name: avdName });
+      setDoctor({ avdName, serial });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function launch(avdName: string) {
     try {
@@ -135,7 +147,17 @@ export function EmulatorsView() {
                   <Badge tone="danger">no root</Badge>
                 )}
                 {avd.running ? (
-                  <Badge tone="accent">running</Badge>
+                  <>
+                    <Badge tone="accent">running</Badge>
+                    <button
+                      type="button"
+                      onClick={() => openDoctor(avd.name)}
+                      title="Diagnose and repair this emulator"
+                      className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:text-accent"
+                    >
+                      <Stethoscope size={11} /> Doctor
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
@@ -151,7 +173,9 @@ export function EmulatorsView() {
         </div>
       </Panel>
 
-      {onboarding ? (
+      {doctor ? (
+        <DoctorPanel avdName={doctor.avdName} serial={doctor.serial} onClose={() => setDoctor(null)} />
+      ) : onboarding ? (
         <OnboardingPanel
           avdName={onboarding.avdName}
           createdNew={onboarding.createdNew}

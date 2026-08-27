@@ -26,6 +26,8 @@ pub fn run() {
             commands::list_device_profiles,
             commands::install_image,
             commands::create_avd,
+            commands::run_doctor,
+            commands::apply_doctor_fix,
             commands::capture_start,
             commands::capture_stop,
             commands::full_cleanup,

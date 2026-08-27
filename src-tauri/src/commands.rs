@@ -262,6 +262,58 @@ pub async fn create_avd(name: String, pkg: String, profile: String) -> Result<()
 }
 
 #[tauri::command]
+pub async fn run_doctor(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+) -> Result<Vec<bh_device::DoctorCheck>, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let ca_installed = bh_ca::load_or_create(&dir)
+        .ok()
+        .and_then(|ca| bh_ca::system_cert_filename(&ca.cert_pem).ok())
+        .map(|name| {
+            bh_device::AdbDevice::new(runner.as_ref(), &serial)
+                .is_cert_installed(&name)
+                .unwrap_or(false)
+        });
+    let active_port = state.proxy.lock().await.as_ref().map(|h| h.port);
+    let checks = bh_device::run_checks(
+        runner.as_ref(),
+        &serial,
+        ca_installed,
+        &port_alive,
+        active_port,
+    );
+    Ok(checks)
+}
+
+fn port_alive(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
+}
+
+#[tauri::command]
+pub async fn apply_doctor_fix(
+    state: State<'_, AppState>,
+    serial: String,
+    fix: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let fix_id = match fix.as_str() {
+        "clear_proxy" => bh_device::FixId::ClearProxy,
+        "disable_airplane" => bh_device::FixId::DisableAirplane,
+        "clear_private_dns" => bh_device::FixId::ClearPrivateDns,
+        "reboot" => bh_device::FixId::Reboot,
+        other => return Err(format!("unknown fix: {other}")),
+    };
+    bh_device::apply_basic_fix(runner.as_ref(), &serial, fix_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn capture_start(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
