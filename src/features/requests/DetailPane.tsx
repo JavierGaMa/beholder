@@ -54,7 +54,7 @@ function HeaderRow({ header }: { header: Header }) {
   }
 
   return (
-    <div className="group grid grid-cols-[170px_1fr_24px] items-start gap-2 rounded px-1.5 py-1 font-mono text-[12px] hover:bg-surface-2/60">
+    <div className="group grid grid-cols-[170px_1fr_24px] items-start gap-2 rounded px-1.5 py-1 font-mono text-[length:var(--mono-size,12px)] hover:bg-surface-2/60">
       <button
         type="button"
         title="Copy name"

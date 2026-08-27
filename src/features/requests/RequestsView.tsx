@@ -54,10 +54,11 @@ export function RequestsView() {
   }, [order, exchanges, filters, slowMs]);
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const rowH = useTraffic((s) => s.uiConfig?.row_height) ?? 34;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 35,
+    estimateSize: () => rowH + 1,
     overscan: 20,
   });
 

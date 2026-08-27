@@ -1,5 +1,6 @@
 mod batch;
 mod commands;
+mod config;
 mod state;
 
 use std::sync::Arc;
@@ -13,6 +14,13 @@ pub fn run() {
         .setup(|app| {
             let sink = Arc::new(batch::BatchSink::spawn(app.handle().clone()));
             app.manage(state::AppState::new(sink));
+
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Ok(dir) = handle.path().app_local_data_dir() {
+                    spawn_config_watcher(handle.clone(), dir);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -36,7 +44,10 @@ pub fn run() {
             commands::format_curl,
             commands::export_har,
             commands::export_postman,
-            commands::export_bruno_folder
+            commands::export_bruno_folder,
+            commands::get_config,
+            commands::set_config,
+            commands::reveal_config
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -55,4 +66,38 @@ pub fn run() {
             });
         }
     });
+}
+
+fn spawn_config_watcher(app: tauri::AppHandle, dir: std::path::PathBuf) {
+    use notify::Watcher;
+    use tauri::Emitter;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let Ok(mut watcher) = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
+        if let Ok(event) = res {
+            if event.kind.is_modify() || event.kind.is_create() {
+                let _ = tx.send(());
+            }
+        }
+    }) else {
+        return;
+    };
+    if watcher
+        .watch(&dir, notify::RecursiveMode::NonRecursive)
+        .is_err()
+    {
+        return;
+    }
+    drop(watcher);
+
+    loop {
+        if rx.recv().is_err() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        while rx.try_recv().is_ok() {}
+        if let Ok(config) = config::load(&dir) {
+            let _ = app.emit("config-changed", &config);
+        }
+    }
 }

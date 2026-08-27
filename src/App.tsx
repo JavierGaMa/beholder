@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import clsx from "clsx";
 import { MonitorSmartphone, Radio, Waves, X } from "lucide-react";
 import { useTraffic, type View } from "./store/traffic";
-import { isTauri, listenTraffic } from "./lib/tauri";
+import { invoke, isTauri, listenTraffic } from "./lib/tauri";
+import { applyUiConfig } from "./lib/theme/applyConfig";
+import type { UiConfig } from "./lib/theme/config-types";
 import { startMock } from "./lib/mock";
 import { CommandBar } from "./features/capture/CommandBar";
 import { RequestsView } from "./features/requests/RequestsView";
@@ -27,8 +29,20 @@ export default function App() {
   const setOnboarding = useTraffic((s) => s.setOnboarding);
 
   useEffect(() => {
+    if (isTauri) {
+      invoke<UiConfig>("get_config")
+        .then((c) => {
+          useTraffic.getState().setUiConfig(c);
+          applyUiConfig(c);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
     let dispose: (() => void) | undefined;
     let disposeInstall: (() => void) | undefined;
+    let disposeConfig: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
@@ -42,11 +56,18 @@ export default function App() {
         }).then((un) => {
           disposeInstall = un;
         });
+        listen<UiConfig>("config-changed", (e) => {
+          useTraffic.getState().setUiConfig(e.payload);
+          applyUiConfig(e.payload);
+        }).then((un) => {
+          disposeConfig = un;
+        });
       });
     }
     return () => {
       dispose?.();
       disposeInstall?.();
+      disposeConfig?.();
       stopMockFn?.();
     };
   }, [ingest]);

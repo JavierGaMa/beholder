@@ -79,7 +79,7 @@ body {
   background: var(--bg);
   color: var(--txt);
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 13px;
+  font-size: var(--ui-size, 13px);
   -webkit-font-smoothing: antialiased;
 }
 

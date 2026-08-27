@@ -41,7 +41,7 @@ export function RequestRow({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={clsx(
-        "flex cursor-default items-center gap-2 border-b border-line/40 px-3 font-mono text-[12px] leading-[34px] tabular-nums transition-colors",
+        "flex cursor-default items-center gap-2 border-b border-line/40 px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
         selected ? "bg-surface-2 text-txt" : "text-muted hover:bg-surface/80",
         failed && !selected && "border-l-2 border-l-danger",
         flash && "animate-pulse bg-accent/5",

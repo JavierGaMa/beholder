@@ -119,7 +119,7 @@ export function JsonTree({ data }: { data: unknown }) {
           <Copy size={10} /> {copiedPath}
         </span>
       )}
-      <div className="p-2 font-mono text-[12px]">
+      <div className="p-2 font-mono text-[length:var(--mono-size,12px)]">
         <Node name="body" value={data} path="" depth={0} onCopyPath={onCopyPath} defaultOpen />
       </div>
     </div>

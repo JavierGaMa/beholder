@@ -337,6 +337,31 @@ pub async fn apply_doctor_fix(
 }
 
 #[tauri::command]
+pub async fn get_config(app: tauri::AppHandle) -> Result<crate::config::UiConfig, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    crate::config::load(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_config(
+    app: tauri::AppHandle,
+    config: crate::config::UiConfig,
+) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    crate::config::write_config(&dir, &config).map_err(|e| e.to_string())?;
+    use tauri::Emitter;
+    let _ = app.emit("config-changed", &config);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reveal_config(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let path = crate::config::config_path(&dir);
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn capture_start(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

@@ -43,7 +43,7 @@ export function BodyView({ body }: { body: BodyCapture | null | undefined }) {
       <pre
         onClick={() => long && setExpanded(true)}
         className={clsx(
-          "overflow-auto p-3 font-mono text-[12px] leading-relaxed text-txt/90",
+          "overflow-auto p-3 font-mono text-[length:var(--mono-size,12px)] leading-relaxed text-txt/90",
           long && "cursor-pointer",
         )}
       >

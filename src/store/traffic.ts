@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
+import type { UiConfig } from "../lib/theme/config-types";
 
 export type View = "requests" | "websockets" | "emulators";
 
@@ -32,6 +33,7 @@ interface TrafficState {
   capturePort: number | null;
   requestCount: number;
   installLog: string | null;
+  uiConfig: UiConfig | null;
   settingsOpen: boolean;
   targetSerial: string | null;
   targetAvd: string | null;
@@ -41,6 +43,7 @@ interface TrafficState {
   ingest: (events: TrafficEvent[]) => void;
   clear: () => void;
   setInstallLog: (line: string | null) => void;
+  setUiConfig: (c: UiConfig) => void;
   setSettingsOpen: (open: boolean) => void;
   setTarget: (serial: string | null, avd: string | null) => void;
   setOnboarding: (t: OnboardingTarget | null) => void;
@@ -55,6 +58,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   capturePort: null,
   requestCount: 0,
   installLog: null,
+  uiConfig: null,
   settingsOpen: false,
   targetSerial: null,
   targetAvd: null,
@@ -62,6 +66,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   setActiveView: (v) => set({ activeView: v }),
   setCapture: (on, port = null) => set({ captureOn: on, capturePort: on ? port : null }),
   setInstallLog: (line) => set({ installLog: line }),
+  setUiConfig: (c) => set({ uiConfig: c }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setTarget: (serial, avd) => set({ targetSerial: serial, targetAvd: avd }),
   setOnboarding: (t) => set({ onboarding: t }),
