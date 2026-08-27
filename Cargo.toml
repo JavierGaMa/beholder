@@ -1,0 +1,13 @@
+[workspace]
+members = ["src-tauri", "crates/bh-core", "crates/bh-ca", "crates/bh-device", "crates/bh-proxy"]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+bh-core = { path = "crates/bh-core" }
+bh-ca = { path = "crates/bh-ca" }
+bh-device = { path = "crates/bh-device" }
+bh-proxy = { path = "crates/bh-proxy" }
