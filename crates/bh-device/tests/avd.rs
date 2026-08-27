@@ -110,14 +110,25 @@ fn sdkmanager_filters_rootable_arm64_and_sorts_desc() {
 #[test]
 fn device_profiles_filters_pixel_ids() {
     let out = "\
-id: 0 || device
-id: 1 || device
-id: oriole_mini_2_tv_1080p || device
-id: pixel_7 || device
-id: pixel_7_pro || device
-id: pixel_10_pro_xl || device
-id: wearos_square || device
+Available devices definitions:
+id: 0 or \"ai_glasses_device\"
+    Name: AI Glasses
+    OEM : Google
+---------
+id: 1 or \"automotive_1024p_landscape\"
+    Name: Automotive (1024p landscape)
+---------
+id: 27 or \"pixel_7\"
+    Name: Pixel 7
+    OEM : Google
+---------
+id: 31 or \"pixel_10_pro_xl\"
+    Name: Pixel 10 Pro XL
+---------
+id: pixel_legacy || device
+    Name: Legacy format
+---------
 ";
     let ids = parse_device_profiles(out);
-    assert_eq!(ids, vec!["pixel_7", "pixel_7_pro", "pixel_10_pro_xl"]);
+    assert_eq!(ids, vec!["pixel_7", "pixel_10_pro_xl", "pixel_legacy"]);
 }

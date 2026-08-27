@@ -291,11 +291,21 @@ pub fn parse_device_profiles(stdout: &str) -> Vec<String> {
     let mut ids = Vec::new();
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if let Some(id) = trimmed.strip_prefix("id: ") {
-            let id = id.split('|').next().unwrap_or_default().trim().to_string();
-            if id.starts_with("pixel_") && !ids.contains(&id) {
-                ids.push(id);
+        let Some(rest) = trimmed.strip_prefix("id: ") else {
+            continue;
+        };
+        let id = if let Some(qstart) = rest.find('"') {
+            let after = &rest[qstart + 1..];
+            match after.find('"') {
+                Some(end) => &after[..end],
+                None => continue,
             }
+        } else {
+            rest.split("||").next().unwrap_or(rest).trim()
+        };
+        let id = id.trim();
+        if id.starts_with("pixel_") && !ids.contains(&id.to_string()) {
+            ids.push(id.to_string());
         }
     }
     ids
