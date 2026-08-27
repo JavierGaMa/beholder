@@ -16,6 +16,7 @@ export function RequestRow({
   selected,
   flash,
   slowMs,
+  hideDomain,
   onSelect,
   onContextMenu,
   style,
@@ -24,6 +25,7 @@ export function RequestRow({
   selected: boolean;
   flash: boolean;
   slowMs: number;
+  hideDomain: boolean;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   style: CSSProperties;
@@ -49,8 +51,14 @@ export function RequestRow({
         {ex.request.method}
       </span>
       <span className="min-w-0 flex-1 truncate">
-        <span className={clsx(selected ? "text-txt" : "text-txt/85")}>{ex.request.host}</span>
-        <span className="text-muted">{ex.request.path}</span>
+        {hideDomain ? (
+          <span className={clsx(selected ? "text-txt" : "text-txt/85")}>{ex.request.path}</span>
+        ) : (
+          <>
+            <span className={clsx(selected ? "text-txt" : "text-txt/85")}>{ex.request.host}</span>
+            <span className="text-muted">{ex.request.path}</span>
+          </>
+        )}
       </span>
       {ex.error ? (
         <AlertCircle size={13} className="w-8 shrink-0 text-danger" />
@@ -72,11 +80,11 @@ export function RequestRow({
   );
 }
 
-export function RequestListHeader() {
+export function RequestListHeader({ hideDomain }: { hideDomain?: boolean }) {
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted/60">
       <span className="w-14 shrink-0">Method</span>
-      <span className="min-w-0 flex-1">Host / Path</span>
+      <span className="min-w-0 flex-1">{hideDomain ? "Endpoint" : "Host / Path"}</span>
       <span className="w-8 shrink-0 text-center">St</span>
       <span className="w-16 shrink-0 text-right">Time</span>
       <span className="w-20 shrink-0 text-right">Size</span>

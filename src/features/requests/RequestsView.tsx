@@ -33,6 +33,7 @@ export function RequestsView() {
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slowMs = loadSlowMs();
+  const hideDomain = filters.includeDomains.length === 1;
 
   const domains = useMemo<DomainChip[]>(() => {
     const counts = new Map<string, number>();
@@ -251,7 +252,7 @@ export function RequestsView() {
             </button>
             {exportNote && <span className="text-[10px] normal-case text-accent">{exportNote}</span>}
           </div>
-          <RequestListHeader />
+          <RequestListHeader hideDomain={hideDomain} />
           <div className="relative flex-1">
             <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto">
               {rows.length === 0 ? (
@@ -270,6 +271,7 @@ export function RequestsView() {
                         selected={ex.id === selected}
                         flash={flashIds.has(ex.id)}
                         slowMs={slowMs}
+                        hideDomain={hideDomain}
                         onSelect={() => setSelected(ex.id)}
                         onContextMenu={(e) => {
                           e.preventDefault();
