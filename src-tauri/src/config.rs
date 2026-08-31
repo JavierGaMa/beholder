@@ -17,6 +17,36 @@ pub struct ColorOverrides {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ConsoleConfig {
+    #[serde(default = "default_ring_lines")]
+    pub ring_lines: u32,
+    #[serde(default = "default_show_tid")]
+    pub show_tid: bool,
+    #[serde(default = "default_console_buffer")]
+    pub default_buffer: String,
+}
+
+fn default_ring_lines() -> u32 {
+    10000
+}
+fn default_show_tid() -> bool {
+    false
+}
+fn default_console_buffer() -> String {
+    "main".into()
+}
+
+impl Default for ConsoleConfig {
+    fn default() -> Self {
+        ConsoleConfig {
+            ring_lines: default_ring_lines(),
+            show_tid: default_show_tid(),
+            default_buffer: default_console_buffer(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -32,6 +62,8 @@ pub struct UiConfig {
     pub mono_font_family: Option<String>,
     #[serde(default)]
     pub colors: ColorOverrides,
+    #[serde(default)]
+    pub console: ConsoleConfig,
 }
 
 fn default_theme() -> String {
@@ -60,6 +92,7 @@ impl Default for UiConfig {
             row_height: default_row_height(),
             mono_font_family: None,
             colors: ColorOverrides::default(),
+            console: ConsoleConfig::default(),
         }
     }
 }
@@ -127,6 +160,39 @@ mod tests {
         assert_eq!(loaded.theme, "carbon");
         assert_eq!(loaded.ui_font_size, 13);
         assert_eq!(loaded.row_height, 34);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_console_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-console-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.console.ring_lines = 5000;
+        config.console.show_tid = true;
+        config.console.default_buffer = "system".into();
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[console]"));
+        assert!(raw.contains("ring_lines = 5000"));
+        assert!(raw.contains("show_tid = true"));
+        assert!(raw.contains("default_buffer = \"system\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn console_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-console-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.console, ConsoleConfig::default());
+        assert_eq!(loaded.console.ring_lines, 10000);
+        assert!(!loaded.console.show_tid);
+        assert_eq!(loaded.console.default_buffer, "main");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

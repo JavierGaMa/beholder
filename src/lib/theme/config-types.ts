@@ -11,6 +11,12 @@ export interface ColorOverrides {
   danger?: string | null;
 }
 
+export interface ConsoleConfig {
+  ring_lines: number;
+  show_tid: boolean;
+  default_buffer: string;
+}
+
 export interface UiConfig {
   theme: string;
   accent: string;
@@ -19,6 +25,7 @@ export interface UiConfig {
   row_height: number;
   mono_font_family?: string | null;
   colors?: ColorOverrides;
+  console?: ConsoleConfig;
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
@@ -29,4 +36,5 @@ export const DEFAULT_CONFIG: UiConfig = {
   row_height: 34,
   mono_font_family: null,
   colors: {},
+  console: { ring_lines: 10000, show_tid: false, default_buffer: "main" },
 };

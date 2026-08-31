@@ -1,4 +1,6 @@
-use crate::state::AppState;
+use crate::console::ShellBatchSink;
+use crate::state::{AppState, ConsoleState, ShellSlot};
+use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession, PtyShell, adb_shell_command};
 use bh_core::{har_to_string, to_curl, HttpExchange};
 use bh_device::{
     accept_licenses, create_avd_with_stdin, launch_emulator_detached, AvdManager,
@@ -422,6 +424,210 @@ pub async fn capture_stop(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn format_curl(exchange: HttpExchange) -> Result<String, String> {
     Ok(to_curl(&exchange))
+}
+
+#[tauri::command]
+pub async fn console_start(
+    state: State<'_, AppState>,
+    console: State<'_, ConsoleState>,
+    serial: String,
+    buffers: Vec<String>,
+) -> Result<(), String> {
+    if let Some(handle) = console.session.lock().await.take() {
+        handle.stop();
+    }
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let mut parsed: Vec<LogBuffer> = vec![];
+    for b in &buffers {
+        parsed.push(
+            b.parse::<LogBuffer>()
+                .map_err(|e| e.to_string())
+                .map_err(|e| format!("unknown buffer '{b}': {e}"))?,
+        );
+    }
+    if parsed.is_empty() {
+        parsed = vec![LogBuffer::Main, LogBuffer::System, LogBuffer::Crash];
+    }
+    let filter = console.filter.lock().await.clone();
+    let sink: std::sync::Arc<dyn ConsoleSink> = console.sink.clone();
+    let handle = LogSession::spawn(
+        Box::new(AdbLogcatFactory::new(runner.adb_path().clone())),
+        serial,
+        parsed,
+        filter,
+        sink,
+    );
+    *console.session.lock().await = Some(handle);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_stop(console: State<'_, ConsoleState>) -> Result<(), String> {
+    if let Some(handle) = console.session.lock().await.take() {
+        handle.stop();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_set_filter(
+    console: State<'_, ConsoleState>,
+    filter: LogFilter,
+) -> Result<(), String> {
+    *console.filter.lock().await = filter.clone();
+    if let Some(handle) = console.session.lock().await.as_ref() {
+        handle.set_filter(filter);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_apps(
+    state: State<'_, AppState>,
+    serial: String,
+) -> Result<Vec<bh_console::AppProcess>, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    bh_console::list_apps(runner.as_ref(), &serial).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn console_clear_buffer(
+    state: State<'_, AppState>,
+    serial: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let out = runner
+        .run(&["-s", &serial, "logcat", "-c"])
+        .map_err(|e| e.to_string())?;
+    if !out.success {
+        let stderr = out.stderr.trim();
+        return Err(if stderr.is_empty() {
+            format!("adb -s {serial} logcat -c failed")
+        } else {
+            stderr.to_string()
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_export(
+    app: tauri::AppHandle,
+    text: String,
+    filename: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(filename)
+        .add_filter("Text", &["txt", "log"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let Some(chosen) = rx.await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let path = chosen.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, text.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+#[tauri::command]
+pub async fn console_shell_start(
+    state: State<'_, AppState>,
+    console: State<'_, ConsoleState>,
+    app: tauri::AppHandle,
+    serial: String,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    let drain = {
+        let mut guard = console.shell.lock().await;
+        match guard.take() {
+            Some(slot) => {
+                let done = slot.sink.done.clone();
+                slot.handle.kill();
+                drop(slot);
+                Some(done)
+            }
+            None => None,
+        }
+    };
+    if let Some(done) = drain {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), done.notified()).await;
+    }
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let sink = ShellBatchSink::spawn(app);
+    let cmd = adb_shell_command(runner.adb_path(), &serial);
+    let handle = PtyShell::spawn(cmd, rows, cols, sink.clone()).map_err(|e| e.to_string())?;
+    *console.shell.lock().await = Some(ShellSlot {
+        handle,
+        sink,
+        dead_reported: false,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_shell_stop(console: State<'_, ConsoleState>) -> Result<(), String> {
+    if let Some(slot) = console.shell.lock().await.take() {
+        slot.handle.kill();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn console_shell_input(
+    console: State<'_, ConsoleState>,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    let handle = {
+        let mut guard = console.shell.lock().await;
+        let Some(slot) = guard.as_mut() else {
+            return Ok(());
+        };
+        if !slot.handle.is_running() {
+            return if slot.dead_reported {
+                Ok(())
+            } else {
+                slot.dead_reported = true;
+                Err("shell exited".into())
+            };
+        }
+        slot.handle.clone()
+    };
+    let write_result = tokio::task::spawn_blocking(move || handle.input(&bytes))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string());
+    match write_result {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            let mut guard = console.shell.lock().await;
+            let Some(slot) = guard.as_mut() else {
+                return Ok(());
+            };
+            if slot.dead_reported {
+                return Ok(());
+            }
+            slot.dead_reported = true;
+            Err("shell exited".into())
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn console_shell_resize(
+    console: State<'_, ConsoleState>,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    let guard = console.shell.lock().await;
+    if let Some(slot) = guard.as_ref() {
+        slot.handle.resize(rows, cols);
+    }
+    Ok(())
 }
 
 #[tauri::command]

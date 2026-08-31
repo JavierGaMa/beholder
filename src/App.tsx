@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import clsx from "clsx";
-import { MonitorSmartphone, Radio, Waves, X } from "lucide-react";
+import { MonitorSmartphone, Radio, SquareTerminal, Waves, X } from "lucide-react";
 import { useTraffic, type View } from "./store/traffic";
+import { useConsole } from "./store/console";
+import type { ConsoleEvent } from "./store/console-types";
 import { invoke, isTauri, listenTraffic } from "./lib/tauri";
 import { applyUiConfig } from "./lib/theme/applyConfig";
 import type { UiConfig } from "./lib/theme/config-types";
@@ -11,12 +13,15 @@ import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { SettingsView } from "./features/settings/SettingsView";
+import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
+import { Toaster } from "./components/ui/toast";
 
 const RAIL: { id: View; label: string; icon: typeof Radio }[] = [
   { id: "requests", label: "Requests", icon: Radio },
   { id: "websockets", label: "WebSockets", icon: Waves },
   { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
+  { id: "console", label: "Console", icon: SquareTerminal },
 ];
 
 export default function App() {
@@ -43,6 +48,7 @@ export default function App() {
     let dispose: (() => void) | undefined;
     let disposeInstall: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
+    let disposeConsole: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
@@ -62,12 +68,18 @@ export default function App() {
         }).then((un) => {
           disposeConfig = un;
         });
+        listen<ConsoleEvent[]>("console-batch", (e) => {
+          useConsole.getState().ingest(e.payload);
+        }).then((un) => {
+          disposeConsole = un;
+        });
       });
     }
     return () => {
       dispose?.();
       disposeInstall?.();
       disposeConfig?.();
+      disposeConsole?.();
       stopMockFn?.();
     };
   }, [ingest]);
@@ -79,6 +91,7 @@ export default function App() {
         {activeView === "requests" && <RequestsView />}
         {activeView === "websockets" && <WebSocketsView />}
         {activeView === "emulators" && <EmulatorsView />}
+        {activeView === "console" && <ConsoleView />}
       </main>
       <nav className="flex shrink-0 items-center justify-center gap-1 border-t border-line bg-surface px-4 py-1.5">
         {RAIL.map(({ id, label, icon: Icon }) => (
@@ -96,6 +109,8 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      <Toaster />
 
       {settingsOpen && (
         <div className="absolute inset-0 z-40 flex justify-end bg-black/40" onClick={() => setSettingsOpen(false)}>

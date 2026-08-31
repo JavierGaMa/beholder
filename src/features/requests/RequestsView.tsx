@@ -17,6 +17,7 @@ import { FilterBar, type DomainChip } from "./FilterBar";
 export function RequestsView() {
   const exchanges = useTraffic((s) => s.exchanges);
   const order = useTraffic((s) => s.order);
+  const pendingSelectId = useTraffic((s) => s.pendingSelectId);
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [selected, setSelected] = useState<number | null>(null);
   const [follow, setFollow] = useState(loadFollow);
@@ -69,6 +70,18 @@ export function RequestsView() {
   useEffect(() => {
     saveFollow(follow);
   }, [follow]);
+
+  useEffect(() => {
+    if (pendingSelectId == null) return;
+    setSelected(pendingSelectId);
+    const idx = rows.findIndex((r) => r.id === pendingSelectId);
+    if (idx >= 0) {
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(idx, { align: "auto" });
+      });
+    }
+    useTraffic.getState().setPendingSelectId(null);
+  }, [pendingSelectId, rows, virtualizer]);
 
   const delta = order.length - prevOrderLen.current;
   const newIds = delta > 0 ? order.slice(prevOrderLen.current) : [];

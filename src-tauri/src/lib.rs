@@ -1,6 +1,7 @@
 mod batch;
 mod commands;
 mod config;
+mod console;
 mod state;
 
 use std::sync::Arc;
@@ -14,6 +15,8 @@ pub fn run() {
         .setup(|app| {
             let sink = Arc::new(batch::BatchSink::spawn(app.handle().clone()));
             app.manage(state::AppState::new(sink));
+            let console_sink = Arc::new(console::ConsoleBatchSink::spawn(app.handle().clone()));
+            app.manage(state::ConsoleState::new(console_sink));
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -47,7 +50,17 @@ pub fn run() {
             commands::export_bruno_folder,
             commands::get_config,
             commands::set_config,
-            commands::reveal_config
+            commands::reveal_config,
+            commands::console_start,
+            commands::console_stop,
+            commands::console_set_filter,
+            commands::console_apps,
+            commands::console_clear_buffer,
+            commands::console_export,
+            commands::console_shell_start,
+            commands::console_shell_stop,
+            commands::console_shell_input,
+            commands::console_shell_resize
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -61,6 +74,14 @@ pub fn run() {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
                         let device = bh_device::AdbDevice::new(&runner, &serial);
                         let _ = bh_device::ProxyConfigurator::clear_proxy(&device);
+                    }
+                }
+                if let Some(console) = app_handle.try_state::<state::ConsoleState>() {
+                    if let Some(handle) = console.session.lock().await.take() {
+                        handle.stop();
+                    }
+                    if let Some(slot) = console.shell.lock().await.take() {
+                        slot.handle.kill();
                     }
                 }
             });

@@ -1,4 +1,6 @@
 use crate::batch::BatchSink;
+use crate::console::{ConsoleBatchSink, ShellBatchSink};
+use bh_console::{LogFilter, SessionHandle, ShellHandle};
 use bh_device::RealRunner;
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -28,5 +30,29 @@ impl AppState {
         let runner = Arc::new(RealRunner::discover()?);
         *guard = Some(runner.clone());
         Ok(runner)
+    }
+}
+
+pub struct ShellSlot {
+    pub handle: ShellHandle,
+    pub sink: Arc<ShellBatchSink>,
+    pub dead_reported: bool,
+}
+
+pub struct ConsoleState {
+    pub sink: Arc<ConsoleBatchSink>,
+    pub session: AsyncMutex<Option<SessionHandle>>,
+    pub filter: AsyncMutex<LogFilter>,
+    pub shell: AsyncMutex<Option<ShellSlot>>,
+}
+
+impl ConsoleState {
+    pub fn new(sink: Arc<ConsoleBatchSink>) -> Self {
+        ConsoleState {
+            sink,
+            session: AsyncMutex::new(None),
+            filter: AsyncMutex::new(LogFilter::default()),
+            shell: AsyncMutex::new(None),
+        }
     }
 }

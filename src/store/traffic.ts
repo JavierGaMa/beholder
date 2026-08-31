@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 import type { UiConfig } from "../lib/theme/config-types";
 
-export type View = "requests" | "websockets" | "emulators";
+export type View = "requests" | "websockets" | "emulators" | "console";
 
 export interface OnboardingTarget {
   avdName: string;
@@ -38,6 +38,9 @@ interface TrafficState {
   targetSerial: string | null;
   targetAvd: string | null;
   onboarding: OnboardingTarget | null;
+  pendingSelectId: number | null;
+  requestSelect: (id: number) => void;
+  setPendingSelectId: (id: number | null) => void;
   setActiveView: (v: View) => void;
   setCapture: (on: boolean, port?: number | null) => void;
   ingest: (events: TrafficEvent[]) => void;
@@ -63,6 +66,9 @@ export const useTraffic = create<TrafficState>((set) => ({
   targetSerial: null,
   targetAvd: null,
   onboarding: null,
+  pendingSelectId: null,
+  requestSelect: (id) => set({ pendingSelectId: id, activeView: "requests" }),
+  setPendingSelectId: (id) => set({ pendingSelectId: id }),
   setActiveView: (v) => set({ activeView: v }),
   setCapture: (on, port = null) => set({ captureOn: on, capturePort: on ? port : null }),
   setInstallLog: (line) => set({ installLog: line }),
