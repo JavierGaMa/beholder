@@ -267,7 +267,7 @@ export function RequestsView() {
             {exportNote && <span className="text-[10px] normal-case text-accent">{exportNote}</span>}
           </div>
           <RequestListHeader hideDomain={hideDomain} />
-          <div className="relative flex-1">
+          <div className="relative min-h-0 flex-1">
             <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto">
               {rows.length === 0 ? (
                 <EmptyState
