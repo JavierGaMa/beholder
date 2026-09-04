@@ -59,4 +59,6 @@ impl ConsoleState {
 
 pub struct AgentState {
     pub store: Arc<bh_agent::AgentStore>,
+    pub server: AsyncMutex<Option<bh_agent::ServerHandle>>,
+    pub token: String,
 }

@@ -115,6 +115,16 @@ impl AgentStore {
         self.focus.lock().unwrap().app = package;
     }
 
+    pub fn focus_app(&self) -> Option<String> {
+        self.focus.lock().unwrap().app.clone()
+    }
+
+    pub fn pins_count(&self) -> usize {
+        let requests = self.pinned_req.lock().unwrap().len();
+        let logs = self.pinned_logs.lock().unwrap().len();
+        requests + logs
+    }
+
     pub fn pin_request(&self, id: u64) {
         self.pinned_req.lock().unwrap().insert(id);
     }

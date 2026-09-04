@@ -6,6 +6,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
+
+pub struct ServerHandle {
+    pub port: u16,
+    shutdown: Arc<Notify>,
+    task: Option<JoinHandle<()>>,
+}
+
+impl ServerHandle {
+    pub async fn shutdown(mut self) {
+        self.shutdown.notify_one();
+        if let Some(task) = self.task.take() {
+            let _ = task.await;
+        }
+    }
+}
 
 pub fn discovery_path() -> PathBuf {
     let home = std::env::var_os("HOME")
@@ -31,7 +48,7 @@ pub fn generate_token() -> String {
 }
 
 pub async fn serve(store: Arc<AgentStore>, bind: &str, token: &str) -> std::io::Result<u16> {
-    serve_with(store, bind, token, Some(discovery_path())).await
+    Ok(serve_with(store, bind, token, Some(discovery_path())).await?.port)
 }
 
 pub async fn serve_with(
@@ -39,24 +56,37 @@ pub async fn serve_with(
     bind: &str,
     token: &str,
     discovery: Option<PathBuf>,
-) -> std::io::Result<u16> {
+) -> std::io::Result<ServerHandle> {
     let listener = TcpListener::bind(bind).await?;
     let port = listener.local_addr()?.port();
     if let Some(path) = discovery {
         write_discovery(path, port, token)?;
     }
     let token = token.to_string();
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else { continue };
-            let store = store.clone();
-            let token = token.clone();
-            tokio::spawn(async move {
-                let _ = handle(stream, store, token).await;
-            });
-        }
-    });
-    Ok(port)
+    let shutdown = Arc::new(Notify::new());
+    let task = {
+        let shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown.notified() => break,
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else { continue };
+                        let store = store.clone();
+                        let token = token.clone();
+                        tokio::spawn(async move {
+                            let _ = handle(stream, store, token).await;
+                        });
+                    }
+                }
+            }
+        })
+    };
+    Ok(ServerHandle {
+        port,
+        shutdown,
+        task: Some(task),
+    })
 }
 
 fn write_discovery(path: PathBuf, port: u16, token: &str) -> std::io::Result<()> {
@@ -281,8 +311,8 @@ mod tests {
     #[tokio::test]
     async fn rejects_missing_token() {
         let store = store_with_one();
-        let port = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
-        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", server.port)).await.unwrap();
         use tokio::io::AsyncWriteExt;
         stream.write_all(b"GET /focus HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").await.unwrap();
         let mut buf = Vec::new();
@@ -290,31 +320,78 @@ mod tests {
         stream.read_to_end(&mut buf).await.unwrap();
         let text = String::from_utf8_lossy(&buf);
         assert!(text.starts_with("HTTP/1.1 401"));
+        server.shutdown().await;
     }
 
     #[tokio::test]
     async fn focus_ok_with_token() {
         let store = store_with_one();
-        let port = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
-        let (status, body) = get(port, "tok", "/focus").await;
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = get(server.port, "tok", "/focus").await;
         assert_eq!(status, 200);
         assert_eq!(body["target"], "emu");
         assert_eq!(body["requests"], 1);
+        server.shutdown().await;
     }
 
     #[tokio::test]
     async fn requests_detail_and_curl_routes() {
         let store = store_with_one();
-        let port = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
-        let (status, _) = get(port, "tok", "/requests").await;
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, _) = get(server.port, "tok", "/requests").await;
         assert_eq!(status, 200);
-        let (status, detail) = get(port, "tok", "/requests/7").await;
+        let (status, detail) = get(server.port, "tok", "/requests/7").await;
         assert_eq!(status, 200);
         assert_eq!(detail["request"]["path"], "/x");
-        let (status, _) = get(port, "tok", "/curl?id=7").await;
+        let (status, _) = get(server.port, "tok", "/curl?id=7").await;
         assert_eq!(status, 200);
-        let (status, body) = get(port, "tok", "/requests/999").await;
+        let (status, body) = get(server.port, "tok", "/requests/999").await;
         assert_eq!(status, 404);
         assert_eq!(body["error"], "not_found");
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_stops_accepting_connections() {
+        let store = store_with_one();
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, _) = get(server.port, "tok", "/focus").await;
+        assert_eq!(status, 200);
+        let port = server.port;
+        server.shutdown().await;
+        let attempted = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
+        assert!(attempted.is_err());
+    }
+
+    #[tokio::test]
+    async fn discovery_file_lifecycle_across_disable_and_reenable() {
+        let dir = std::env::temp_dir().join(format!("bh-agent-disc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let discovery = dir.join("agent.json");
+        let store = store_with_one();
+        let first = serve_with(store.clone(), "127.0.0.1:0", "tok", Some(discovery.clone()))
+            .await
+            .unwrap();
+        assert!(discovery.exists());
+        let raw: Value = serde_json::from_str(&std::fs::read_to_string(&discovery).unwrap()).unwrap();
+        assert_eq!(raw["port"].as_u64(), Some(first.port as u64));
+        assert_eq!(raw["token"], "tok");
+
+        first.shutdown().await;
+        std::fs::remove_file(&discovery).unwrap();
+        assert!(!discovery.exists());
+
+        let second = serve_with(store, "127.0.0.1:0", "tok", Some(discovery.clone()))
+            .await
+            .unwrap();
+        assert!(discovery.exists());
+        let raw: Value = serde_json::from_str(&std::fs::read_to_string(&discovery).unwrap()).unwrap();
+        assert_eq!(raw["port"].as_u64(), Some(second.port as u64));
+        assert_eq!(raw["token"], "tok");
+        let (status, _) = get(second.port, "tok", "/focus").await;
+        assert_eq!(status, 200);
+        second.shutdown().await;
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

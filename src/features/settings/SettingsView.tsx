@@ -1,13 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { FileCode2 } from "lucide-react";
+import { Copy, FileCode2 } from "lucide-react";
 import { ACCENTS, ACCENT_SWATCHES, THEMES, THEME_LABELS } from "../../lib/theme/themes";
 import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import { applyUiConfig } from "../../lib/theme/applyConfig";
 import { invoke, isTauri } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
+import { toast } from "../../components/ui/toast";
 import { Panel } from "../../components/ui/primitives";
+import {
+  bridgeStatusLine,
+  formatBridgeInfo,
+  type AgentBridgeStatus,
+} from "./agentBridge";
 
 export function SettingsView() {
   const uiConfig = useTraffic((s) => s.uiConfig);
@@ -157,8 +163,106 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
         </div>
       </Panel>
 
+      <AgentBridgePanel />
       <DeviceMaintenance />
     </div>
+  );
+}
+
+function AgentBridgePanel() {
+  const [status, setStatus] = useState<AgentBridgeStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    invoke<AgentBridgeStatus>("agent_bridge_status")
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+
+  async function refreshStatus() {
+    const next = await invoke<AgentBridgeStatus>("agent_bridge_status");
+    setStatus(next);
+  }
+
+  async function toggleEnabled() {
+    if (!status || busy) return;
+    setBusy(true);
+    try {
+      await invoke("agent_set_enabled", { enabled: !status.enabled });
+      await refreshStatus();
+    } catch (e) {
+      toast(String(e), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyMcpConfig() {
+    try {
+      const snippet = await invoke<string>("agent_mcp_config");
+      navigator.clipboard.writeText(snippet).then(
+        () => toast("MCP config copied to clipboard"),
+        () => toast("Clipboard unavailable", "danger"),
+      );
+    } catch (e) {
+      toast(String(e), "danger");
+    }
+  }
+
+  const enabled = status?.enabled ?? false;
+
+  return (
+    <Panel className="p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-medium text-txt">Agent bridge</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            Lets MCP agents query captured traffic and console logs over a local
+            HTTP API.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Enable agent bridge"
+          disabled={busy || !status}
+          onClick={toggleEnabled}
+          className={clsx(
+            "relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:opacity-40",
+            enabled ? "border-accent bg-accent/20" : "border-line bg-bg",
+          )}
+        >
+          <span
+            className={clsx(
+              "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full transition-all",
+              enabled ? "left-[calc(100%-1rem)] bg-accent" : "left-1 bg-muted",
+            )}
+          />
+        </button>
+      </div>
+      {status && (
+        <>
+          <p className={clsx("mt-2 text-[11px]", enabled ? "text-ok" : "text-muted")}>
+            {bridgeStatusLine(status)}
+          </p>
+          <div className="mt-3">
+            <button
+              type="button"
+              disabled={!enabled}
+              onClick={copyMcpConfig}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-accent disabled:opacity-40"
+            >
+              <Copy size={12} /> Copy MCP config
+            </button>
+            <p className="mt-2 font-mono text-[11px] text-muted">
+              {formatBridgeInfo(status)}
+            </p>
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }
 
