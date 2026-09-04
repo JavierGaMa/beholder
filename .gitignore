@@ -26,6 +26,7 @@ dist-ssr
 # Rust workspace build
 /target
 src-tauri/gen/schemas
+src-tauri/binaries/
 
 # Docs build output
 docs/.vitepress/dist
