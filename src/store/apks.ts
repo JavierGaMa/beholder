@@ -11,6 +11,8 @@ interface ApksState {
   error: string | null;
   refreshing: boolean;
   lastFetched: number | null;
+  configured: boolean;
+  setConfigured: (value: boolean) => void;
   refresh: (force?: boolean) => Promise<void>;
 }
 
@@ -22,8 +24,24 @@ export const useApks = create<ApksState>((set, get) => ({
   error: null,
   refreshing: false,
   lastFetched: null,
+  configured: false,
+  setConfigured: (value) => {
+    if (get().configured === value) return;
+    set({
+      configured: value,
+      entries: [],
+      status: "idle",
+      error: null,
+      refreshing: false,
+      lastFetched: null,
+    });
+  },
   refresh: (force = false) => {
     if (inFlight) return inFlight;
+    if (!get().configured) {
+      set({ entries: [], status: "idle", error: null, refreshing: false });
+      return Promise.resolve();
+    }
     const { status, lastFetched } = get();
     if (!force && status === "ready" && isFresh(lastFetched, APKS_TTL_MS)) {
       return Promise.resolve();

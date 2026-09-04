@@ -1,8 +1,31 @@
 use serde::Serialize;
 
-const LIST_URL: &str =
-    "https://dlakecdnsfaprdeus201.blob.core.windows.net/contenidos?restype=container&comp=list&prefix=APKs/";
 const MAX_PAGES: usize = 100;
+
+pub const UNCONFIGURED_ERROR: &str = "apks source is not configured";
+
+pub fn normalize_list_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("URL is required".into());
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        Ok(trimmed.to_string())
+    } else {
+        Err(format!(
+            "apks.list_url must start with http:// or https://: {trimmed}"
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TestApksListResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct ApkMeta {
@@ -146,26 +169,70 @@ fn rfc1123_key(s: &str) -> (i32, u32, u32, u32, u32, u32) {
     )
 }
 
-pub async fn list_apks() -> Result<Vec<ApkEntry>, String> {
+async fn fetch_listing_page(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+) -> Result<String, String> {
+    client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn count_listed_apks(list_url: &str) -> TestApksListResult {
+    let normalized = match normalize_list_url(list_url) {
+        Ok(url) => url,
+        Err(e) => {
+            return TestApksListResult {
+                ok: false,
+                count: None,
+                error: Some(e),
+            }
+        }
+    };
+    let url = match reqwest::Url::parse(&normalized) {
+        Ok(url) => url,
+        Err(e) => {
+            return TestApksListResult {
+                ok: false,
+                count: None,
+                error: Some(e.to_string()),
+            }
+        }
+    };
+    let client = reqwest::Client::new();
+    match fetch_listing_page(&client, url).await {
+        Ok(body) => TestApksListResult {
+            ok: true,
+            count: Some(parse_listing(&body).len()),
+            error: None,
+        },
+        Err(e) => TestApksListResult {
+            ok: false,
+            count: None,
+            error: Some(e),
+        },
+    }
+}
+
+pub async fn list_apks(list_url: &str) -> Result<Vec<ApkEntry>, String> {
+    let list_url = normalize_list_url(list_url)?;
     let client = reqwest::Client::new();
     let mut raw = vec![];
     let mut marker: Option<String> = None;
     let mut prev_marker: Option<String> = None;
     for _ in 0..MAX_PAGES {
-        let mut url = reqwest::Url::parse(LIST_URL).map_err(|e| e.to_string())?;
+        let mut url = reqwest::Url::parse(&list_url).map_err(|e| e.to_string())?;
         if let Some(m) = &marker {
             url.query_pairs_mut().append_pair("marker", m);
         }
-        let body = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .text()
-            .await
-            .map_err(|e| e.to_string())?;
+        let body = fetch_listing_page(&client, url).await?;
         raw.extend(parse_listing(&body));
         let next = xml_tag(&body, "NextMarker").filter(|s| !s.is_empty());
         if next.is_none() || next == prev_marker {
@@ -395,5 +462,71 @@ mod tests {
         assert!(older < newer);
         assert!(newer < much_later);
         assert_eq!(rfc1123_key("garbage"), (0, 0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn list_url_accepts_schemes_and_trims() {
+        assert_eq!(
+            normalize_list_url("  https://example.com/contenidos?restype=container  ")
+                .unwrap()
+                .as_str(),
+            "https://example.com/contenidos?restype=container"
+        );
+        assert_eq!(
+            normalize_list_url("http://127.0.0.1:10000/contenidos")
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:10000/contenidos"
+        );
+    }
+
+    #[test]
+    fn list_url_rejects_missing_scheme() {
+        let err = normalize_list_url("example.com/contenidos").unwrap_err();
+        assert_eq!(
+            err,
+            "apks.list_url must start with http:// or https://: example.com/contenidos"
+        );
+    }
+
+    #[test]
+    fn list_url_rejects_empty_input() {
+        assert_eq!(normalize_list_url("   ").unwrap_err(), "URL is required");
+    }
+
+    #[test]
+    fn test_listing_reports_invalid_url_without_network() {
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let a = count_listed_apks("   ").await;
+            let b = count_listed_apks("example.com/contenidos").await;
+            (a, b)
+        });
+        let (empty, no_scheme) = result;
+        assert!(!empty.ok);
+        assert_eq!(empty.count, None);
+        assert_eq!(empty.error.as_deref(), Some("URL is required"));
+        assert!(!no_scheme.ok);
+        assert_eq!(
+            no_scheme.error.as_deref(),
+            Some("apks.list_url must start with http:// or https://: example.com/contenidos")
+        );
+    }
+
+    #[test]
+    fn test_result_serializes_count_or_error() {
+        let ok = TestApksListResult {
+            ok: true,
+            count: Some(3),
+            error: None,
+        };
+        let json = serde_json::to_string(&ok).unwrap();
+        assert_eq!(json, r#"{"ok":true,"count":3}"#);
+        let failed = TestApksListResult {
+            ok: false,
+            count: None,
+            error: Some("boom".into()),
+        };
+        let json = serde_json::to_string(&failed).unwrap();
+        assert_eq!(json, r#"{"ok":false,"error":"boom"}"#);
     }
 }

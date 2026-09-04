@@ -38,7 +38,7 @@ function deferredList() {
 }
 
 beforeEach(() => {
-  useApks.setState(useApks.getInitialState(), true);
+  useApks.setState({ ...useApks.getInitialState(), configured: true }, true);
   vi.useFakeTimers();
   vi.clearAllMocks();
 });
@@ -142,5 +142,40 @@ describe("apks store refresh", () => {
     expect(st.status).toBe("ready");
     expect(st.error).toBeNull();
     expect(st.entries).toEqual(apks);
+  });
+
+  it("skips fetching while unconfigured and clears cached state", async () => {
+    mockList(apks);
+    await useApks.getState().refresh();
+    vi.mocked(invoke).mockClear();
+    useApks.getState().setConfigured(false);
+    await useApks.getState().refresh(true);
+    const st = useApks.getState();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(st.entries).toEqual([]);
+    expect(st.status).toBe("idle");
+    expect(st.error).toBeNull();
+    expect(st.lastFetched).toBeNull();
+  });
+
+  it("setConfigured is a no-op when the value is unchanged", async () => {
+    mockList(apks);
+    await useApks.getState().refresh();
+    useApks.getState().setConfigured(true);
+    const st = useApks.getState();
+    expect(st.entries).toEqual(apks);
+    expect(st.lastFetched).not.toBeNull();
+  });
+
+  it("restarts from a clean slate after the source becomes configured", async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error("apks source is not configured"));
+    await useApks.getState().refresh();
+    expect(useApks.getState().status).toBe("error");
+    useApks.getState().setConfigured(false);
+    useApks.getState().setConfigured(true);
+    expect(useApks.getState().status).toBe("idle");
+    mockList(apks);
+    await useApks.getState().refresh();
+    expect(useApks.getState()).toMatchObject({ status: "ready", entries: apks, error: null });
   });
 });

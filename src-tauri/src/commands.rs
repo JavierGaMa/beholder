@@ -18,8 +18,34 @@ pub async fn adb_status() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn list_apks() -> Result<Vec<crate::apks::ApkEntry>, String> {
-    crate::apks::list_apks().await
+pub async fn list_apks(app: tauri::AppHandle) -> Result<Vec<crate::apks::ApkEntry>, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if cfg.apks.list_url.trim().is_empty() {
+        return Err(crate::apks::UNCONFIGURED_ERROR.to_string());
+    }
+    crate::apks::list_apks(&cfg.apks.list_url).await
+}
+
+#[tauri::command]
+pub async fn test_apks_list_url(
+    list_url: String,
+) -> Result<crate::apks::TestApksListResult, String> {
+    Ok(crate::apks::count_listed_apks(&list_url).await)
+}
+
+#[tauri::command]
+pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<(), String> {
+    let normalized = crate::apks::normalize_list_url(&list_url)?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if cfg.apks.list_url != normalized {
+        let mut next = cfg.clone();
+        next.apks.list_url = normalized;
+        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+        let _ = app.emit("config-changed", &next);
+    }
+    Ok(())
 }
 
 #[tauri::command]

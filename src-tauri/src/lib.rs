@@ -67,6 +67,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::adb_status,
             commands::list_apks,
+            commands::test_apks_list_url,
+            commands::set_apks_config,
             commands::download_apk,
             commands::install_apk,
             commands::list_devices,

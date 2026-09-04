@@ -7,8 +7,11 @@ import { Badge, EmptyState, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
 import { useApks } from "../../store/apks";
+import { useTraffic } from "../../store/traffic";
+import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
 import { downloadPct, filterApks, formatBytes, type EnvFilter } from "./apksFormat";
 import { DevicePicker } from "./DevicePicker";
+import { ApksOnboarding } from "./ApksOnboarding";
 
 type Phase =
   | { phase: "idle" }
@@ -40,14 +43,23 @@ export function ApksView() {
   const error = useApks((s) => s.error);
   const refreshing = useApks((s) => s.refreshing);
   const refresh = useApks((s) => s.refresh);
+  const setConfigured = useApks((s) => s.setConfigured);
+  const listUrl = useTraffic(
+    (s) => s.uiConfig?.apks?.list_url ?? DEFAULT_CONFIG.apks?.list_url ?? "",
+  );
+  const configured = listUrl.trim() !== "";
   const [serial, setSerial] = useState("");
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
   const [rows, setRows] = useState<Record<string, Phase>>({});
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    setConfigured(configured);
+  }, [configured, setConfigured]);
+
+  useEffect(() => {
+    if (configured) void refresh();
+  }, [configured, refresh]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -103,6 +115,15 @@ export function ApksView() {
 
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
   const visible = filtered.slice(0, MAX_RENDERED);
+
+  if (!configured) {
+    return (
+      <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
+        <h1 className="text-sm font-semibold text-txt">APKs</h1>
+        <ApksOnboarding onSaved={() => void refresh(true)} />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">

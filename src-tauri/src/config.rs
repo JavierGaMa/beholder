@@ -89,6 +89,24 @@ impl Default for AgentConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ApksConfig {
+    #[serde(default = "default_apks_list_url")]
+    pub list_url: String,
+}
+
+fn default_apks_list_url() -> String {
+    String::new()
+}
+
+impl Default for ApksConfig {
+    fn default() -> Self {
+        ApksConfig {
+            list_url: default_apks_list_url(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -108,6 +126,8 @@ pub struct UiConfig {
     pub console: ConsoleConfig,
     #[serde(default)]
     pub agent: AgentConfig,
+    #[serde(default)]
+    pub apks: ApksConfig,
 }
 
 fn default_theme() -> String {
@@ -138,6 +158,7 @@ impl Default for UiConfig {
             colors: ColorOverrides::default(),
             console: ConsoleConfig::default(),
             agent: AgentConfig::default(),
+            apks: ApksConfig::default(),
         }
     }
 }
@@ -251,6 +272,35 @@ mod tests {
         assert_eq!(loaded.agent, AgentConfig::default());
         assert!(loaded.agent.enabled);
         assert_eq!(loaded.agent.bind, "127.0.0.1:0");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_apks_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-apks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.apks.list_url = "https://example.com/contenidos?restype=container&comp=list".into();
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[apks]"));
+        assert!(raw.contains(
+            "list_url = \"https://example.com/contenidos?restype=container&comp=list\""
+        ));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn apks_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-apks-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.apks, ApksConfig::default());
+        assert!(loaded.apks.list_url.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

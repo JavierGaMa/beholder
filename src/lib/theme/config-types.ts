@@ -17,6 +17,10 @@ export interface ConsoleConfig {
   default_buffer: string;
 }
 
+export interface ApksConfig {
+  list_url: string;
+}
+
 export interface UiConfig {
   theme: string;
   accent: string;
@@ -26,6 +30,7 @@ export interface UiConfig {
   mono_font_family?: string | null;
   colors?: ColorOverrides;
   console?: ConsoleConfig;
+  apks?: ApksConfig;
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
@@ -37,4 +42,7 @@ export const DEFAULT_CONFIG: UiConfig = {
   mono_font_family: null,
   colors: {},
   console: { ring_lines: 10000, show_tid: false, default_buffer: "main" },
+  apks: {
+    list_url: "",
+  },
 };
