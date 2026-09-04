@@ -4,9 +4,10 @@ pub mod runner;
 pub mod types;
 
 pub use avd::{
-    accept_licenses, create_avd_with_stdin, enrich_avds_from_config, launch_emulator_detached,
-    parse_avdmanager_list, parse_device_profiles, parse_sdkmanager_images, AvdManager,
-    FakeSdkRunner, RealSdkRunner, SdkTool, SdkToolRunner,
+    accept_licenses, create_avd_with_stdin, enrich_avds_from_config, find_aapt,
+    launch_emulator_detached, parse_avdmanager_list, parse_badging_package, parse_device_profiles,
+    parse_sdkmanager_images, read_apk_package, AvdManager, FakeSdkRunner, RealSdkRunner, SdkTool,
+    SdkToolRunner,
 };
 pub use doctor::{apply_basic_fix, run_checks, CheckStatus, DoctorCheck, FixId};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
@@ -20,6 +21,11 @@ pub trait CertificateInstaller {
     fn install_system_cert(&self, filename: &str, pem: &str) -> Result<(), DeviceError>;
     fn is_cert_installed(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError>;
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError>;
+}
+
+pub trait ApkInstaller {
+    fn install_apk(&self, path: &str) -> Result<(), DeviceError>;
+    fn uninstall(&self, package: &str) -> Result<(), DeviceError>;
 }
 
 pub trait ProxyConfigurator {
@@ -264,6 +270,32 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
     }
 }
 
+impl<'a> ApkInstaller for AdbDevice<'a> {
+    fn install_apk(&self, path: &str) -> Result<(), DeviceError> {
+        let out = self.runner.run(&["-s", &self.serial, "install", "-r", path])?;
+        if out.success {
+            return Ok(());
+        }
+        Err(DeviceError::Other(format!(
+            "adb install failed: {}{}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
+    }
+
+    fn uninstall(&self, package: &str) -> Result<(), DeviceError> {
+        let out = self.runner.run(&["-s", &self.serial, "uninstall", package])?;
+        if out.success {
+            return Ok(());
+        }
+        Err(DeviceError::Other(format!(
+            "adb uninstall failed: {}{}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
+    }
+}
+
 impl<'a> ProxyConfigurator for AdbDevice<'a> {
     fn set_proxy(&self, host: &str, port: u16) -> Result<(), DeviceError> {
         let out = self.shell(&format!("settings put global http_proxy {}:{}", host, port))?;
@@ -285,5 +317,52 @@ impl<'a> ProxyConfigurator for AdbDevice<'a> {
             return Ok(None);
         }
         Ok(Some(v))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_apk_runs_adb_install_replace() {
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("Success");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        ApkInstaller::install_apk(&device, "/tmp/advisor.apk").unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            vec!["-s", "emulator-5554", "install", "-r", "/tmp/advisor.apk"]
+        );
+    }
+
+    #[test]
+    fn install_apk_failure_includes_raw_output() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail("INSTALL_FAILED_VERSION_DOWNGRADE");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        let err = ApkInstaller::install_apk(&device, "/tmp/advisor.apk").unwrap_err();
+        assert!(err.to_string().contains("INSTALL_FAILED_VERSION_DOWNGRADE"));
+    }
+
+    #[test]
+    fn uninstall_runs_adb_uninstall_with_package() {
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("Success");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        ApkInstaller::uninstall(&device, "com.example.app").unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            vec!["-s", "emulator-5554", "uninstall", "com.example.app"]
+        );
+    }
+
+    #[test]
+    fn uninstall_failure_includes_raw_output() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail("DELETE_FAILED_INTERNAL_ERROR");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        let err = ApkInstaller::uninstall(&device, "com.example.app").unwrap_err();
+        assert!(err.to_string().contains("DELETE_FAILED_INTERNAL_ERROR"));
     }
 }

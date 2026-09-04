@@ -1,3 +1,4 @@
+mod apks;
 mod batch;
 mod commands;
 mod config;
@@ -25,15 +26,21 @@ pub fn run() {
                 console_lines: agent_cfg.console_lines,
                 max_body_chars: agent_cfg.max_body_chars,
             }));
+            let agent_token = bh_agent::generate_token();
+            let mut agent_server = None;
             if agent_cfg.enabled {
                 let store = agent_store.clone();
                 let bind = agent_cfg.bind.clone();
-                tauri::async_runtime::spawn(async move {
-                    let token = bh_agent::generate_token();
-                    if let Err(e) = bh_agent::serve(store, &bind, &token).await {
-                        eprintln!("agent api failed: {e}");
-                    }
-                });
+                let token = agent_token.clone();
+                match tauri::async_runtime::block_on(bh_agent::serve_with(
+                    store,
+                    &bind,
+                    &token,
+                    Some(bh_agent::discovery_path()),
+                )) {
+                    Ok(handle) => agent_server = Some(handle),
+                    Err(e) => eprintln!("agent api failed: {e}"),
+                }
             }
             let sink =
                 Arc::new(batch::BatchSink::spawn(app.handle().clone(), Some(agent_store.clone())));
@@ -43,7 +50,11 @@ pub fn run() {
                 Some(agent_store.clone()),
             ));
             app.manage(state::ConsoleState::new(console_sink));
-            app.manage(state::AgentState { store: agent_store });
+            app.manage(state::AgentState {
+                store: agent_store,
+                server: tokio::sync::Mutex::new(agent_server),
+                token: agent_token,
+            });
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -55,6 +66,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::adb_status,
+            commands::list_apks,
+            commands::download_apk,
+            commands::install_apk,
             commands::list_devices,
             commands::current_proxy,
             commands::list_avds,
@@ -92,7 +106,10 @@ pub fn run() {
             commands::agent_unpin_request,
             commands::agent_pin_log,
             commands::agent_clear_pins,
-            commands::agent_set_focus_app
+            commands::agent_set_focus_app,
+            commands::agent_set_enabled,
+            commands::agent_bridge_status,
+            commands::agent_mcp_config
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

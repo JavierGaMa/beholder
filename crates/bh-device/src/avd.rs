@@ -373,6 +373,59 @@ pub fn launch_emulator_detached(runner: &RealSdkRunner, avd_name: &str) -> Resul
     Ok(())
 }
 
+pub fn find_aapt(sdk_root: &Path) -> Option<PathBuf> {
+    let bin = if cfg!(windows) { "aapt.exe" } else { "aapt" };
+    let mut versions: Vec<(Vec<u32>, PathBuf)> = std::fs::read_dir(sdk_root.join("build-tools"))
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let version = build_tools_version(e.file_name().to_string_lossy().as_ref())?;
+            let path = e.path().join(bin);
+            path.is_file().then_some((version, path))
+        })
+        .collect();
+    versions.sort_by(|a, b| b.0.cmp(&a.0));
+    versions.into_iter().next().map(|(_, p)| p)
+}
+
+fn build_tools_version(name: &str) -> Option<Vec<u32>> {
+    let parts: Option<Vec<u32>> = name.split('.').map(|p| p.parse().ok()).collect();
+    parts.filter(|v| !v.is_empty())
+}
+
+pub fn read_apk_package(aapt: &Path, apk: &Path) -> Result<String, DeviceError> {
+    let out = Command::new(aapt)
+        .arg("dump")
+        .arg("badging")
+        .arg(apk)
+        .output()
+        .map_err(|e| DeviceError::Other(format!("aapt dump badging failed: {e}")))?;
+    if !out.status.success() {
+        return Err(DeviceError::Other(format!(
+            "aapt dump badging failed: {}{}",
+            String::from_utf8_lossy(&out.stdout).trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    parse_badging_package(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| {
+        DeviceError::Other("aapt badging output did not contain a package name".into())
+    })
+}
+
+pub fn parse_badging_package(badging: &str) -> Option<String> {
+    for line in badging.lines() {
+        let Some(rest) = line.trim().strip_prefix("package:") else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix("name='") else {
+            continue;
+        };
+        let end = rest.find('\'')?;
+        return Some(rest[..end].to_string());
+    }
+    None
+}
+
 pub fn accept_licenses(sdkmanager: &Path) -> Result<(), DeviceError> {
     let mut child = Command::new("sh")
         .arg("-c")

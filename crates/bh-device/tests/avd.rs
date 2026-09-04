@@ -1,5 +1,6 @@
 use bh_device::{
-    enrich_avds_from_config, parse_avdmanager_list, parse_device_profiles, parse_sdkmanager_images,
+    enrich_avds_from_config, find_aapt, parse_avdmanager_list, parse_badging_package,
+    parse_device_profiles, parse_sdkmanager_images,
 };
 
 const AVD_LIST: &str = "\
@@ -131,4 +132,56 @@ id: pixel_legacy || device
 ";
     let ids = parse_device_profiles(out);
     assert_eq!(ids, vec!["pixel_7", "pixel_10_pro_xl", "pixel_legacy"]);
+}
+
+const BADGING: &str = "\
+package: name='com.example.advisor' versionCode='12' versionName='1.2.3' platformBuildVersionName='14'
+sdkVersion:'26'
+targetSdkVersion:'34'
+uses-permission: name='android.permission.INTERNET'
+application-label:'Advisor'
+";
+
+#[test]
+fn badging_package_line_extracts_name() {
+    assert_eq!(
+        parse_badging_package(BADGING),
+        Some("com.example.advisor".to_string())
+    );
+}
+
+#[test]
+fn badging_without_package_line_returns_none() {
+    let out = "sdkVersion:'26'\ntargetSdkVersion:'34'\napplication-label:'Advisor'\n";
+    assert_eq!(parse_badging_package(out), None);
+}
+
+#[test]
+fn badging_package_line_without_name_returns_none() {
+    let out = "package: versionCode='12'\n";
+    assert_eq!(parse_badging_package(out), None);
+}
+
+#[test]
+fn find_aapt_prefers_highest_build_tools_version() {
+    let dir = std::env::temp_dir().join(format!("bh-aapt-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for v in ["33.0.2", "34.0.0", "not-a-version"] {
+        std::fs::create_dir_all(dir.join("build-tools").join(v)).unwrap();
+        std::fs::write(dir.join("build-tools").join(v).join("aapt"), b"").unwrap();
+    }
+    assert_eq!(
+        find_aapt(&dir),
+        Some(dir.join("build-tools").join("34.0.0").join("aapt"))
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn find_aapt_returns_none_when_build_tools_missing() {
+    let dir = std::env::temp_dir().join(format!("bh-aapt-missing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    assert_eq!(find_aapt(&dir), None);
+    std::fs::remove_dir_all(&dir).ok();
 }

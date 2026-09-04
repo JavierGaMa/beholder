@@ -3,9 +3,9 @@ use crate::state::{AppState, ConsoleState, ShellSlot};
 use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession, PtyShell, adb_shell_command};
 use bh_core::{har_to_string, to_curl, HttpExchange};
 use bh_device::{
-    accept_licenses, create_avd_with_stdin, launch_emulator_detached, AvdManager,
-    CertificateInstaller, CommandRunner, DeviceScanner, DeviceState, ProxyConfigurator,
-    RealSdkRunner, SdkTool,
+    accept_licenses, create_avd_with_stdin, find_aapt, launch_emulator_detached, read_apk_package,
+    ApkInstaller, AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState,
+    ProxyConfigurator, RealSdkRunner, SdkTool,
 };
 use std::path::Path;
 use tauri::{Emitter, Manager, State};
@@ -15,6 +15,34 @@ pub async fn adb_status() -> Result<String, String> {
     bh_device::RealRunner::discover()
         .map(|r| r.adb_path().display().to_string())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_apks() -> Result<Vec<crate::apks::ApkEntry>, String> {
+    crate::apks::list_apks().await
+}
+
+#[tauri::command]
+pub async fn download_apk(
+    app: tauri::AppHandle,
+    url: String,
+    name: String,
+) -> Result<String, String> {
+    crate::apks::download_apk(&app, &url, &name).await
+}
+
+#[tauri::command]
+pub async fn install_apk(state: State<'_, AppState>, serial: String, path: String) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
+    let package = RealSdkRunner::discover()
+        .ok()
+        .and_then(|sdk| find_aapt(sdk.sdk_root()))
+        .and_then(|aapt| read_apk_package(&aapt, Path::new(&path)).ok());
+    if let Some(package) = package {
+        let _ = ApkInstaller::uninstall(&device, &package);
+    }
+    ApkInstaller::install_apk(&device, &path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -470,6 +498,101 @@ pub fn agent_set_focus_app(
 ) -> Result<(), String> {
     agent.store.set_focus_app(package);
     Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct AgentBridgeStatus {
+    pub enabled: bool,
+    pub port: Option<u16>,
+    pub discovery_path: String,
+    pub focus_app: Option<String>,
+    pub pins_count: u64,
+}
+
+#[tauri::command]
+pub async fn agent_set_enabled(
+    app: tauri::AppHandle,
+    agent: State<'_, crate::state::AgentState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if cfg.agent.enabled != enabled {
+        let mut next = cfg.clone();
+        next.agent.enabled = enabled;
+        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+        let _ = app.emit("config-changed", &next);
+    }
+    let mut server = agent.server.lock().await;
+    if enabled {
+        if server.is_none() {
+            let handle = bh_agent::serve_with(
+                agent.store.clone(),
+                &cfg.agent.bind,
+                &agent.token,
+                Some(bh_agent::discovery_path()),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            *server = Some(handle);
+        }
+    } else {
+        if let Some(handle) = server.take() {
+            handle.shutdown().await;
+        }
+        let _ = std::fs::remove_file(bh_agent::discovery_path());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn agent_bridge_status(
+    agent: State<'_, crate::state::AgentState>,
+) -> Result<AgentBridgeStatus, String> {
+    let server = agent.server.lock().await;
+    Ok(AgentBridgeStatus {
+        enabled: server.is_some(),
+        port: server.as_ref().map(|h| h.port),
+        discovery_path: bh_agent::discovery_path().display().to_string(),
+        focus_app: agent.store.focus_app(),
+        pins_count: agent.store.pins_count() as u64,
+    })
+}
+
+fn resolve_mcp_binary() -> String {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("beholder-mcp");
+            if sibling.is_file() {
+                return sibling.display().to_string();
+            }
+            let sibling_exe = dir.join("beholder-mcp.exe");
+            if sibling_exe.is_file() {
+                return sibling_exe.display().to_string();
+            }
+        }
+    }
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    for profile in ["release", "debug"] {
+        let candidate = target.join(profile).join("beholder-mcp");
+        if candidate.is_file() {
+            return candidate
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| candidate.display().to_string());
+        }
+    }
+    "beholder-mcp".into()
+}
+
+#[tauri::command]
+pub async fn agent_mcp_config() -> Result<String, String> {
+    let snippet = serde_json::json!({
+        "mcpServers": {
+            "beholder": { "command": resolve_mcp_binary() }
+        }
+    });
+    serde_json::to_string_pretty(&snippet).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
