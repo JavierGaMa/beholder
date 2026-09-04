@@ -37,14 +37,25 @@ function hostTriple() {
   return line.slice("host:".length).trim();
 }
 
-const buildArgs = dev
-  ? ["build", "-p", "beholder-mcp"]
-  : ["build", "--release", "-p", "beholder-mcp"];
+const profile = dev ? "debug" : "release";
+const triple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple();
+const cross = triple !== hostTriple();
+const buildArgs = [
+  "build",
+  ...(dev ? [] : ["--release"]),
+  "-p",
+  "beholder-mcp",
+  ...(cross ? ["--target", triple] : []),
+];
 run("cargo", buildArgs);
 
-const profile = dev ? "debug" : "release";
-const triple = hostTriple();
-const source = join(root, "target", profile, `beholder-mcp${exeSuffix}`);
+const source = join(
+  root,
+  "target",
+  ...(cross ? [triple] : []),
+  profile,
+  `beholder-mcp${exeSuffix}`,
+);
 if (!existsSync(source)) {
   fail(`built binary not found at ${source}`);
 }
