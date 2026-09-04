@@ -10,9 +10,10 @@ import { EmptyState } from "../../components/ui/primitives";
 import { matchFilters, type Filters } from "./filters";
 import { RequestRow, RequestListHeader } from "./RequestRow";
 import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
-import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Terminal } from "lucide-react";
+import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Pin, Terminal } from "lucide-react";
 import { DetailPane } from "./DetailPane";
 import { FilterBar, type DomainChip } from "./FilterBar";
+import { togglePinned } from "./pins";
 
 export function RequestsView() {
   const exchanges = useTraffic((s) => s.exchanges);
@@ -23,6 +24,7 @@ export function RequestsView() {
   const [follow, setFollow] = useState(loadFollow);
   const [newCount, setNewCount] = useState(0);
   const [flashIds, setFlashIds] = useState<Set<number>>(new Set());
+  const [pinned, setPinned] = useState<Set<number>>(new Set());
   const [filtersCollapsed, setFiltersCollapsed] = useState(
     () => localStorage.getItem("beholder.filtersOpen") === "false",
   );
@@ -165,6 +167,15 @@ export function RequestsView() {
         onSelect: () => navigator.clipboard.writeText(ex.request.url),
       },
       {
+        label: pinned.has(ex.id) ? "Unpin for agent" : "Pin for agent",
+        icon: Pin,
+        onSelect: () => {
+          const wasPinned = pinned.has(ex.id);
+          setPinned(togglePinned(pinned, ex.id));
+          void invoke(wasPinned ? "agent_unpin_request" : "agent_pin_request", { id: ex.id });
+        },
+      },
+      {
         label: "Copy as cURL",
         icon: Terminal,
         onSelect: async () => {
@@ -284,6 +295,7 @@ export function RequestsView() {
                         ex={ex}
                         selected={ex.id === selected}
                         flash={flashIds.has(ex.id)}
+                        pinned={pinned.has(ex.id)}
                         slowMs={slowMs}
                         hideDomain={hideDomain}
                         onSelect={() => setSelected(ex.id)}

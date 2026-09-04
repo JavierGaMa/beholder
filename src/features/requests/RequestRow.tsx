@@ -15,6 +15,7 @@ export function RequestRow({
   ex,
   selected,
   flash,
+  pinned,
   slowMs,
   hideDomain,
   onSelect,
@@ -24,6 +25,7 @@ export function RequestRow({
   ex: HttpExchange;
   selected: boolean;
   flash: boolean;
+  pinned?: boolean;
   slowMs: number;
   hideDomain: boolean;
   onSelect: () => void;
@@ -47,8 +49,14 @@ export function RequestRow({
         failed && !selected && "shadow-[inset_3px_0_0_0_var(--danger)]",
       )}
     >
-      <span className={clsx("w-14 shrink-0 text-[11px] font-bold tracking-wide", methodClass(ex.request.method))}>
+      <span
+        className={clsx(
+          "flex w-14 shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide",
+          methodClass(ex.request.method),
+        )}
+      >
         {ex.request.method}
+        {pinned && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
       </span>
       <span className="min-w-0 flex-1 truncate">
         {hideDomain ? (

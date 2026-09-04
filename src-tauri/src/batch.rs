@@ -1,4 +1,5 @@
 use bh_core::{TrafficEvent, TrafficSink};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -7,7 +8,7 @@ pub struct BatchSink {
 }
 
 impl BatchSink {
-    pub fn spawn(app: AppHandle) -> Self {
+    pub fn spawn(app: AppHandle, agent: Option<Arc<bh_agent::AgentStore>>) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrafficEvent>();
         tauri::async_runtime::spawn(async move {
             let mut buffer: Vec<TrafficEvent> = vec![];
@@ -16,7 +17,12 @@ impl BatchSink {
                 tokio::select! {
                     maybe = rx.recv() => {
                         match maybe {
-                            Some(e) => buffer.push(e),
+                            Some(e) => {
+                                if let Some(a) = agent.as_ref() {
+                                    a.ingest_traffic(&e);
+                                }
+                                buffer.push(e)
+                            }
                             None => {
                                 if !buffer.is_empty() {
                                     let _ = app.emit("traffic-batch", &buffer);

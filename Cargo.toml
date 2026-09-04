@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/bh-core", "crates/bh-ca", "crates/bh-device", "crates/bh-proxy", "crates/bh-console"]
+members = ["src-tauri", "crates/bh-core", "crates/bh-ca", "crates/bh-device", "crates/bh-proxy", "crates/bh-console", "crates/bh-agent", "crates/beholder-mcp"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -12,5 +12,6 @@ bh-ca = { path = "crates/bh-ca" }
 bh-device = { path = "crates/bh-device" }
 bh-proxy = { path = "crates/bh-proxy" }
 bh-console = { path = "crates/bh-console" }
+bh-agent = { path = "crates/bh-agent" }
 portable-pty = "0.8"
 base64 = "0.22"

@@ -32,7 +32,7 @@ import { EmptyState } from "../../components/ui/primitives";
 import { toast } from "../../components/ui/toast";
 import { isLogLine, type AppProcess, type ConsoleColumns, type LogLevel, type LogStatus, type PaneMode } from "../../store/console-types";
 import { buildExportText, buildRows, computeLineStats, filterEntries } from "./rows";
-import { resolveAppFilter } from "./appfilter";
+import { resolveAppFilter, syncFocusApp } from "./appfilter";
 import { LogRow } from "./LogRow";
 import { CrashCard } from "./CrashCard";
 
@@ -166,6 +166,7 @@ export function ConsoleView() {
     setAppMenuOpen(false);
     appMissedRef.current = 0;
     setAppFilter(app ? { package: app.package, pid: app.pid } : null);
+    syncFocusApp(app ? app.package : null);
   }
 
   useEffect(() => {
@@ -630,7 +631,12 @@ export function ConsoleView() {
                         {row.kind === "line" && row.line.is_crash ? (
                           <CrashCard line={row.line} repeatCount={row.repeatCount} onCopy={onCopyLine} />
                         ) : (
-                          <LogRow row={row} cols={columns} onCopy={onCopyLine} />
+                          <LogRow
+                            row={row}
+                            cols={columns}
+                            onCopy={onCopyLine}
+                            onPin={(line) => void invoke("agent_pin_log", { line })}
+                          />
                         )}
                       </div>
                     );

@@ -30,3 +30,5 @@ src-tauri/gen/schemas
 # Docs build output
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+.atl/*

@@ -47,6 +47,48 @@ impl Default for ConsoleConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentConfig {
+    #[serde(default = "default_agent_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_agent_bind")]
+    pub bind: String,
+    #[serde(default = "default_max_body_chars")]
+    pub max_body_chars: usize,
+    #[serde(default = "default_ring_requests")]
+    pub ring_requests: usize,
+    #[serde(default = "default_console_lines")]
+    pub console_lines: usize,
+}
+
+fn default_agent_enabled() -> bool {
+    true
+}
+fn default_agent_bind() -> String {
+    "127.0.0.1:0".into()
+}
+fn default_max_body_chars() -> usize {
+    2048
+}
+fn default_ring_requests() -> usize {
+    5000
+}
+fn default_console_lines() -> usize {
+    200
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        AgentConfig {
+            enabled: default_agent_enabled(),
+            bind: default_agent_bind(),
+            max_body_chars: default_max_body_chars(),
+            ring_requests: default_ring_requests(),
+            console_lines: default_console_lines(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -64,6 +106,8 @@ pub struct UiConfig {
     pub colors: ColorOverrides,
     #[serde(default)]
     pub console: ConsoleConfig,
+    #[serde(default)]
+    pub agent: AgentConfig,
 }
 
 fn default_theme() -> String {
@@ -93,6 +137,7 @@ impl Default for UiConfig {
             mono_font_family: None,
             colors: ColorOverrides::default(),
             console: ConsoleConfig::default(),
+            agent: AgentConfig::default(),
         }
     }
 }
@@ -193,6 +238,19 @@ mod tests {
         assert_eq!(loaded.console.ring_lines, 10000);
         assert!(!loaded.console.show_tid);
         assert_eq!(loaded.console.default_buffer, "main");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn agent_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-agent-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.agent, AgentConfig::default());
+        assert!(loaded.agent.enabled);
+        assert_eq!(loaded.agent.bind, "127.0.0.1:0");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

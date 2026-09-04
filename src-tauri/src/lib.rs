@@ -13,10 +13,37 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let sink = Arc::new(batch::BatchSink::spawn(app.handle().clone()));
+            let agent_cfg = app
+                .path()
+                .app_local_data_dir()
+                .ok()
+                .and_then(|dir| config::load(&dir).ok())
+                .map(|c| c.agent)
+                .unwrap_or_default();
+            let agent_store = Arc::new(bh_agent::AgentStore::new(bh_agent::AgentLimits {
+                ring_requests: agent_cfg.ring_requests,
+                console_lines: agent_cfg.console_lines,
+                max_body_chars: agent_cfg.max_body_chars,
+            }));
+            if agent_cfg.enabled {
+                let store = agent_store.clone();
+                let bind = agent_cfg.bind.clone();
+                tauri::async_runtime::spawn(async move {
+                    let token = bh_agent::generate_token();
+                    if let Err(e) = bh_agent::serve(store, &bind, &token).await {
+                        eprintln!("agent api failed: {e}");
+                    }
+                });
+            }
+            let sink =
+                Arc::new(batch::BatchSink::spawn(app.handle().clone(), Some(agent_store.clone())));
             app.manage(state::AppState::new(sink));
-            let console_sink = Arc::new(console::ConsoleBatchSink::spawn(app.handle().clone()));
+            let console_sink = Arc::new(console::ConsoleBatchSink::spawn(
+                app.handle().clone(),
+                Some(agent_store.clone()),
+            ));
             app.manage(state::ConsoleState::new(console_sink));
+            app.manage(state::AgentState { store: agent_store });
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -60,7 +87,12 @@ pub fn run() {
             commands::console_shell_start,
             commands::console_shell_stop,
             commands::console_shell_input,
-            commands::console_shell_resize
+            commands::console_shell_resize,
+            commands::agent_pin_request,
+            commands::agent_unpin_request,
+            commands::agent_pin_log,
+            commands::agent_clear_pins,
+            commands::agent_set_focus_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

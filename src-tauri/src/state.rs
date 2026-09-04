@@ -56,3 +56,7 @@ impl ConsoleState {
         }
     }
 }
+
+pub struct AgentState {
+    pub store: Arc<bh_agent::AgentStore>,
+}

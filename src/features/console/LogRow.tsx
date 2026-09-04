@@ -1,6 +1,7 @@
 import { memo } from "react";
 import clsx from "clsx";
-import type { ConsoleColumns, LogLevel } from "../../store/console-types";
+import { Pin } from "lucide-react";
+import type { ConsoleColumns, LogLine, LogLevel } from "../../store/console-types";
 import { enrich, type TokenType } from "./logEnrich";
 import { formatLogLine, timeOf, type Row } from "./rows";
 
@@ -39,10 +40,12 @@ export const LogRow = memo(function LogRow({
   row,
   cols,
   onCopy,
+  onPin,
 }: {
   row: Row;
   cols: ConsoleColumns;
   onCopy?: (text: string) => void;
+  onPin?: (line: LogLine) => void;
 }) {
   if (row.kind === "gap") {
     return (
@@ -64,7 +67,7 @@ export const LogRow = memo(function LogRow({
       onClick={handleClick}
       title={allCols ? undefined : formatLogLine(line)}
       className={clsx(
-        "flex cursor-default items-start gap-2 border-b border-line/40 px-3 py-0.5 font-mono text-[length:var(--mono-size,12px)] leading-5",
+        "group flex cursor-default items-start gap-2 border-b border-line/40 px-3 py-0.5 font-mono text-[length:var(--mono-size,12px)] leading-5",
         line.is_crash ? "bg-danger/10" : "hover:bg-surface/60",
       )}
     >
@@ -99,6 +102,19 @@ export const LogRow = memo(function LogRow({
           </span>
         )}
       </span>
+      {onPin && (
+        <button
+          type="button"
+          title="Pin for agent"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPin(line);
+          }}
+          className="shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
+        >
+          <Pin size={11} />
+        </button>
+      )}
     </div>
   );
 });

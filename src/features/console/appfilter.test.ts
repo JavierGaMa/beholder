@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { resolveAppFilter } from "./appfilter";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveAppFilter, syncFocusApp } from "./appfilter";
 import type { AppProcess } from "../../store/console-types";
+import { invoke } from "../../lib/tauri";
+
+vi.mock("../../lib/tauri", () => ({
+  isTauri: false,
+  invoke: vi.fn(async () => undefined),
+}));
 
 function apps(entries: Array<[string, number | null]>): AppProcess[] {
   return entries.map(([pkg, pid]) => ({ package: pkg, pid }));
@@ -56,5 +62,21 @@ describe("resolveAppFilter", () => {
     expect(first).toEqual({ action: "keep", missed: 1 });
     const second = resolveAppFilter({ package: "com.gone", pid: 100, missed: 1 }, apps([["com.other", 7]]));
     expect(second).toEqual({ action: "clear", missed: 0 });
+  });
+});
+
+describe("syncFocusApp", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("syncs the selected app package", () => {
+    syncFocusApp("com.x");
+    expect(invoke).toHaveBeenCalledWith("agent_set_focus_app", { package: "com.x" });
+  });
+
+  it("clears the focus app when null", () => {
+    syncFocusApp(null);
+    expect(invoke).toHaveBeenCalledWith("agent_set_focus_app", { package: null });
   });
 });

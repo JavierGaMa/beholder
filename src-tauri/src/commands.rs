@@ -401,13 +401,22 @@ pub async fn capture_start(
     device
         .set_proxy("10.0.2.2", port)
         .map_err(|e| e.to_string())?;
-    *state.active_serial.lock().await = Some(serial);
+    *state.active_serial.lock().await = Some(serial.clone());
+    if let Some(agent) = app.try_state::<crate::state::AgentState>() {
+        agent
+            .store
+            .set_target(Some(serial.clone()), emu_avd_name(&runner, &serial));
+        agent.store.set_capture(true);
+    }
     state.proxy.lock().await.replace(handle);
     Ok(port)
 }
 
 #[tauri::command]
-pub async fn capture_stop(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn capture_stop(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
     if let Some(handle) = state.proxy.lock().await.take() {
         handle.stop().await;
     }
@@ -418,6 +427,48 @@ pub async fn capture_stop(state: State<'_, AppState>) -> Result<(), String> {
             let _ = ProxyConfigurator::clear_proxy(&device);
         }
     }
+    if let Some(agent) = app.try_state::<crate::state::AgentState>() {
+        agent.store.set_capture(false);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_pin_request(agent: State<'_, crate::state::AgentState>, id: u64) -> Result<(), String> {
+    agent.store.pin_request(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_unpin_request(
+    agent: State<'_, crate::state::AgentState>,
+    id: u64,
+) -> Result<(), String> {
+    agent.store.unpin_request(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_pin_log(
+    agent: State<'_, crate::state::AgentState>,
+    line: bh_console::LogLine,
+) -> Result<(), String> {
+    agent.store.pin_log(line);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_clear_pins(agent: State<'_, crate::state::AgentState>) -> Result<(), String> {
+    agent.store.clear_pins();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_set_focus_app(
+    agent: State<'_, crate::state::AgentState>,
+    package: Option<String>,
+) -> Result<(), String> {
+    agent.store.set_focus_app(package);
     Ok(())
 }
 
@@ -667,7 +718,7 @@ pub fn export_bruno_folder(
 
 #[tauri::command]
 pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    capture_stop(state.clone()).await?;
+    capture_stop(state.clone(), app.clone()).await?;
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     if let Ok(ca) = bh_ca::load_or_create(&dir) {

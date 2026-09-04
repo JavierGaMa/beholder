@@ -1,4 +1,9 @@
 import type { AppProcess } from "../../store/console-types";
+import { invoke } from "../../lib/tauri";
+
+export function syncFocusApp(pkg: string | null): void {
+  void invoke("agent_set_focus_app", { package: pkg });
+}
 
 export interface AppFilterSnapshot {
   package: string;
