@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { ChevronDown, CircleDot, MonitorSmartphone, Plus, Settings, Square, Play } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import type { AvdInfo } from "../../store/types";
+import { useDevices } from "../../store/devices";
 import { isFailed } from "../requests/filters";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
@@ -20,8 +21,9 @@ export function CommandBar() {
   const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
 
-  const [avds, setAvds] = useState<AvdInfo[]>([]);
-  const [adbError, setAdbError] = useState<string | null>(null);
+  const avds = useDevices((s) => s.avds);
+  const adbError = useDevices((s) => s.error);
+  const refreshAvds = useDevices((s) => s.refresh);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,32 +34,22 @@ export function CommandBar() {
     [order, exchanges],
   );
 
-  async function loadAvds() {
-    try {
-      const list = await invoke<AvdInfo[]>("list_avds");
-      setAvds(list);
-      setAdbError(null);
-    } catch (e) {
-      setAdbError(String(e));
-    }
-  }
-
   useEffect(() => {
-    loadAvds();
+    void refreshAvds();
     if (isTauri) {
       invoke("clear_stale_proxies").catch(() => {});
     }
-  }, []);
+  }, [refreshAvds]);
 
   useEffect(() => {
     if (!open) return;
-    loadAvds();
+    void refreshAvds();
     function onClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     window.addEventListener("mousedown", onClickOutside);
     return () => window.removeEventListener("mousedown", onClickOutside);
-  }, [open]);
+  }, [open, refreshAvds]);
 
   const running = avds.filter((a) => a.running);
   const stopped = avds.filter((a) => !a.running);

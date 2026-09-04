@@ -80,3 +80,15 @@ export interface SystemImage {
   abi: string;
   installed: boolean;
 }
+
+export interface ApkEntry {
+  name: string;
+  url: string;
+  version: string | null;
+  env: string | null;
+  build: number | null;
+  flavor: string | null;
+  date: string | null;
+  size_bytes: number;
+  last_modified: string;
+}

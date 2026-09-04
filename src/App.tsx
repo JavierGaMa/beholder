@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import clsx from "clsx";
-import { MonitorSmartphone, Radio, SquareTerminal, Waves, X } from "lucide-react";
+import { MonitorSmartphone, Package, Radio, SquareTerminal, Waves, X } from "lucide-react";
 import { useTraffic, type View } from "./store/traffic";
 import { useConsole } from "./store/console";
 import type { ConsoleEvent } from "./store/console-types";
@@ -12,6 +12,7 @@ import { CommandBar } from "./features/capture/CommandBar";
 import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
+import { ApksView } from "./features/apks/ApksView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
@@ -21,6 +22,7 @@ const RAIL: { id: View; label: string; icon: typeof Radio }[] = [
   { id: "requests", label: "Requests", icon: Radio },
   { id: "websockets", label: "WebSockets", icon: Waves },
   { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
+  { id: "apks", label: "APKs", icon: Package },
   { id: "console", label: "Console", icon: SquareTerminal },
 ];
 
@@ -91,6 +93,7 @@ export default function App() {
         {activeView === "requests" && <RequestsView />}
         {activeView === "websockets" && <WebSocketsView />}
         {activeView === "emulators" && <EmulatorsView />}
+        {activeView === "apks" && <ApksView />}
         {activeView === "console" && <ConsoleView />}
       </main>
       <nav className="flex shrink-0 items-center justify-center gap-1 border-t border-line bg-surface px-4 py-1.5">

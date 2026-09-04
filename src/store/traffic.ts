@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 import type { UiConfig } from "../lib/theme/config-types";
 
-export type View = "requests" | "websockets" | "emulators" | "console";
+export type View = "requests" | "websockets" | "emulators" | "apks" | "console";
 
 export interface OnboardingTarget {
   avdName: string;
