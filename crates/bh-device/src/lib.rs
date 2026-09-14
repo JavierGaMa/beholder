@@ -1,5 +1,7 @@
 pub mod avd;
 pub mod doctor;
+pub mod host_bootstrap;
+pub mod host_doctor;
 pub mod runner;
 pub mod types;
 

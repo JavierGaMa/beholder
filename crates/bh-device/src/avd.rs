@@ -22,6 +22,7 @@ pub struct RealSdkRunner {
     emulator: PathBuf,
     avdmanager: PathBuf,
     sdkmanager: PathBuf,
+    java_home: Option<PathBuf>,
 }
 
 fn home_sdk_root() -> Option<PathBuf> {
@@ -72,16 +73,22 @@ impl RealSdkRunner {
                 "emulator binary not found in SDK".into(),
             ));
         }
+        let java_home = crate::host_doctor::HostPaths::detect().java_home();
         Ok(RealSdkRunner {
             sdk_root: root,
             emulator,
             avdmanager,
             sdkmanager,
+            java_home,
         })
     }
 
     pub fn sdk_root(&self) -> &Path {
         &self.sdk_root
+    }
+
+    pub fn java_home(&self) -> Option<&Path> {
+        self.java_home.as_deref()
     }
 
     pub fn tool_path(&self, tool: SdkTool) -> &PathBuf {
@@ -95,7 +102,11 @@ impl RealSdkRunner {
 
 impl SdkToolRunner for RealSdkRunner {
     fn run(&self, tool: SdkTool, args: &[&str]) -> Result<Output, DeviceError> {
-        let out = Command::new(self.tool_path(tool))
+        let mut cmd = Command::new(self.tool_path(tool));
+        if let Some(jh) = &self.java_home {
+            cmd.env("JAVA_HOME", jh);
+        }
+        let out = cmd
             .args(args)
             .output()
             .map_err(|e| DeviceError::Other(e.to_string()))?;
@@ -435,10 +446,14 @@ pub fn parse_badging_package(badging: &str) -> Option<String> {
     None
 }
 
-pub fn accept_licenses(sdkmanager: &Path) -> Result<(), DeviceError> {
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(format!("yes | '{}' --licenses", sdkmanager.display()))
+pub fn accept_licenses(sdkmanager: &Path, java_home: Option<&Path>) -> Result<(), DeviceError> {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c")
+        .arg(format!("yes | '{}' --licenses", sdkmanager.display()));
+    if let Some(jh) = java_home {
+        cmd.env("JAVA_HOME", jh);
+    }
+    let mut child = cmd
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -449,17 +464,22 @@ pub fn accept_licenses(sdkmanager: &Path) -> Result<(), DeviceError> {
 
 pub fn create_avd_with_stdin(
     avdmanager: &Path,
+    java_home: Option<&Path>,
     name: &str,
     image_pkg: &str,
     profile: &str,
 ) -> Result<(), DeviceError> {
-    let mut child = Command::new(avdmanager)
-        .args([
-            "create", "avd", "-n", name, "-k", image_pkg, "-d", profile, "--force",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+    let mut cmd = Command::new(avdmanager);
+    cmd.args([
+        "create", "avd", "-n", name, "-k", image_pkg, "-d", profile, "--force",
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    if let Some(jh) = java_home {
+        cmd.env("JAVA_HOME", jh);
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|e| DeviceError::Other(e.to_string()))?;
     if let Some(stdin) = child.stdin.as_mut() {
@@ -524,6 +544,18 @@ pub fn ensure_hw_keyboard(config_path: &Path) -> Result<(), DeviceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn java_env_is_injected_into_spawned_commands() {
+        use std::ffi::OsStr;
+        let mut cmd = std::process::Command::new("true");
+        if let Some(jh) = Some(Path::new("/opt/jbr")) {
+            cmd.env("JAVA_HOME", jh);
+        }
+        assert!(cmd
+            .get_envs()
+            .any(|(k, v)| k == "JAVA_HOME" && v == Some(OsStr::new("/opt/jbr"))));
+    }
 
     #[test]
     fn emulator_launch_args_contains_avd_flag_then_name() {

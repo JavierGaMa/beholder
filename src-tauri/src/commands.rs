@@ -209,18 +209,28 @@ pub async fn list_device_profiles() -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
-async fn stream_process<F>(bin: &Path, args: &[&str], on_line: F) -> Result<(bool, String), String>
+async fn stream_process<F>(
+    bin: &Path,
+    args: &[&str],
+    envs: &[(&str, String)],
+    on_line: F,
+) -> Result<(bool, String), String>
 where
     F: Fn(&str) + Send + Sync + 'static,
 {
     use tokio::io::AsyncReadExt;
 
-    let mut child = tokio::process::Command::new(bin)
+    let mut child = tokio::process::Command::new(bin);
+    child
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    for (k, v) in envs {
+        child.env(k, v);
+    }
+    let mut child = child
         .spawn()
         .map_err(|e| e.to_string())?;
 
@@ -290,9 +300,14 @@ async fn run_sdkmanager_streaming(
     app: &tauri::AppHandle,
     bin: &Path,
     args: &[&str],
+    java_home: Option<&Path>,
 ) -> Result<bool, String> {
     let app_out = app.clone();
-    let (ok, stderr) = stream_process(bin, args, move |line: &str| {
+    let envs: Vec<(&str, String)> = match java_home {
+        Some(p) => vec![("JAVA_HOME", p.display().to_string())],
+        None => vec![],
+    };
+    let (ok, stderr) = stream_process(bin, args, &envs, move |line: &str| {
         let _ = app_out.emit("install-log", line.to_string());
     })
     .await?;
@@ -314,12 +329,13 @@ async fn run_sdkmanager_streaming(
 pub async fn install_image(app: tauri::AppHandle, pkg: String) -> Result<(), String> {
     let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
     let sdkmanager = sdk.tool_path(SdkTool::SdkManager).to_path_buf();
+    let java_home = sdk.java_home().map(|p| p.to_path_buf());
     let _ = app.emit(
         "install-log",
         format!("installing {} (this can take a while)...", pkg),
     );
 
-    match run_sdkmanager_streaming(&app, &sdkmanager, &[&pkg]).await {
+    match run_sdkmanager_streaming(&app, &sdkmanager, &[&pkg], java_home.as_deref()).await {
         Ok(true) => {
             let _ = app.emit("install-log", "done".to_string());
             Ok(())
@@ -327,11 +343,14 @@ pub async fn install_image(app: tauri::AppHandle, pkg: String) -> Result<(), Str
         Ok(false) => {
             let _ = app.emit("install-log", "accepting sdk licenses...");
             let licenses_bin = sdkmanager.clone();
-            tokio::task::spawn_blocking(move || accept_licenses(&licenses_bin))
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
-            match run_sdkmanager_streaming(&app, &sdkmanager, &[&pkg]).await {
+            let licenses_java = java_home.clone();
+            tokio::task::spawn_blocking(move || {
+                accept_licenses(&licenses_bin, licenses_java.as_deref())
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+            match run_sdkmanager_streaming(&app, &sdkmanager, &[&pkg], java_home.as_deref()).await {
                 Ok(true) => {
                     let _ = app.emit("install-log", "done".to_string());
                     Ok(())
@@ -348,8 +367,14 @@ pub async fn install_image(app: tauri::AppHandle, pkg: String) -> Result<(), Str
 pub async fn create_avd(name: String, pkg: String, profile: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-        create_avd_with_stdin(sdk.tool_path(SdkTool::AvdManager), &name, &pkg, &profile)
-            .map_err(|e| e.to_string())
+        create_avd_with_stdin(
+            sdk.tool_path(SdkTool::AvdManager),
+            sdk.java_home(),
+            &name,
+            &pkg,
+            &profile,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -942,6 +967,74 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
     Ok(())
 }
 
+#[tauri::command]
+pub async fn run_host_doctor() -> Result<Vec<bh_device::host_doctor::HostCheck>, String> {
+    tokio::task::spawn_blocking(|| {
+        let paths = bh_device::host_doctor::HostPaths::detect();
+        Ok(bh_device::host_doctor::run_checks(&paths))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn apply_host_fix(app: tauri::AppHandle, fix: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let paths = bh_device::host_doctor::HostPaths::detect();
+        let runner = bh_device::host_bootstrap::RealHostRunner;
+        let cache = std::env::temp_dir().join("beholder-setup");
+        let mut log = |line: &str| {
+            let _ = app.emit("install-log", line.to_string());
+        };
+        let result = match fix.as_str() {
+            "install_android_studio" => bh_device::host_bootstrap::install_studio(
+                &runner,
+                &paths.studio_app,
+                &cache,
+                &mut log,
+            ),
+            "init_sdk_dir" => std::fs::create_dir_all(&paths.sdk_root)
+                .map_err(|e| bh_device::DeviceError::Other(e.to_string())),
+            "install_cmdline_tools" => bh_device::host_bootstrap::install_cmdline_tools(
+                &runner,
+                &paths.sdk_root,
+                &cache,
+                &mut log,
+            ),
+            "install_sdk_packages" => {
+                let java = paths.java_home();
+                bh_device::host_bootstrap::install_sdk_packages(
+                    &runner,
+                    &paths.sdk_root,
+                    java.as_deref(),
+                    &mut log,
+                )
+            }
+            "write_shell_env" => {
+                let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+                bh_device::host_bootstrap::write_shell_env(
+                    &std::path::Path::new(&home).join(".zshrc"),
+                    &paths.sdk_root,
+                )
+            }
+            other => Err(bh_device::DeviceError::Other(format!("unknown fix: {other}"))),
+        };
+        result.map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn preview_shell_env() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        let paths = bh_device::host_doctor::HostPaths::detect();
+        Ok(bh_device::host_bootstrap::shell_env_lines(&paths.sdk_root))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::stream_process;
@@ -955,6 +1048,7 @@ mod tests {
         let (ok, _stderr) = stream_process(
             std::path::Path::new("/bin/sh"),
             &["-c", "printf 'downloading 10%%\\rdownloading 50%%\\rwarning to stderr\\n' ; echo 'err line' >&2 ; exit 0"],
+            &[],
             sink,
         )
         .await
@@ -972,6 +1066,7 @@ mod tests {
         let (_ok, stderr) = stream_process(
             std::path::Path::new("/bin/sh"),
             &["-c", "echo 'license not accepted' >&2 ; exit 1"],
+            &[],
             |_| {},
         )
         .await
