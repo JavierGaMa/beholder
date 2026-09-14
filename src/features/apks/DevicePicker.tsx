@@ -9,7 +9,9 @@ import {
   Smartphone,
 } from "lucide-react";
 import { invoke } from "../../lib/tauri";
-import { useDevices } from "../../store/devices";
+import { qError } from "../../lib/query";
+import { useAdbDevicesQuery, useInvalidateDevices } from "../../queries/devices";
+import { useAvdsQuery } from "../../queries/emulators";
 import {
   applyBootEvent,
   buildDeviceOptions,
@@ -36,12 +38,14 @@ export function DevicePicker({
   serial: string;
   onSelect: (serial: string) => void;
 }) {
-  const devices = useDevices((s) => s.devices);
-  const avds = useDevices((s) => s.avds);
-  const status = useDevices((s) => s.status);
-  const error = useDevices((s) => s.error);
-  const refreshing = useDevices((s) => s.refreshing);
-  const refresh = useDevices((s) => s.refresh);
+  const devicesQ = useAdbDevicesQuery();
+  const avdsQ = useAvdsQuery();
+  const refresh = useInvalidateDevices();
+  const devices = devicesQ.data ?? [];
+  const avds = avdsQ.data ?? [];
+  const loading = devicesQ.isPending || avdsQ.isPending;
+  const error = qError(devicesQ.error) ?? qError(avdsQ.error);
+  const refreshing = (devicesQ.isFetching || avdsQ.isFetching) && !loading;
 
   const [boot, setBoot] = useState<BootState>({ phase: "idle" });
   const [open, setOpen] = useState(false);
@@ -58,7 +62,6 @@ export function DevicePicker({
     window.addEventListener("mousedown", onClickOutside);
     return () => window.removeEventListener("mousedown", onClickOutside);
   }, [open, refresh]);
-
   const running = options.filter((o): o is RunningDeviceOption => o.kind === "device");
   const stopped = options.filter((o): o is StoppedAvdOption => o.kind === "avd");
   const firstRunningId = running[0]?.id ?? "";
@@ -89,7 +92,7 @@ export function DevicePicker({
       }
       await invoke("wait_booted", { serial: resolved });
       setBoot((cur) => applyBootEvent(cur, { type: "reset" }));
-      await refresh(true);
+      await refresh();
       onSelect(resolved);
       setOpen(false);
     } catch (e) {
@@ -123,12 +126,12 @@ export function DevicePicker({
           {error && (
             <p className="px-2 py-2 text-[11px] leading-relaxed text-danger">{error}</p>
           )}
-          {status === "loading" && options.length === 0 && (
+          {loading && options.length === 0 && (
             <p className="flex items-center gap-2 px-2 py-2 text-[11px] text-muted">
               <Loader2 size={12} className="animate-spin" /> Searching for devices…
             </p>
           )}
-          {status !== "loading" && !error && options.length === 0 && (
+          {!loading && !error && options.length === 0 && (
             <p className="px-2 py-2 text-[11px] text-muted">No devices or emulators found.</p>
           )}
           {running.length > 0 && (
@@ -168,7 +171,7 @@ export function DevicePicker({
           )}
           <button
             type="button"
-            onClick={() => void refresh(true)}
+            onClick={() => void refresh()}
             disabled={refreshing}
             className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-muted hover:bg-surface disabled:opacity-40"
           >

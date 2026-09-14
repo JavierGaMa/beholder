@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, CircleCheck, Loader2 } from "lucide-react";
 import { invoke } from "../../lib/tauri";
-import { errorText } from "../../store/cached";
+import { qError } from "../../lib/query";
 import { toast } from "../../components/ui/toast";
 import {
   applyApksTestResult,
@@ -28,7 +28,7 @@ export function ApksOnboarding({ onSaved }: { onSaved: () => void }) {
     try {
       result = await invoke<ApksTestResult>("test_apks_list_url", { listUrl: url });
     } catch (e) {
-      result = { ok: false, error: errorText(e) };
+      result = { ok: false, error: qError(e) ?? String(e) };
     }
     setTest((cur) => applyApksTestResult(cur, trimmed, result));
   }
@@ -39,7 +39,7 @@ export function ApksOnboarding({ onSaved }: { onSaved: () => void }) {
       await invoke("set_apks_config", { listUrl: url });
       onSaved();
     } catch (e) {
-      toast(errorText(e), "danger");
+      toast(qError(e) ?? String(e), "danger");
       setSaving(false);
     }
   }

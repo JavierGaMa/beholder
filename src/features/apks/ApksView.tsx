@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { AlertCircle, CircleCheck, Download, Loader2, RefreshCw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
+import { qError } from "../../lib/query";
+import { useApksQuery } from "../../queries/apks";
 import type { ApkEntry } from "./apksFormat";
 import { Badge, EmptyState, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
-import { useApks } from "../../store/apks";
 import { useTraffic } from "../../store/traffic";
 import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
 import { downloadPct, filterApks, formatBytes, type EnvFilter } from "./apksFormat";
@@ -38,28 +39,23 @@ function apkMeta(apk: ApkEntry): string {
 }
 
 export function ApksView() {
-  const entries = useApks((s) => s.entries);
-  const status = useApks((s) => s.status);
-  const error = useApks((s) => s.error);
-  const refreshing = useApks((s) => s.refreshing);
-  const refresh = useApks((s) => s.refresh);
-  const setConfigured = useApks((s) => s.setConfigured);
   const listUrl = useTraffic(
     (s) => s.uiConfig?.apks?.list_url ?? DEFAULT_CONFIG.apks?.list_url ?? "",
   );
   const configured = listUrl.trim() !== "";
+  const apksQ = useApksQuery(listUrl, configured);
+  const entries = apksQ.data ?? [];
+  const status = apksQ.isPending && configured ? "loading" : apksQ.error != null ? "error" : "ready";
+  const error = qError(apksQ.error);
+  const refreshing = apksQ.isFetching && !apksQ.isPending;
   const [serial, setSerial] = useState("");
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
   const [rows, setRows] = useState<Record<string, Phase>>({});
 
-  useEffect(() => {
-    setConfigured(configured);
-  }, [configured, setConfigured]);
-
-  useEffect(() => {
-    if (configured) void refresh();
-  }, [configured, refresh]);
+  async function refresh() {
+    await apksQ.refetch();
+  }
 
   useEffect(() => {
     if (!isTauri) return;
@@ -120,7 +116,7 @@ export function ApksView() {
     return (
       <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
         <h1 className="text-sm font-semibold text-txt">APKs</h1>
-        <ApksOnboarding onSaved={() => void refresh(true)} />
+        <ApksOnboarding onSaved={() => void refresh()} />
       </div>
     );
   }
@@ -155,7 +151,7 @@ export function ApksView() {
           <DevicePicker serial={serial} onSelect={setSerial} />
           <button
             type="button"
-            onClick={() => void refresh(true)}
+            onClick={() => void refresh()}
             disabled={refreshing}
             title="Refetch the build list"
             className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-[12px] text-muted hover:text-txt disabled:opacity-40"
@@ -169,7 +165,7 @@ export function ApksView() {
             <ErrorBox message={error} compact className="flex-1" />
             <button
               type="button"
-              onClick={() => void refresh(true)}
+              onClick={() => void refresh()}
               className="h-7 shrink-0 rounded-md border border-line px-2 text-[11px] font-medium text-muted hover:text-txt"
             >
               Retry
