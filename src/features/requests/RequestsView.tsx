@@ -89,6 +89,15 @@ export function RequestsView() {
     useTraffic.getState().setPendingSelectId(null);
   }, [pendingSelectId, rows, virtualizer]);
 
+  useEffect(() => {
+    if (order.length > 0) return;
+    setSelected(null);
+    setCtxMenu(null);
+    setPinned(new Set());
+    setFlashIds(new Set());
+    setNewCount(0);
+  }, [order.length]);
+
   const delta = order.length - prevOrderLen.current;
   const newIds = delta > 0 ? order.slice(prevOrderLen.current) : [];
   prevOrderLen.current = order.length;
