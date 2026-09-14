@@ -26,6 +26,7 @@ import { ApksView } from "./features/apks/ApksView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
+import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Toaster } from "./components/ui/toast";
 
@@ -55,6 +56,8 @@ export default function App() {
   const ingest = useTraffic((s) => s.ingest);
   const settingsOpen = useTraffic((s) => s.settingsOpen);
   const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
+  const setupOpen = useTraffic((s) => s.setupOpen);
+  const setSetupOpen = useTraffic((s) => s.setSetupOpen);
   const onboarding = useTraffic((s) => s.onboarding);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
@@ -69,6 +72,13 @@ export default function App() {
         .then((c) => {
           useTraffic.getState().setUiConfig(c);
           applyUiConfig(c);
+        })
+        .catch(() => {});
+      invoke<{ status: string }[]>("run_host_doctor")
+        .then((checks) => {
+          if (checks.some((c) => c.status === "fail")) {
+            useTraffic.getState().setSetupOpen(true);
+          }
         })
         .catch(() => {});
     }
@@ -225,6 +235,17 @@ export default function App() {
       </div>
 
       <Toaster />
+
+      {setupOpen && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+          onClick={() => setSetupOpen(false)}
+        >
+          <div className="w-[560px] max-w-full" onClick={(e) => e.stopPropagation()}>
+            <SetupView onClose={() => setSetupOpen(false)} />
+          </div>
+        </div>
+      )}
 
       {settingsOpen && (
         <div className="absolute inset-0 z-40 flex justify-end bg-black/40" onClick={() => setSettingsOpen(false)}>

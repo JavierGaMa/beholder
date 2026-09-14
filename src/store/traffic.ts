@@ -35,6 +35,7 @@ interface TrafficState {
   installLog: string | null;
   uiConfig: UiConfig | null;
   settingsOpen: boolean;
+  setupOpen: boolean;
   targetSerial: string | null;
   targetAvd: string | null;
   onboarding: OnboardingTarget | null;
@@ -48,6 +49,7 @@ interface TrafficState {
   setInstallLog: (line: string | null) => void;
   setUiConfig: (c: UiConfig) => void;
   setSettingsOpen: (open: boolean) => void;
+  setSetupOpen: (open: boolean) => void;
   setTarget: (serial: string | null, avd: string | null) => void;
   setOnboarding: (t: OnboardingTarget | null) => void;
 }
@@ -63,6 +65,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   installLog: null,
   uiConfig: null,
   settingsOpen: false,
+  setupOpen: false,
   targetSerial: null,
   targetAvd: null,
   onboarding: null,
@@ -74,6 +77,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   setInstallLog: (line) => set({ installLog: line }),
   setUiConfig: (c) => set({ uiConfig: c }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setSetupOpen: (open) => set({ setupOpen: open }),
   setTarget: (serial, avd) => set({ targetSerial: serial, targetAvd: avd }),
   setOnboarding: (t) => set({ onboarding: t }),
   clear: () =>

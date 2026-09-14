@@ -40,6 +40,10 @@ async function mockInvoke<T>(cmd: string): Promise<T> {
       ] as T;
     case "list_device_profiles":
       return ["pixel_7", "pixel_9_pro", "pixel_10_pro_xl"] as T;
+    case "run_host_doctor":
+      return [] as T;
+    case "preview_shell_env":
+      return ["export ANDROID_HOME=\"$HOME/Library/Android/sdk\""] as T;
     case "list_apks":
       return [
         { name: "advisor-v2.0.12-QA-build-2012-release-RN-from-10-07-2026.apk", url: "https://example.dev/advisor-v2.0.12.apk", version: "2.0.12", env: "QA", build: 2012, flavor: "release", date: "10-07-2026", size_bytes: 85689296, last_modified: "Fri, 10 Jul 2026 09:12:44 GMT" },
