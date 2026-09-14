@@ -41,3 +41,11 @@ export function loadSlowMs(): number {
 export function saveSlowMs(v: number) {
   localStorage.setItem("beholder.slowMs", String(v));
 }
+
+export function loadSidebarCollapsed(): boolean {
+  return localStorage.getItem("beholder.sidebarCollapsed") === "true";
+}
+
+export function saveSidebarCollapsed(v: boolean) {
+  localStorage.setItem("beholder.sidebarCollapsed", String(v));
+}

@@ -1,12 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { MonitorSmartphone, Package, Radio, SquareTerminal, Waves, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  MonitorSmartphone,
+  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  SquareTerminal,
+  Waves,
+  X,
+} from "lucide-react";
 import { useTraffic, type View } from "./store/traffic";
 import { useConsole } from "./store/console";
 import type { ConsoleEvent } from "./store/console-types";
 import { invoke, isTauri, listenTraffic } from "./lib/tauri";
 import { applyUiConfig } from "./lib/theme/applyConfig";
 import type { UiConfig } from "./lib/theme/config-types";
+import { loadSidebarCollapsed, saveSidebarCollapsed } from "./lib/prefs";
 import { startMock } from "./lib/mock";
 import { CommandBar } from "./features/capture/CommandBar";
 import { RequestsView } from "./features/requests/RequestsView";
@@ -18,13 +28,25 @@ import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { Toaster } from "./components/ui/toast";
 
-const RAIL: { id: View; label: string; icon: typeof Radio }[] = [
-  { id: "requests", label: "Requests", icon: Radio },
-  { id: "websockets", label: "WebSockets", icon: Waves },
-  { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
-  { id: "apks", label: "APKs", icon: Package },
-  { id: "console", label: "Console", icon: SquareTerminal },
+const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeof Waves }[] }[] = [
+  {
+    label: "Traffic",
+    items: [
+      { id: "requests", label: "Requests", icon: ArrowLeftRight },
+      { id: "websockets", label: "WebSockets", icon: Waves },
+    ],
+  },
+  {
+    label: "Device",
+    items: [
+      { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
+      { id: "apks", label: "APKs", icon: Package },
+      { id: "console", label: "Console", icon: SquareTerminal },
+    ],
+  },
 ];
+
+const RAIL = NAV_GROUPS.flatMap((g) => g.items);
 
 export default function App() {
   const activeView = useTraffic((s) => s.activeView);
@@ -34,6 +56,11 @@ export default function App() {
   const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
   const onboarding = useTraffic((s) => s.onboarding);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+
+  useEffect(() => {
+    saveSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (isTauri) {
@@ -86,32 +113,114 @@ export default function App() {
     };
   }, [ingest]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setSidebarCollapsed((c) => !c);
+        return;
+      }
+      const idx = Number(e.key) - 1;
+      if (!Number.isInteger(idx) || idx < 0 || idx >= RAIL.length) return;
+      e.preventDefault();
+      setActiveView(RAIL[idx].id);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setActiveView]);
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-bg text-txt">
       <CommandBar />
-      <main className="min-h-0 flex-1">
-        {activeView === "requests" && <RequestsView />}
-        {activeView === "websockets" && <WebSocketsView />}
-        {activeView === "emulators" && <EmulatorsView />}
-        {activeView === "apks" && <ApksView />}
-        {activeView === "console" && <ConsoleView />}
-      </main>
-      <nav className="flex shrink-0 items-center justify-center gap-1 border-t border-line bg-surface px-4 py-1.5">
-        {RAIL.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setActiveView(id)}
-            className={clsx(
-              "flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-colors",
-              activeView === id ? "bg-surface-2 text-accent" : "text-muted hover:text-txt",
-            )}
-          >
-            <Icon size={13} />
-            {label}
-          </button>
-        ))}
-      </nav>
+      <div className="flex min-h-0 flex-1">
+        <aside
+          className={clsx(
+            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200",
+            sidebarCollapsed ? "w-12" : "w-44",
+          )}
+        >
+          <nav className="flex flex-col p-2" aria-label="Views">
+            {NAV_GROUPS.map((group, gi) => (
+              <div
+                key={group.label}
+                className={clsx(
+                  gi > 0 && (sidebarCollapsed ? "mt-2 border-t border-line pt-2" : "mt-4"),
+                )}
+              >
+                {!sidebarCollapsed && (
+                  <p className="px-2.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted/70">
+                    {group.label}
+                  </p>
+                )}
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map(({ id, label, icon: Icon }) => {
+                    const shortcut = 1 + RAIL.findIndex((r) => r.id === id);
+                    const active = activeView === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setActiveView(id)}
+                        aria-label={label}
+                        className={clsx(
+                          "group relative flex items-center gap-2.5 rounded-md py-1.5 text-[12px] font-medium transition-colors",
+                          sidebarCollapsed ? "justify-center" : "px-2.5",
+                          active
+                            ? "bg-accent/10 text-accent"
+                            : "text-muted hover:bg-surface-2 hover:text-txt",
+                        )}
+                      >
+                        <Icon size={16} className="shrink-0" />
+                        {!sidebarCollapsed && <span>{label}</span>}
+                        {!sidebarCollapsed && (
+                          <span
+                            className={clsx(
+                              "ml-auto rounded border px-1 py-px font-mono text-[9px] leading-none",
+                              active
+                                ? "border-accent/30 text-accent/70"
+                                : "border-line text-muted/60",
+                            )}
+                          >
+                            {shortcut}
+                          </span>
+                        )}
+                        {sidebarCollapsed && (
+                          <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-line bg-surface-2 px-2 py-1 text-[11px] text-txt opacity-0 shadow-lg transition-opacity delay-150 group-focus-visible:opacity-100 group-hover:opacity-100">
+                            {label}
+                            <span className="font-mono text-[9px] text-muted">{shortcut}</span>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+          <div className="mt-auto p-2 pt-0">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((c) => !c)}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand (Cmd/Ctrl+B)" : "Collapse (Cmd/Ctrl+B)"}
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-line text-[11px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-txt"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              {!sidebarCollapsed && <span>Collapse</span>}
+            </button>
+          </div>
+        </aside>
+        <main className="min-h-0 min-w-0 flex-1">
+          {activeView === "requests" && <RequestsView />}
+          {activeView === "websockets" && <WebSocketsView />}
+          {activeView === "emulators" && <EmulatorsView />}
+          {activeView === "apks" && <ApksView />}
+          {activeView === "console" && <ConsoleView />}
+        </main>
+      </div>
 
       <Toaster />
 
@@ -137,7 +246,7 @@ export default function App() {
       )}
 
       {onboarding && (
-        <div className="absolute bottom-14 right-6 z-40 w-[420px] shadow-2xl">
+        <div className="absolute bottom-6 right-6 z-40 w-[420px] shadow-2xl">
           <OnboardingPanel
             avdName={onboarding.avdName}
             createdNew={onboarding.createdNew}
