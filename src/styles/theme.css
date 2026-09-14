@@ -15,7 +15,7 @@
   --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
 }
 
-:root[data-theme="contrast"] {
+[data-theme="contrast"] {
   --bg: #000000;
   --surface: #0d0d0d;
   --surface-2: #1d1d1b;
@@ -29,7 +29,7 @@
   --danger: #f44747;
 }
 
-:root[data-theme="obsidian"] {
+[data-theme="obsidian"] {
   --bg: #0a0a0b;
   --surface: #111113;
   --surface-2: #17171a;
@@ -43,7 +43,7 @@
   --danger: #f87171;
 }
 
-:root[data-theme="carbon"] {
+[data-theme="carbon"] {
   --bg: #0c0b0a;
   --surface: #141210;
   --surface-2: #1b1815;
@@ -57,7 +57,7 @@
   --danger: #fb7185;
 }
 
-:root[data-theme="eclipse"] {
+[data-theme="eclipse"] {
   --bg: #090b10;
   --surface: #0f1219;
   --surface-2: #151a24;
@@ -71,20 +71,50 @@
   --danger: #f87171;
 }
 
-:root[data-accent="lime"] {
+[data-theme="paper"] {
+  --bg: #f6f5f1;
+  --surface: #fdfdfc;
+  --surface-2: #edede7;
+  --line: #dcd9cf;
+  --txt: #1f1e1b;
+  --muted: #6b6a63;
+  --accent: var(--accent-choice);
+  --accent-fg: #ffffff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #b91c1c;
+}
+
+[data-accent="lime"] {
   --accent-choice: #c6fd00;
 }
 
-:root[data-accent="cyan"] {
+[data-accent="cyan"] {
   --accent-choice: #22d3ee;
 }
 
-:root[data-accent="amber"] {
+[data-accent="amber"] {
   --accent-choice: #fbbf24;
 }
 
-:root[data-accent="violet"] {
+[data-accent="violet"] {
   --accent-choice: #a78bfa;
+}
+
+[data-theme="paper"][data-accent="lime"] {
+  --accent-choice: #4d7c0f;
+}
+
+[data-theme="paper"][data-accent="cyan"] {
+  --accent-choice: #0e7490;
+}
+
+[data-theme="paper"][data-accent="amber"] {
+  --accent-choice: #b45309;
+}
+
+[data-theme="paper"][data-accent="violet"] {
+  --accent-choice: #6d28d9;
 }
 
 html,

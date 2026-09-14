@@ -34,7 +34,7 @@ export interface UiConfig {
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
-  theme: "contrast",
+  theme: "paper",
   accent: "lime",
   ui_font_size: 13,
   mono_font_size: 12,

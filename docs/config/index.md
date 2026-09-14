@@ -14,7 +14,7 @@ Open it from **Settings → config.toml → Reveal**.
 # Beholder UI configuration
 # Edit and save - changes apply live.
 
-theme = "contrast"          # contrast | obsidian | carbon | eclipse
+theme = "paper"            # paper | contrast | obsidian | carbon | eclipse
 accent = "lime"             # lime | cyan | amber | violet
 ui-font-size = 13           # px, general UI text
 mono-font-size = 12         # px, requests and payloads
@@ -38,7 +38,8 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
 
 | Theme | Feel |
 | --- | --- |
-| **contrast** (default) | Pure black, white text, warm gray borders, neon lime accent. Inspired by [Nicer High Contrast](https://github.com/rafmsou/nicer-high-contrast). |
+| **paper** (default) | Light warm paper — dark text, darkened accents for readable contrast |
+| contrast | Pure black, white text, warm gray borders, neon lime accent. Inspired by [Nicer High Contrast](https://github.com/rafmsou/nicer-high-contrast). |
 | obsidian | Near-black neutral |
 | carbon | Warm dark |
 | eclipse | Deep blue-black |

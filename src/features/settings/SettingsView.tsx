@@ -107,7 +107,7 @@ export function SettingsView() {
             </button>
           )}
         </div>
-        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "contrast"          # contrast | obsidian | carbon | eclipse
+        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse
 accent = "lime"             # lime | cyan | amber | violet
 ui-font-size = 13           # px, general UI text
 mono-font-size = 12         # px, requests and payloads

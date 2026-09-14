@@ -131,7 +131,7 @@ pub struct UiConfig {
 }
 
 fn default_theme() -> String {
-    "contrast".into()
+    "paper".into()
 }
 fn default_accent() -> String {
     "lime".into()
