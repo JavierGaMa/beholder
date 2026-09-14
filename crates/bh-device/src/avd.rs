@@ -367,29 +367,17 @@ pub fn emulator_launch_args(name: &str) -> Vec<String> {
 
 pub fn launch_emulator_detached(runner: &RealSdkRunner, avd_name: &str) -> Result<(), DeviceError> {
     let emulator = runner.tool_path(SdkTool::Emulator);
-    #[cfg(target_os = "macos")]
-    {
-        let launched = Command::new("/usr/bin/open")
-            .arg("-n")
-            .arg(emulator)
-            .arg("--args")
-            .args(&emulator_launch_args(avd_name))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .stdin(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
-        if launched {
-            return Ok(());
-        }
-    }
-    Command::new(emulator)
-        .args(&emulator_launch_args(avd_name))
+    let mut cmd = Command::new(emulator);
+    cmd.args(&emulator_launch_args(avd_name))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .stdin(Stdio::null())
-        .spawn()
+        .stdin(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd.spawn()
         .map_err(|e| DeviceError::Other(format!("failed to launch emulator: {e}")))?;
     Ok(())
 }
