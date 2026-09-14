@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleCheck, CircleDashed, Download, Play, RefreshCw, Rocket, Stethoscope } from "lucide-react";
+import { CircleCheck, CircleDashed, Download, MonitorSmartphone, Play, Plus, RefreshCw, Rocket, Stethoscope } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
@@ -7,10 +7,17 @@ import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
 import { DoctorPanel } from "./DoctorPanel";
 
+interface HostCheckLite {
+  status: "ok" | "warn" | "fail";
+  title: string;
+  detail: string;
+}
+
 export function EmulatorsView() {
   const setInstallLog = useTraffic((s) => s.setInstallLog);
   const installLog = useTraffic((s) => s.installLog);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
+  const setSetupOpen = useTraffic((s) => s.setSetupOpen);
   const [avds, setAvds] = useState<AvdInfo[]>([]);
   const [images, setImages] = useState<SystemImage[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -18,6 +25,8 @@ export function EmulatorsView() {
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [doctor, setDoctor] = useState<{ avdName: string; serial: string } | null>(null);
+  const [hostReady, setHostReady] = useState<boolean | null>(null);
+  const [hostIssues, setHostIssues] = useState<HostCheckLite[] | null>(null);
 
   const [name, setName] = useState("Beholder_Dev");
   const [imagePkg, setImagePkg] = useState<string>("");
@@ -37,7 +46,17 @@ export function EmulatorsView() {
       setProfiles(profileList);
       setImagePkg((cur) => cur || imgList[0]?.pkg || "");
       setProfile((cur) => cur || profileList.find((p) => p === "pixel_9_pro") || profileList[0] || "");
+      setHostReady(true);
+      setHostIssues(null);
     } catch (e) {
+      const checks = await invoke<HostCheckLite[]>("run_host_doctor").catch(() => null);
+      if (checks && checks.some((c) => c.status === "fail")) {
+        setHostReady(false);
+        setHostIssues(checks.filter((c) => c.status === "fail"));
+        setError(null);
+        return;
+      }
+      setHostReady(true);
       setError(String(e));
     } finally {
       setBusy(false);
@@ -108,6 +127,36 @@ export function EmulatorsView() {
 
   const selectedImage = images.find((i) => i.pkg === imagePkg);
 
+  if (hostReady === false) {
+    const failing = (hostIssues ?? []).map((c) => c.title).join(", ");
+    return (
+      <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+        <MonitorSmartphone size={28} className="text-muted" />
+        <p className="text-sm font-semibold text-txt">Set up your Android environment</p>
+        <p className="text-[12px] leading-relaxed text-muted">
+          Beholder needs the Android SDK tooling to manage emulators. Missing: {failing}.
+        </p>
+        <details className="w-full rounded-md border border-line bg-surface px-3 py-2 text-left">
+          <summary className="cursor-pointer text-[11px] text-muted">Details</summary>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {(hostIssues ?? []).map((c) => (
+              <li key={c.title} className="break-all font-mono text-[10px] text-muted">
+                {c.title}: {c.detail}
+              </li>
+            ))}
+          </ul>
+        </details>
+        <button
+          type="button"
+          onClick={() => setSetupOpen(true)}
+          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-fg"
+        >
+          Open setup
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
       <h1 className="text-sm font-semibold text-txt">Emulators</h1>
@@ -126,7 +175,24 @@ export function EmulatorsView() {
         </div>
         <div className="mt-3 flex flex-col gap-1.5">
           {avds.length === 0 && (
-            <p className="text-[12px] text-muted">No AVDs found — create one below.</p>
+            <div className="mt-3 flex flex-col items-center gap-2 rounded-md border border-dashed border-line px-3 py-5">
+              <p className="text-[12px] font-medium text-txt">No emulators yet</p>
+              <p className="text-[11px] text-muted">
+                Beholder picks a rootable image and applies the right settings automatically.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  document
+                    .getElementById("create-avd")
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  document.getElementById("create-avd-name")?.focus();
+                }}
+                className="flex items-center gap-1 rounded-md border border-accent/50 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/10"
+              >
+                <Plus size={11} /> Create emulator
+              </button>
+            </div>
           )}
           {avds.map((avd) => (
             <div
@@ -175,8 +241,10 @@ export function EmulatorsView() {
       {doctor ? (
         <DoctorPanel avdName={doctor.avdName} serial={doctor.serial} onClose={() => setDoctor(null)} />
       ) : (
-      <Panel className="p-4">
-        <p className="text-[12px] font-medium text-txt">Create emulator</p>
+      <Panel className="p-4" >
+        <div id="create-avd">
+          <p className="text-[12px] font-medium text-txt">Create emulator</p>
+        </div>
         <div className="mt-2 rounded-md border border-line bg-bg p-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted/70">
             Beholder requirements — applied automatically
@@ -200,6 +268,7 @@ export function EmulatorsView() {
           <label className="flex flex-col gap-1">
             <span className="text-[11px] text-muted">Name</span>
             <input
+              id="create-avd-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
