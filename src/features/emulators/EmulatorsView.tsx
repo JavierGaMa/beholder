@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { CircleCheck, CircleDashed, Download, MonitorSmartphone, Play, Plus, RefreshCw, Rocket, Stethoscope } from "lucide-react";
 import { invoke } from "../../lib/tauri";
-import type { AvdInfo, SystemImage } from "../../store/types";
+import { qError } from "../../lib/query";
+import {
+  useAvdsQuery,
+  useImagesQuery,
+  useInvalidateEmulators,
+  useProfilesQuery,
+} from "../../queries/emulators";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
@@ -18,11 +24,15 @@ export function EmulatorsView() {
   const installLog = useTraffic((s) => s.installLog);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
   const setSetupOpen = useTraffic((s) => s.setSetupOpen);
-  const [avds, setAvds] = useState<AvdInfo[]>([]);
-  const [images, setImages] = useState<SystemImage[]>([]);
-  const [profiles, setProfiles] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const avdsQ = useAvdsQuery();
+  const imagesQ = useImagesQuery();
+  const profilesQ = useProfilesQuery();
+  const refresh = useInvalidateEmulators();
+  const avds = avdsQ.data ?? [];
+  const images = imagesQ.data ?? [];
+  const profiles = profilesQ.data ?? [];
+  const [actionError, setActionError] = useState<string | null>(null);
+  const busy = avdsQ.isPending || imagesQ.isPending || profilesQ.isPending;
   const [installing, setInstalling] = useState<string | null>(null);
   const [doctor, setDoctor] = useState<{ avdName: string; serial: string } | null>(null);
   const [hostReady, setHostReady] = useState<boolean | null>(null);
@@ -32,48 +42,47 @@ export function EmulatorsView() {
   const [imagePkg, setImagePkg] = useState<string>("");
   const [profile, setProfile] = useState<string>("");
 
-  async function refresh() {
-    setBusy(true);
-    setError(null);
-    try {
-      const [avdList, imgList, profileList] = await Promise.all([
-        invoke<AvdInfo[]>("list_avds"),
-        invoke<SystemImage[]>("list_images"),
-        invoke<string[]>("list_device_profiles"),
-      ]);
-      setAvds(avdList);
-      setImages(imgList);
-      setProfiles(profileList);
-      setImagePkg((cur) => cur || imgList[0]?.pkg || "");
-      setProfile((cur) => cur || profileList.find((p) => p === "pixel_9_pro") || profileList[0] || "");
-      setHostReady(true);
-      setHostIssues(null);
-    } catch (e) {
+  const anyQueryError = avdsQ.isError || imagesQ.isError || profilesQ.isError;
+  const queryError = [avdsQ, imagesQ, profilesQ]
+    .map((q) => qError(q.error))
+    .find((e): e is string => e != null) ?? null;
+
+  useEffect(() => {
+    setImagePkg((cur) => cur || images[0]?.pkg || "");
+  }, [imagesQ.data]);
+
+  useEffect(() => {
+    setProfile((cur) => cur || profiles.find((p) => p === "pixel_9_pro") || profiles[0] || "");
+  }, [profilesQ.data]);
+
+  useEffect(() => {
+    if (!anyQueryError) {
+      setHostReady((cur) => (cur === false ? true : cur));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
       const checks = await invoke<HostCheckLite[]>("run_host_doctor").catch(() => null);
+      if (cancelled) return;
       if (checks && checks.some((c) => c.status === "fail")) {
         setHostReady(false);
         setHostIssues(checks.filter((c) => c.status === "fail"));
-        setError(null);
-        return;
+      } else {
+        setHostReady(true);
       }
-      setHostReady(true);
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    refresh();
-  }, []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [anyQueryError]);
 
   async function openDoctor(avdName: string) {
-    setError(null);
+    setActionError(null);
     try {
       const serial = await invoke<string>("resolve_serial_for_avd", { name: avdName });
       setDoctor({ avdName, serial });
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
     }
   }
 
@@ -81,9 +90,9 @@ export function EmulatorsView() {
     try {
       await invoke("launch_avd", { name: avdName });
       setOnboarding({ avdName, createdNew: false });
-      setTimeout(refresh, 1500);
+      setTimeout(() => void refresh(), 1500);
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
     }
   }
 
@@ -95,15 +104,14 @@ export function EmulatorsView() {
       setInstalling(null);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
       setInstalling(null);
     }
   }
 
   async function createAndLaunch() {
     if (!name.trim() || !imagePkg || !profile) return;
-    setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
       const selected = images.find((i) => i.pkg === imagePkg);
       if (selected && !selected.installed) {
@@ -118,10 +126,8 @@ export function EmulatorsView() {
       setOnboarding({ avdName: name.trim(), createdNew: true });
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
       setInstalling(null);
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -336,7 +342,7 @@ export function EmulatorsView() {
             <Rocket size={13} /> Create &amp; Launch
           </button>
         </div>
-        {error && <ErrorBox message={error} className="mt-3" />}
+        {(actionError ?? queryError) && <ErrorBox message={actionError ?? queryError ?? ""} className="mt-3" />}
       </Panel>
       )}
     </div>

@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { ChevronDown, CircleDot, MonitorSmartphone, Plus, Settings, Square, Play } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
+import { qError } from "../../lib/query";
+import { useAdbDevicesQuery } from "../../queries/devices";
+import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import type { AvdInfo } from "../../store/types";
-import { useDevices } from "../../store/devices";
 import { isFailed } from "../requests/filters";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
@@ -21,9 +23,11 @@ export function CommandBar() {
   const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
 
-  const avds = useDevices((s) => s.avds);
-  const adbError = useDevices((s) => s.error);
-  const refreshAvds = useDevices((s) => s.refresh);
+  const avdsQ = useAvdsQuery();
+  const adbQ = useAdbDevicesQuery();
+  const refreshAvds = useInvalidateEmulators();
+  const avds = avdsQ.data ?? [];
+  const adbError = qError(adbQ.error) ?? qError(avdsQ.error);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

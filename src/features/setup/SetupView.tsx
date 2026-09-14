@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import clsx from "clsx";
 import {
   AlertTriangle,
@@ -13,6 +13,7 @@ import { invoke } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
+import { useHostDoctorQuery, useInvalidateHostDoctor } from "../../queries/hostDoctor";
 import { fixPlan, type HostCheckT } from "./fixPlan";
 
 const STATUS_ICON = { ok: CheckCircle2, warn: AlertTriangle, fail: XCircle } as const;
@@ -20,28 +21,14 @@ const STATUS_CLS = { ok: "text-ok", warn: "text-warn", fail: "text-danger" } as 
 
 export function SetupView({ onClose }: { onClose: () => void }) {
   const installLog = useTraffic((s) => s.installLog);
-  const [checks, setChecks] = useState<HostCheckT[]>([]);
-  const [loading, setLoading] = useState(true);
+  const doctorQ = useHostDoctorQuery();
+  const refreshDoctor = useInvalidateHostDoctor();
+  const checks: HostCheckT[] = doctorQ.data ?? [];
+  const loading = doctorQ.isPending;
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [envPreview, setEnvPreview] = useState<string[] | null>(null);
-
-  const run = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setChecks(await invoke<HostCheckT[]>("run_host_doctor"));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    run();
-  }, [run]);
 
   async function applyFix(fix: string) {
     setBusy(true);
@@ -49,7 +36,7 @@ export function SetupView({ onClose }: { onClose: () => void }) {
     setError(null);
     try {
       await invoke("apply_host_fix", { fix });
-      await run();
+      await refreshDoctor();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -74,7 +61,7 @@ export function SetupView({ onClose }: { onClose: () => void }) {
     }
     setRunning(null);
     setBusy(false);
-    await run();
+    await refreshDoctor();
   }
 
   async function askEnvPreview() {
@@ -101,7 +88,7 @@ export function SetupView({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={run}
+            onClick={() => void refreshDoctor()}
             disabled={loading || busy}
             title="Re-run checks"
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
