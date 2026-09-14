@@ -391,7 +391,9 @@ version = "0.1.0"
 dependencies = [
  "bh-ca",
  "bh-core",
+ "brotli",
  "bytes",
+ "flate2",
  "futures",
  "http-body",
  "http-body-util",

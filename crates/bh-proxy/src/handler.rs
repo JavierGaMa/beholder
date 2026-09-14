@@ -1,10 +1,12 @@
+use crate::decode::decode_content_encoding;
 use bh_core::types::*;
 use bh_core::TrafficSink;
+use futures::SinkExt;
 use http_body::Body as HttpBodyTrait;
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
     hyper::{HeaderMap, Request, Response},
-    Body, HttpContext, HttpHandler, RequestOrResponse,
+    Body, Error, HttpContext, HttpHandler, RequestOrResponse,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -66,6 +68,16 @@ fn rebuild_body(parts_headers: &mut HeaderMap, bytes: bytes::Bytes) -> Body {
         parts_headers.insert("content-length", len);
     }
     Body::from(Full::new(bytes))
+}
+
+fn protocol_label(version: hudsucker::hyper::Version) -> String {
+    match version {
+        hudsucker::hyper::Version::HTTP_11 => "HTTP/1.1",
+        hudsucker::hyper::Version::HTTP_2 => "HTTP/2.0",
+        hudsucker::hyper::Version::HTTP_10 => "HTTP/1.0",
+        _ => "HTTP",
+    }
+    .to_string()
 }
 
 impl HttpHandler for RecordingHttpHandler {
@@ -138,26 +150,79 @@ impl HttpHandler for RecordingHttpHandler {
         let start = self.start;
         let ttfb_ms = start.map(|s| s.elapsed().as_millis() as u64);
 
-        let (mut parts, body) = res.into_parts();
+        let (mut parts, mut body) = res.into_parts();
         let mime = header_str(&parts.headers, "content-type");
+        let encoding = header_str(&parts.headers, "content-encoding");
         let exact = HttpBodyTrait::size_hint(&body).exact();
 
-        let (body_capture, final_body) = match exact {
-            Some(size) if size as usize <= 16 * 1024 * 1024 => match body.collect().await {
-                Ok(collected) => {
-                    let bytes = collected.to_bytes();
-                    let cap_bytes = if bytes.len() > self.shared.cap {
-                        bytes.slice(0..self.shared.cap)
-                    } else {
-                        bytes.clone()
-                    };
-                    let capture = BodyCapture::from_bytes(&cap_bytes, mime, self.shared.cap);
-                    let rebuilt = rebuild_body(&mut parts.headers, bytes);
-                    (Some(capture), rebuilt)
+        if !matches!(exact, Some(size) if size as usize <= 16 * 1024 * 1024) {
+            let sink = self.shared.sink.clone();
+            let cap = self.shared.cap;
+            let status = parts.status.as_u16();
+            let event_headers = headers_to_domain(&parts.headers);
+            let protocol = protocol_label(parts.version);
+            let (mut tx, rx) =
+                futures::channel::mpsc::channel::<Result<bytes::Bytes, Error>>(32);
+            tokio::spawn(async move {
+                let mut prefix: Vec<u8> = Vec::new();
+                let mut total = 0usize;
+                while let Some(frame) = body.frame().await {
+                    match frame {
+                        Ok(f) => {
+                            let data = match f.into_data() {
+                                Ok(d) => d,
+                                Err(_) => continue,
+                            };
+                            total += data.len();
+                            if prefix.len() < cap {
+                                let take = std::cmp::min(cap - prefix.len(), data.len());
+                                prefix.extend_from_slice(&data[..take]);
+                            }
+                            if tx.send(Ok(data)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e)).await;
+                            break;
+                        }
+                    }
                 }
-                Err(_) => (None, Body::empty()),
-            },
-            _ => (None, body),
+                let capture = match decode_content_encoding(&prefix, encoding.as_deref()) {
+                    Some(decoded) => BodyCapture::from_prefix(&decoded, mime, cap, decoded.len()),
+                    None => BodyCapture::from_prefix(&prefix, mime, cap, total),
+                };
+                let total_ms = start.map(|s| s.elapsed().as_millis() as u64);
+                let download_ms = total_ms.map(|t| t.saturating_sub(ttfb_ms.unwrap_or(0)));
+                sink.emit(TrafficEvent::ExchangeCompleted {
+                    id,
+                    response: HttpResponse {
+                        status,
+                        headers: event_headers,
+                        body: Some(capture),
+                        ended_at: now_ms(),
+                    },
+                    timing: Timing {
+                        ttfb_ms,
+                        download_ms: Some(download_ms.unwrap_or(0)),
+                        total_ms,
+                    },
+                    protocol,
+                });
+            });
+            return Response::from_parts(parts, Body::from_stream(rx));
+        }
+
+        let (body_capture, final_body) = match body.collect().await {
+            Ok(collected) => {
+                let bytes = collected.to_bytes();
+                let decoded = decode_content_encoding(&bytes, encoding.as_deref())
+                    .unwrap_or_else(|| bytes.to_vec());
+                let capture = BodyCapture::from_bytes(&decoded, mime, self.shared.cap);
+                let rebuilt = rebuild_body(&mut parts.headers, bytes);
+                (Some(capture), rebuilt)
+            }
+            Err(_) => (None, Body::empty()),
         };
 
         let total_ms = start.map(|s| s.elapsed().as_millis() as u64);
@@ -176,13 +241,7 @@ impl HttpHandler for RecordingHttpHandler {
                 download_ms: Some(download_ms.unwrap_or(0)),
                 total_ms,
             },
-            protocol: match parts.version {
-                hudsucker::hyper::Version::HTTP_11 => "HTTP/1.1",
-                hudsucker::hyper::Version::HTTP_2 => "HTTP/2.0",
-                hudsucker::hyper::Version::HTTP_10 => "HTTP/1.0",
-                _ => "HTTP",
-            }
-            .to_string(),
+            protocol: protocol_label(parts.version),
         });
 
         Response::from_parts(parts, final_body)

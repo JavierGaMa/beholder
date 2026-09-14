@@ -12,6 +12,8 @@ futures = "0.3"
 http-body-util = "0.1"
 http-body = "1"
 bytes = "1"
+flate2 = "1"
+brotli = "8"
 thiserror = { workspace = true }
 
 [dev-dependencies]
