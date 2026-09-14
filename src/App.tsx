@@ -26,6 +26,7 @@ import { ApksView } from "./features/apks/ApksView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
+import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Toaster } from "./components/ui/toast";
 
 const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeof Waves }[] }[] = [
@@ -134,6 +135,7 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-bg text-txt">
+      <UpdateBanner />
       <CommandBar />
       <div className="flex min-h-0 flex-1">
         <aside

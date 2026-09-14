@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { Copy, FileCode2 } from "lucide-react";
+import { Copy, FileCode2, RefreshCw } from "lucide-react";
 import { ACCENTS, ACCENT_SWATCHES, THEMES, THEME_LABELS } from "../../lib/theme/themes";
 import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
@@ -14,6 +14,7 @@ import {
   formatBridgeInfo,
   type AgentBridgeStatus,
 } from "./agentBridge";
+import { useUpdater } from "../updater/useUpdater";
 
 export function SettingsView() {
   const uiConfig = useTraffic((s) => s.uiConfig);
@@ -163,9 +164,70 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
         </div>
       </Panel>
 
+      <UpdatesPanel />
       <AgentBridgePanel />
       <DeviceMaintenance />
     </div>
+  );
+}
+
+function UpdatesPanel() {
+  const { status, checkForUpdates } = useUpdater();
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    import("@tauri-apps/api/app")
+      .then(({ getVersion }) => getVersion())
+      .then(setAppVersion)
+      .catch(() => setAppVersion(null));
+  }, []);
+
+  const checking = status.kind === "checking";
+  const busy =
+    checking || status.kind === "downloading" || status.kind === "installing";
+
+  let result: string | null = null;
+  if (status.kind === "uptodate") result = "Up to date.";
+  else if (status.kind === "available") result = `Beholder ${status.version} available.`;
+  else if (status.kind === "downloading") result = `Downloading… ${status.percent}%`;
+  else if (status.kind === "installing") result = "Installing…";
+  else if (status.kind === "error") result = status.message;
+
+  return (
+    <Panel className="p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-medium text-txt">Updates</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            Signed builds are installed from GitHub Releases
+            {appVersion ? ` — running ${appVersion}` : ""}.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={!isTauri || busy}
+          onClick={checkForUpdates}
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-accent disabled:opacity-40"
+        >
+          <RefreshCw size={12} className={checking ? "animate-spin" : undefined} /> Check for updates
+        </button>
+      </div>
+      {result && (
+        <p
+          className={clsx(
+            "mt-2 break-words text-[11px]",
+            status.kind === "error"
+              ? "text-danger"
+              : status.kind === "available"
+                ? "text-accent"
+                : "text-muted",
+          )}
+        >
+          {result}
+        </p>
+      )}
+    </Panel>
   );
 }
 

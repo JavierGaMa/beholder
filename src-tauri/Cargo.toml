@@ -25,6 +25,8 @@ bh-proxy = { workspace = true }
 bh-console = { workspace = true }
 bh-agent = { workspace = true }
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 toml = "1.1.4"
 notify = "8.2.0"
 thiserror.workspace = true
