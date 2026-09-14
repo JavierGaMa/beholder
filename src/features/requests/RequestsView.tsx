@@ -14,6 +14,7 @@ import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelR
 import { DetailPane } from "./DetailPane";
 import { FilterBar, type DomainChip } from "./FilterBar";
 import { togglePinned } from "./pins";
+import { followTarget, PROGRAMMATIC_SCROLL_RESET_MS, shouldUnfollow } from "./follow";
 
 export function RequestsView() {
   const exchanges = useTraffic((s) => s.exchanges);
@@ -35,6 +36,8 @@ export function RequestsView() {
   const searchRef = useRef<HTMLInputElement>(null);
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slowMs = loadSlowMs();
   const hideDomain = filters.includeDomains.length === 1;
 
@@ -78,6 +81,7 @@ export function RequestsView() {
     setSelected(pendingSelectId);
     const idx = rows.findIndex((r) => r.id === pendingSelectId);
     if (idx >= 0) {
+      markProgrammaticScroll();
       requestAnimationFrame(() => {
         virtualizer.scrollToIndex(idx, { align: "auto" });
       });
@@ -90,13 +94,13 @@ export function RequestsView() {
   prevOrderLen.current = order.length;
 
   useEffect(() => {
+    if (!follow) return;
+    scrollToFilteredBottom();
+  }, [order.length, rows.length]);
+
+  useEffect(() => {
     if (newIds.length === 0) return;
-    if (follow) {
-      setNewCount(0);
-      requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
-      });
-    } else {
+    if (!follow) {
       setNewCount((c) => c + newIds.length);
     }
     setFlashIds((prev) => {
@@ -108,19 +112,50 @@ export function RequestsView() {
     flashTimer.current = setTimeout(() => setFlashIds(new Set()), 800);
   }, [order.length]);
 
+  function markProgrammaticScroll() {
+    programmaticScrollRef.current = true;
+    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, PROGRAMMATIC_SCROLL_RESET_MS);
+  }
+
+  function consumeProgrammaticScroll() {
+    programmaticScrollRef.current = false;
+    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
+  }
+
+  function scrollToFilteredBottom() {
+    const target = followTarget(rows);
+    if (target == null) return;
+    markProgrammaticScroll();
+    requestAnimationFrame(() => {
+      virtualizer.scrollToIndex(target, { align: "end" });
+    });
+  }
+
   function onScroll() {
+    if (programmaticScrollRef.current) {
+      consumeProgrammaticScroll();
+      return;
+    }
     const el = parentRef.current;
-    if (!el || !follow) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    if (!nearBottom) setFollow(false);
+    if (!el) return;
+    if (
+      shouldUnfollow({
+        distanceFromBottom: el.scrollHeight - el.scrollTop - el.clientHeight,
+        follow,
+        programmatic: false,
+      })
+    ) {
+      setFollow(false);
+    }
   }
 
   function jumpToLatest() {
     setFollow(true);
     setNewCount(0);
-    requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
-    });
+    scrollToFilteredBottom();
   }
 
   useEffect(() => {
@@ -149,6 +184,7 @@ export function RequestsView() {
       const next = rows[nextIdx];
       if (next) {
         setSelected(next.id);
+        markProgrammaticScroll();
         virtualizer.scrollToIndex(nextIdx, { align: "auto" });
       }
     }
@@ -248,7 +284,8 @@ export function RequestsView() {
         follow={follow}
         onFollowChange={(v) => {
           setFollow(v);
-          if (!v) setNewCount(0);
+          setNewCount(0);
+          if (v) scrollToFilteredBottom();
         }}
         searchRef={searchRef}
         collapsed={filtersCollapsed}
