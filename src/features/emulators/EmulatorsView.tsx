@@ -5,13 +5,11 @@ import type { AvdInfo, SystemImage } from "../../store/types";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
-import { OnboardingPanel } from "./OnboardingPanel";
 import { DoctorPanel } from "./DoctorPanel";
 
 export function EmulatorsView() {
   const setInstallLog = useTraffic((s) => s.setInstallLog);
   const installLog = useTraffic((s) => s.installLog);
-  const onboarding = useTraffic((s) => s.onboarding);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
   const [avds, setAvds] = useState<AvdInfo[]>([]);
   const [images, setImages] = useState<SystemImage[]>([]);
@@ -176,12 +174,6 @@ export function EmulatorsView() {
 
       {doctor ? (
         <DoctorPanel avdName={doctor.avdName} serial={doctor.serial} onClose={() => setDoctor(null)} />
-      ) : onboarding ? (
-        <OnboardingPanel
-          avdName={onboarding.avdName}
-          createdNew={onboarding.createdNew}
-          onCancel={() => setOnboarding(null)}
-        />
       ) : (
       <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Create emulator</p>

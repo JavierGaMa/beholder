@@ -361,10 +361,31 @@ impl<'a> AvdManager<'a> {
     }
 }
 
+pub fn emulator_launch_args(name: &str) -> Vec<String> {
+    vec!["-avd".to_string(), name.to_string()]
+}
+
 pub fn launch_emulator_detached(runner: &RealSdkRunner, avd_name: &str) -> Result<(), DeviceError> {
-    Command::new(runner.tool_path(SdkTool::Emulator))
-        .arg("-avd")
-        .arg(avd_name)
+    let emulator = runner.tool_path(SdkTool::Emulator);
+    #[cfg(target_os = "macos")]
+    {
+        let launched = Command::new("/usr/bin/open")
+            .arg("-n")
+            .arg(emulator)
+            .arg("--args")
+            .args(&emulator_launch_args(avd_name))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if launched {
+            return Ok(());
+        }
+    }
+    Command::new(emulator)
+        .args(&emulator_launch_args(avd_name))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
@@ -466,5 +487,103 @@ pub fn create_avd_with_stdin(
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         });
     }
+    if let Some(home) = avd_home() {
+        let config = home.join(format!("{name}.avd")).join("config.ini");
+        let _ = ensure_hw_keyboard(&config);
+    }
     Ok(())
+}
+
+fn avd_home() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("ANDROID_AVD_HOME") {
+        let dir = PathBuf::from(dir);
+        if dir.is_dir() {
+            return Some(dir);
+        }
+    }
+    let home = std::env::var("HOME").ok()?;
+    let dir = PathBuf::from(home).join(".android").join("avd");
+    dir.is_dir().then_some(dir)
+}
+
+pub fn ensure_hw_keyboard(config_path: &Path) -> Result<(), DeviceError> {
+    let content =
+        std::fs::read_to_string(config_path).map_err(|e| DeviceError::Other(e.to_string()))?;
+    let mut found = false;
+    let mut out = String::with_capacity(content.len() + 16);
+    for (i, line) in content.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if line.trim_start().starts_with("hw.keyboard=") {
+            found = true;
+            out.push_str("hw.keyboard=yes");
+        } else {
+            out.push_str(line);
+        }
+    }
+    if !found {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("hw.keyboard=yes");
+    }
+    out.push('\n');
+    std::fs::write(config_path, out).map_err(|e| DeviceError::Other(e.to_string()))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emulator_launch_args_contains_avd_flag_then_name() {
+        let args = emulator_launch_args("Pixel_7");
+        let flag = args
+            .iter()
+            .position(|a| a.as_str() == "-avd")
+            .expect("-avd flag present");
+        let name = args
+            .iter()
+            .position(|a| a.as_str() == "Pixel_7")
+            .expect("avd name present");
+        assert!(name > flag);
+    }
+
+    #[test]
+    fn ensure_hw_keyboard_replaces_existing_line_and_keeps_other_keys() {
+        let dir = std::env::temp_dir().join(format!("beholder-avd-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = dir.join("config.ini");
+        std::fs::write(
+            &config,
+            "hw.device.name=pixel_7\nhw.keyboard=no\nhw.lcd.density=420\n",
+        )
+        .unwrap();
+        ensure_hw_keyboard(&config).unwrap();
+        let content = std::fs::read_to_string(&config).unwrap();
+        assert!(content.contains("hw.keyboard=yes"));
+        assert!(!content.contains("hw.keyboard=no"));
+        assert!(content.contains("hw.device.name=pixel_7"));
+        assert!(content.contains("hw.lcd.density=420"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ensure_hw_keyboard_appends_when_line_missing() {
+        let dir = std::env::temp_dir().join(format!(
+            "beholder-avd-test-{}-append",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = dir.join("config.ini");
+        std::fs::write(&config, "hw.device.name=pixel_7\nhw.lcd.density=420\n").unwrap();
+        ensure_hw_keyboard(&config).unwrap();
+        let content = std::fs::read_to_string(&config).unwrap();
+        assert!(content.contains("hw.keyboard=yes"));
+        assert!(content.contains("hw.device.name=pixel_7"));
+        assert!(content.contains("hw.lcd.density=420"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

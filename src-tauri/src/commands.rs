@@ -99,27 +99,33 @@ fn emu_avd_name(runner: &std::sync::Arc<bh_device::RealRunner>, serial: &str) ->
 
 #[tauri::command]
 pub async fn list_avds(state: State<'_, AppState>) -> Result<Vec<bh_device::AvdInfo>, String> {
-    let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-    let manager = AvdManager::new(&sdk);
-    let mut avds = manager.list_avds().map_err(|e| e.to_string())?;
-    if let Ok(runner) = state.get_runner().await {
-        let scanner = bh_device::AdbScanner::new(runner.as_ref());
-        if let Ok(devices) = scanner.list() {
-            for d in devices
-                .iter()
-                .filter(|d| d.is_emulator && d.state == DeviceState::Online)
-            {
-                if let Some(name) = emu_avd_name(&runner, &d.serial) {
-                    if let Some(avd) = avds.iter_mut().find(|a| a.name.eq_ignore_ascii_case(&name))
-                    {
-                        avd.running = true;
-                        avd.serial = Some(d.serial.clone());
+    let runner = state.get_runner().await.ok();
+    tokio::task::spawn_blocking(move || {
+        let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
+        let manager = AvdManager::new(&sdk);
+        let mut avds = manager.list_avds().map_err(|e| e.to_string())?;
+        if let Some(runner) = runner {
+            let scanner = bh_device::AdbScanner::new(runner.as_ref());
+            if let Ok(devices) = scanner.list() {
+                for d in devices
+                    .iter()
+                    .filter(|d| d.is_emulator && d.state == DeviceState::Online)
+                {
+                    if let Some(name) = emu_avd_name(&runner, &d.serial) {
+                        if let Some(avd) =
+                            avds.iter_mut().find(|a| a.name.eq_ignore_ascii_case(&name))
+                        {
+                            avd.running = true;
+                            avd.serial = Some(d.serial.clone());
+                        }
                     }
                 }
             }
         }
-    }
-    Ok(avds)
+        Ok(avds)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -128,19 +134,23 @@ pub async fn resolve_serial_for_avd(
     name: String,
 ) -> Result<String, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
-    let scanner = bh_device::AdbScanner::new(runner.as_ref());
-    let devices = scanner.list().map_err(|e| e.to_string())?;
-    for d in devices
-        .iter()
-        .filter(|d| d.is_emulator && d.state == DeviceState::Online)
-    {
-        if let Some(avd) = emu_avd_name(&runner, &d.serial) {
-            if avd.eq_ignore_ascii_case(&name) {
-                return Ok(d.serial.clone());
+    tokio::task::spawn_blocking(move || {
+        let scanner = bh_device::AdbScanner::new(runner.as_ref());
+        let devices = scanner.list().map_err(|e| e.to_string())?;
+        for d in devices
+            .iter()
+            .filter(|d| d.is_emulator && d.state == DeviceState::Online)
+        {
+            if let Some(avd) = emu_avd_name(&runner, &d.serial) {
+                if avd.eq_ignore_ascii_case(&name) {
+                    return Ok(d.serial.clone());
+                }
             }
         }
-    }
-    Err("emulator is not visible to adb yet".into())
+        Err("emulator is not visible to adb yet".into())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -148,8 +158,16 @@ pub async fn wait_booted(state: State<'_, AppState>, serial: String) -> Result<(
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let start = std::time::Instant::now();
     loop {
-        let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
-        if device.boot_completed().unwrap_or(false) {
+        let poll_runner = runner.clone();
+        let poll_serial = serial.clone();
+        let booted = tokio::task::spawn_blocking(move || {
+            bh_device::AdbDevice::new(poll_runner.as_ref(), &poll_serial)
+                .boot_completed()
+                .unwrap_or(false)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        if booted {
             return Ok(());
         }
         if start.elapsed() >= std::time::Duration::from_secs(180) {
@@ -161,22 +179,34 @@ pub async fn wait_booted(state: State<'_, AppState>, serial: String) -> Result<(
 
 #[tauri::command]
 pub async fn launch_avd(name: String) -> Result<(), String> {
-    let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-    launch_emulator_detached(&sdk, &name).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
+        launch_emulator_detached(&sdk, &name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn list_images() -> Result<Vec<bh_device::SystemImage>, String> {
-    let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-    let manager = AvdManager::new(&sdk);
-    manager.list_images().map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
+        let manager = AvdManager::new(&sdk);
+        manager.list_images().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn list_device_profiles() -> Result<Vec<String>, String> {
-    let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-    let manager = AvdManager::new(&sdk);
-    manager.list_device_profiles().map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
+        let manager = AvdManager::new(&sdk);
+        manager.list_device_profiles().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 async fn stream_process<F>(bin: &Path, args: &[&str], on_line: F) -> Result<(bool, String), String>
@@ -295,8 +325,12 @@ pub async fn install_image(app: tauri::AppHandle, pkg: String) -> Result<(), Str
             Ok(())
         }
         Ok(false) => {
-            let _ = app.emit("install-log", "accepting sdk licenses...".to_string());
-            accept_licenses(&sdkmanager).map_err(|e| e.to_string())?;
+            let _ = app.emit("install-log", "accepting sdk licenses...");
+            let licenses_bin = sdkmanager.clone();
+            tokio::task::spawn_blocking(move || accept_licenses(&licenses_bin))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
             match run_sdkmanager_streaming(&app, &sdkmanager, &[&pkg]).await {
                 Ok(true) => {
                     let _ = app.emit("install-log", "done".to_string());
@@ -312,9 +346,13 @@ pub async fn install_image(app: tauri::AppHandle, pkg: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn create_avd(name: String, pkg: String, profile: String) -> Result<(), String> {
-    let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
-    create_avd_with_stdin(sdk.tool_path(SdkTool::AvdManager), &name, &pkg, &profile)
-        .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let sdk = RealSdkRunner::discover().map_err(|e| e.to_string())?;
+        create_avd_with_stdin(sdk.tool_path(SdkTool::AvdManager), &name, &pkg, &profile)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -430,15 +468,23 @@ pub async fn capture_start(
     let ca = bh_ca::load_or_create(&dir).map_err(|e| e.to_string())?;
     let filename = bh_ca::system_cert_filename(&ca.cert_pem).map_err(|e| e.to_string())?;
 
-    let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
-    let installed = device
-        .is_cert_installed(&filename, &ca.cert_pem)
-        .map_err(|e| e.to_string())?;
-    if !installed {
-        device.root().map_err(|e| e.to_string())?;
-        CertificateInstaller::install_system_cert(&device, &filename, &ca.cert_pem)
+    let cert_runner = runner.clone();
+    let cert_serial = serial.clone();
+    let cert_pem = ca.cert_pem.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let device = bh_device::AdbDevice::new(cert_runner.as_ref(), &cert_serial);
+        let installed = device
+            .is_cert_installed(&filename, &cert_pem)
             .map_err(|e| e.to_string())?;
-    }
+        if !installed {
+            device.root().map_err(|e| e.to_string())?;
+            CertificateInstaller::install_system_cert(&device, &filename, &cert_pem)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     let port = match port {
         Some(p) => p,
@@ -452,14 +498,25 @@ pub async fn capture_start(
         .await
         .map_err(|e| e.to_string())?;
 
-    device
-        .set_proxy("10.0.2.2", port)
-        .map_err(|e| e.to_string())?;
+    if let Some(existing) = state.proxy.lock().await.take() {
+        existing.stop().await;
+    }
+
+    let proxy_runner = runner.clone();
+    let proxy_serial = serial.clone();
+    let avd = tokio::task::spawn_blocking(
+        move || -> Result<Option<String>, String> {
+            let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
+            device.set_proxy("10.0.2.2", port).map_err(|e| e.to_string())?;
+            Ok(emu_avd_name(&proxy_runner, &proxy_serial))
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())??;
+
     *state.active_serial.lock().await = Some(serial.clone());
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
-        agent
-            .store
-            .set_target(Some(serial.clone()), emu_avd_name(&runner, &serial));
+        agent.store.set_target(Some(serial.clone()), avd);
         agent.store.set_capture(true);
     }
     state.proxy.lock().await.replace(handle);
