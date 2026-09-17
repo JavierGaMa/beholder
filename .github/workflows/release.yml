@@ -50,7 +50,19 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Beholder ${{ github.ref_name }}
-          releaseBody: See the assets below to download and install.
+          releaseBody: |
+            ## Install (macOS)
+
+            1. Download the DMG for your Mac:
+               - **Apple Silicon (M1/M2/M3/M4)** → the file ending in `aarch64.dmg`
+               - **Intel** → the file ending in `x64.dmg`
+            2. Open the DMG and drag **Beholder** into **Applications**.
+            3. First launch: the app is not notarized, so macOS blocks it.
+               Right-click Beholder in Applications → **Open** → **Open**
+               (on newer macOS: System Settings → Privacy & Security → **Open Anyway**).
+
+            The `.tar.gz`, `.sig` and `latest.json` assets power the in-app
+            auto-updater — Beholder updates itself, no need to download these.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
