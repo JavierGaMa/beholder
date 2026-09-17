@@ -4,6 +4,11 @@ import type { UiConfig } from "../lib/theme/config-types";
 
 export type View = "requests" | "websockets" | "emulators" | "apks" | "console";
 
+export interface MetroStatus {
+  detected: boolean;
+  port: number;
+}
+
 export interface OnboardingTarget {
   avdName: string;
   createdNew: boolean;
@@ -31,6 +36,7 @@ interface TrafficState {
   activeView: View;
   captureOn: boolean;
   capturePort: number | null;
+  metro: MetroStatus | null;
   requestCount: number;
   installLog: string | null;
   uiConfig: UiConfig | null;
@@ -44,6 +50,7 @@ interface TrafficState {
   setPendingSelectId: (id: number | null) => void;
   setActiveView: (v: View) => void;
   setCapture: (on: boolean, port?: number | null) => void;
+  setMetro: (m: MetroStatus | null) => void;
   ingest: (events: TrafficEvent[]) => void;
   clear: () => void;
   setInstallLog: (line: string | null) => void;
@@ -61,6 +68,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   activeView: "requests",
   captureOn: false,
   capturePort: null,
+  metro: null,
   requestCount: 0,
   installLog: null,
   uiConfig: null,
@@ -73,7 +81,9 @@ export const useTraffic = create<TrafficState>((set) => ({
   requestSelect: (id) => set({ pendingSelectId: id, activeView: "requests" }),
   setPendingSelectId: (id) => set({ pendingSelectId: id }),
   setActiveView: (v) => set({ activeView: v }),
-  setCapture: (on, port = null) => set({ captureOn: on, capturePort: on ? port : null }),
+  setCapture: (on, port = null) =>
+    set((s) => ({ captureOn: on, capturePort: on ? port : null, metro: on ? s.metro : null })),
+  setMetro: (m) => set({ metro: m }),
   setInstallLog: (line) => set({ installLog: line }),
   setUiConfig: (c) => set({ uiConfig: c }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),

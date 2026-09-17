@@ -80,6 +80,34 @@ fn protocol_label(version: hudsucker::hyper::Version) -> String {
     .to_string()
 }
 
+pub(crate) fn rewrite_emulator_host(uri: &hudsucker::hyper::Uri) -> hudsucker::hyper::Uri {
+    if uri.host() != Some("10.0.2.2") {
+        return uri.clone();
+    }
+    let mut builder = hudsucker::hyper::Uri::builder();
+    if let Some(scheme) = uri.scheme_str() {
+        builder = builder.scheme(scheme);
+    }
+    let authority = match uri.port_u16() {
+        Some(port) => format!("127.0.0.1:{port}"),
+        None => "127.0.0.1".to_string(),
+    };
+    builder = builder.authority(authority);
+    if let Some(pq) = uri.path_and_query() {
+        builder = builder.path_and_query(pq.as_str());
+    }
+    builder.build().unwrap_or_else(|_| uri.clone())
+}
+
+fn rewrite_host_header_value(value: &str) -> Option<String> {
+    let rest = value.strip_prefix("10.0.2.2")?;
+    if rest.is_empty() || rest.starts_with(':') {
+        Some(format!("127.0.0.1{rest}"))
+    } else {
+        None
+    }
+}
+
 impl HttpHandler for RecordingHttpHandler {
     async fn handle_request(
         &mut self,
@@ -87,7 +115,9 @@ impl HttpHandler for RecordingHttpHandler {
         req: Request<Body>,
     ) -> RequestOrResponse {
         if req.method() == hudsucker::hyper::Method::CONNECT {
-            return req.into();
+            let (mut parts, body) = req.into_parts();
+            parts.uri = rewrite_emulator_host(&parts.uri);
+            return Request::from_parts(parts, body).into();
         }
         let id = self.shared.next_exchange.fetch_add(1, Ordering::SeqCst);
         self.current = Some(id);
@@ -141,6 +171,19 @@ impl HttpHandler for RecordingHttpHandler {
                 started_at: now_ms(),
             },
         });
+
+        let emulator_target = parts.uri.host() == Some("10.0.2.2");
+        parts.uri = rewrite_emulator_host(&parts.uri);
+        if emulator_target {
+            if let Some(value) = header_str(&parts.headers, "host")
+                .as_deref()
+                .and_then(rewrite_host_header_value)
+            {
+                if let Ok(v) = hudsucker::hyper::header::HeaderValue::from_str(&value) {
+                    parts.headers.insert("host", v);
+                }
+            }
+        }
 
         Request::from_parts(parts, rebuilt_body).into()
     }
@@ -245,5 +288,69 @@ impl HttpHandler for RecordingHttpHandler {
         });
 
         Response::from_parts(parts, final_body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uri(s: &str) -> hudsucker::hyper::Uri {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn rewrites_only_10_0_2_2_host() {
+        assert_eq!(
+            rewrite_emulator_host(&uri("http://10.0.2.2:8081/index.bundle?platform=android"))
+                .to_string(),
+            "http://127.0.0.1:8081/index.bundle?platform=android"
+        );
+        assert_eq!(
+            rewrite_emulator_host(&uri("http://example.com/x?y=1")).to_string(),
+            "http://example.com/x?y=1"
+        );
+        assert_eq!(
+            rewrite_emulator_host(&uri("http://127.0.0.1:8081/status")).to_string(),
+            "http://127.0.0.1:8081/status"
+        );
+    }
+
+    #[test]
+    fn preserves_port_path_query_and_default_port() {
+        assert_eq!(
+            rewrite_emulator_host(&uri("http://10.0.2.2/status")).to_string(),
+            "http://127.0.0.1/status"
+        );
+        assert_eq!(
+            rewrite_emulator_host(&uri("http://10.0.2.2:8081/a/b?c=d&e=f")).to_string(),
+            "http://127.0.0.1:8081/a/b?c=d&e=f"
+        );
+    }
+
+    #[test]
+    fn rewrites_connect_authority_form() {
+        assert_eq!(
+            rewrite_emulator_host(&uri("10.0.2.2:8081")).to_string(),
+            "127.0.0.1:8081"
+        );
+        assert_eq!(
+            rewrite_emulator_host(&uri("example.com:443")).to_string(),
+            "example.com:443"
+        );
+    }
+
+    #[test]
+    fn host_header_value_rewrites_only_exact_emulator_host() {
+        assert_eq!(
+            rewrite_host_header_value("10.0.2.2").as_deref(),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            rewrite_host_header_value("10.0.2.2:8081").as_deref(),
+            Some("127.0.0.1:8081")
+        );
+        assert_eq!(rewrite_host_header_value("example.com"), None);
+        assert_eq!(rewrite_host_header_value("10.0.2.2.evil.com"), None);
     }
 }

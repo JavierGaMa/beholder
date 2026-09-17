@@ -107,6 +107,24 @@ impl Default for ApksConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MetroConfig {
+    #[serde(default = "default_metro_port")]
+    pub port: u16,
+}
+
+fn default_metro_port() -> u16 {
+    8081
+}
+
+impl Default for MetroConfig {
+    fn default() -> Self {
+        MetroConfig {
+            port: default_metro_port(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -128,6 +146,8 @@ pub struct UiConfig {
     pub agent: AgentConfig,
     #[serde(default)]
     pub apks: ApksConfig,
+    #[serde(default)]
+    pub metro: MetroConfig,
 }
 
 fn default_theme() -> String {
@@ -159,6 +179,7 @@ impl Default for UiConfig {
             console: ConsoleConfig::default(),
             agent: AgentConfig::default(),
             apks: ApksConfig::default(),
+            metro: MetroConfig::default(),
         }
     }
 }
@@ -301,6 +322,35 @@ mod tests {
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded.apks, ApksConfig::default());
         assert!(loaded.apks.list_url.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn metro_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-metro-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.metro, MetroConfig::default());
+        assert_eq!(loaded.metro.port, 8081);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_metro_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-metro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.metro.port = 8082;
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        assert_eq!(loaded.metro.port, 8082);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[metro]"));
+        assert!(raw.contains("port = 8082"));
+        assert!(!raw.contains("bypass"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

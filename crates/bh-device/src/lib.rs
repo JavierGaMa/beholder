@@ -300,25 +300,25 @@ impl<'a> ApkInstaller for AdbDevice<'a> {
 
 impl<'a> ProxyConfigurator for AdbDevice<'a> {
     fn set_proxy(&self, host: &str, port: u16) -> Result<(), DeviceError> {
-        let out = self.shell(&format!("settings put global http_proxy {}:{}", host, port))?;
-        if !out.success {
-            return Err(DeviceError::Other("failed to set http_proxy".into()));
-        }
+        self.shell_ok(&format!("settings put global http_proxy {}:{}", host, port))?;
         Ok(())
     }
 
     fn clear_proxy(&self) -> Result<(), DeviceError> {
-        self.shell("settings put global http_proxy :0")?;
+        self.shell_ok("settings put global http_proxy :0")?;
+        self.shell_ok("settings delete global global_http_proxy_host")?;
+        self.shell_ok("settings delete global global_http_proxy_port")?;
+        self.shell_ok("settings delete global global_http_proxy_exclusion_list")?;
         Ok(())
     }
 
     fn current_proxy(&self) -> Result<Option<String>, DeviceError> {
         let out = self.shell("settings get global http_proxy")?;
-        let v = out.stdout.trim().to_string();
-        if v.is_empty() || v == ":0" || v == "null" {
+        let v = out.stdout.trim();
+        if v.is_empty() || v == "null" || v == ":0" {
             return Ok(None);
         }
-        Ok(Some(v))
+        Ok(Some(v.to_string()))
     }
 }
 

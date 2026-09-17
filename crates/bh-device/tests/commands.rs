@@ -14,12 +14,13 @@ fn boot_completed_parses_getprop() {
 }
 
 #[test]
-fn set_proxy_uses_10_0_2_2() {
+fn set_proxy_writes_single_legacy_command() {
     let runner = bh_device::FakeRunner::new();
     runner.enqueue_ok("");
     let dev = AdbDevice::new(&runner, "emulator-5554");
     dev.set_proxy("10.0.2.2", 8080).unwrap();
     let calls = runner.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0],
         vec![
@@ -29,6 +30,27 @@ fn set_proxy_uses_10_0_2_2() {
             "settings put global http_proxy 10.0.2.2:8080".to_string()
         ]
     );
+    assert!(!calls.iter().any(|c| c.join(" ").contains("global_http_proxy_")));
+}
+
+#[test]
+fn clear_proxy_neutralizes_legacy_and_deletes_granular_keys() {
+    let runner = bh_device::FakeRunner::new();
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    let dev = AdbDevice::new(&runner, "emulator-5554");
+    dev.clear_proxy().unwrap();
+    let calls = runner.calls.lock().unwrap();
+    let joined: Vec<String> = calls.iter().map(|c| c.join(" ")).collect();
+    assert_eq!(
+        joined[0],
+        "-s emulator-5554 shell settings put global http_proxy :0"
+    );
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_host".to_string()));
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_port".to_string()));
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_exclusion_list".to_string()));
 }
 
 #[test]
@@ -37,6 +59,27 @@ fn current_proxy_none_for_null() {
     runner.enqueue_ok("null\n");
     let dev = AdbDevice::new(&runner, "emulator-5554");
     assert!(dev.current_proxy().unwrap().is_none());
+}
+
+#[test]
+fn current_proxy_reads_legacy_key() {
+    let runner = bh_device::FakeRunner::new();
+    runner.enqueue_ok("10.0.2.2:8080\n");
+    let dev = AdbDevice::new(&runner, "emulator-5554");
+    assert_eq!(dev.current_proxy().unwrap().as_deref(), Some("10.0.2.2:8080"));
+}
+
+#[test]
+fn current_proxy_none_for_neutralized_or_empty_value() {
+    let runner = bh_device::FakeRunner::new();
+    runner.enqueue_ok(":0\n");
+    let dev = AdbDevice::new(&runner, "emulator-5554");
+    assert!(dev.current_proxy().unwrap().is_none());
+
+    let runner2 = bh_device::FakeRunner::new();
+    runner2.enqueue_ok("\n");
+    let dev2 = AdbDevice::new(&runner2, "emulator-5554");
+    assert!(dev2.current_proxy().unwrap().is_none());
 }
 
 #[test]

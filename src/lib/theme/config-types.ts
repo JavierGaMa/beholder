@@ -21,6 +21,10 @@ export interface ApksConfig {
   list_url: string;
 }
 
+export interface MetroConfig {
+  port: number;
+}
+
 export interface UiConfig {
   theme: string;
   accent: string;
@@ -31,6 +35,7 @@ export interface UiConfig {
   colors?: ColorOverrides;
   console?: ConsoleConfig;
   apks?: ApksConfig;
+  metro?: MetroConfig;
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
@@ -45,4 +50,5 @@ export const DEFAULT_CONFIG: UiConfig = {
   apks: {
     list_url: "",
   },
+  metro: { port: 8081 },
 };

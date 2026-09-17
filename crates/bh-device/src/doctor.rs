@@ -183,11 +183,11 @@ pub fn run_checks(
         fix: None,
     });
 
-    let proxy_raw = sh(runner, serial, "settings get global http_proxy")
-        .stdout
-        .trim()
-        .to_string();
-    let parsed = parse_proxy_value(&proxy_raw);
+    let device = crate::AdbDevice::new(runner, serial);
+    let parsed = crate::ProxyConfigurator::current_proxy(&device)
+        .ok()
+        .flatten()
+        .and_then(|proxy| parse_proxy_value(&proxy));
     let (status, detail, fix) = match (&parsed, active_proxy_port) {
         (None, _) => (CheckStatus::Ok, "No proxy set".to_string(), None),
         (Some((host, port)), Some(own)) if *port == own => (
@@ -273,7 +273,10 @@ pub fn apply_basic_fix(
     fix: FixId,
 ) -> Result<(), DeviceError> {
     let cmd = match fix {
-        FixId::ClearProxy => "settings put global http_proxy :0",
+        FixId::ClearProxy => {
+            let device = crate::AdbDevice::new(runner, serial);
+            return crate::ProxyConfigurator::clear_proxy(&device);
+        }
         FixId::DisableAirplane => "cmd connectivity airplane-mode disable",
         FixId::ClearPrivateDns => "settings put global private_dns_mode off",
         FixId::Reboot => "reboot",

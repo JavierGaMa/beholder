@@ -55,3 +55,25 @@ describe("traffic store ingest", () => {
     expect(conn?.frames[0].direction).toBe("Sent");
   });
 });
+
+describe("traffic store metro status", () => {
+  const metroStatus = {
+    detected: true,
+    port: 8081,
+  };
+
+  it("stores metro status via setMetro", () => {
+    useTraffic.getState().setMetro(metroStatus);
+    expect(useTraffic.getState().metro).toEqual(metroStatus);
+    useTraffic.getState().setMetro(null);
+    expect(useTraffic.getState().metro).toBeNull();
+  });
+
+  it("clears metro status when capture turns off", () => {
+    useTraffic.getState().setMetro(metroStatus);
+    useTraffic.getState().setCapture(true, 9090);
+    expect(useTraffic.getState().metro).toEqual(metroStatus);
+    useTraffic.getState().setCapture(false);
+    expect(useTraffic.getState().metro).toBeNull();
+  });
+});

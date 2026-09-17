@@ -1,4 +1,4 @@
-use bh_device::{run_checks, CheckStatus, FixId};
+use bh_device::{apply_basic_fix, run_checks, CheckStatus, FixId};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -68,7 +68,7 @@ fn healthy_emulator_all_ok() {
     runner.push("", true);
     runner.push("", true);
     runner.push("", true);
-    runner.push(":0\n", true);
+    runner.push("null\n", true);
     runner.push("off\n", true);
 
     let always_alive = |_: u16| true;
@@ -129,7 +129,7 @@ fn dns_warn_with_ip_ok() {
     runner.push("", true);
     runner.push("", false);
     runner.push("", true);
-    runner.push(":0\n", true);
+    runner.push("null\n", true);
     runner.push("hostname\n", true);
 
     let always_alive = |_: u16| true;
@@ -153,7 +153,7 @@ fn user_build_fails_root_check() {
     runner.push("", true);
     runner.push("", true);
     runner.push("", true);
-    runner.push(":0\n", true);
+    runner.push("null\n", true);
     runner.push("off\n", true);
 
     let always_alive = |_: u16| true;
@@ -176,7 +176,7 @@ fn shell_user_on_debuggable_image_is_ok() {
     runner.push("", true);
     runner.push("", true);
     runner.push("", true);
-    runner.push(":0\n", true);
+    runner.push("null\n", true);
     runner.push("off\n", true);
 
     let always_alive = |_: u16| true;
@@ -184,4 +184,23 @@ fn shell_user_on_debuggable_image_is_ok() {
     let root = checks.iter().find(|c| c.id == "root").unwrap();
     assert_eq!(root.status, CheckStatus::Ok);
     assert!(root.detail.contains("will root on capture"));
+}
+
+#[test]
+fn clear_proxy_fix_neutralizes_legacy_and_deletes_granular_keys() {
+    let runner = bh_device::FakeRunner::new();
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    apply_basic_fix(&runner, "emulator-5554", FixId::ClearProxy).unwrap();
+    let calls = runner.calls.lock().unwrap();
+    let joined: Vec<String> = calls.iter().map(|c| c.join(" ")).collect();
+    assert_eq!(
+        joined[0],
+        "-s emulator-5554 shell settings put global http_proxy :0"
+    );
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_host".to_string()));
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_port".to_string()));
+    assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_exclusion_list".to_string()));
 }

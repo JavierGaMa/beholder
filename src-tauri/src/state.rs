@@ -10,6 +10,7 @@ pub struct AppState {
     pub proxy: AsyncMutex<Option<bh_proxy::ProxyHandle>>,
     pub sink: Arc<BatchSink>,
     pub active_serial: AsyncMutex<Option<String>>,
+    pub metro_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
 }
 
 impl AppState {
@@ -19,6 +20,7 @@ impl AppState {
             proxy: AsyncMutex::new(None),
             sink,
             active_serial: AsyncMutex::new(None),
+            metro_task: AsyncMutex::new(None),
         }
     }
 

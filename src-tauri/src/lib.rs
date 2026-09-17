@@ -3,6 +3,7 @@ mod batch;
 mod commands;
 mod config;
 mod console;
+mod metro;
 mod state;
 
 use std::sync::Arc;
@@ -125,6 +126,9 @@ pub fn run() {
         if let tauri::RunEvent::Exit = event {
             tauri::async_runtime::block_on(async {
                 let state = app_handle.state::<state::AppState>();
+                if let Some(metro_task) = state.metro_task.lock().await.take() {
+                    metro_task.stop().await;
+                }
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {

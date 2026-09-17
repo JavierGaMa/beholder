@@ -8,11 +8,13 @@ import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import type { AvdInfo } from "../../store/types";
 import { isFailed } from "../requests/filters";
 import { ErrorBox } from "../../components/ui/ErrorBox";
+import { Badge } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
 
 export function CommandBar() {
   const captureOn = useTraffic((s) => s.captureOn);
   const capturePort = useTraffic((s) => s.capturePort);
+  const metro = useTraffic((s) => s.metro);
   const exchanges = useTraffic((s) => s.exchanges);
   const order = useTraffic((s) => s.order);
   const targetSerial = useTraffic((s) => s.targetSerial);
@@ -177,6 +179,11 @@ export function CommandBar() {
 
       <div className="flex items-center gap-3 font-mono text-[11px] text-muted">
         {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
+        {captureOn && metro?.detected && (
+          <Badge tone="accent">
+            Metro :{metro.port}
+          </Badge>
+        )}
         <span>{order.length} req</span>
         {failures > 0 && <span className="text-danger">{failures} fail</span>}
       </div>

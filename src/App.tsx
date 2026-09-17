@@ -10,7 +10,7 @@ import {
   Waves,
   X,
 } from "lucide-react";
-import { useTraffic, type View } from "./store/traffic";
+import { useTraffic, type MetroStatus, type View } from "./store/traffic";
 import { useConsole } from "./store/console";
 import type { ConsoleEvent } from "./store/console-types";
 import { invoke, isTauri, listenTraffic } from "./lib/tauri";
@@ -89,6 +89,7 @@ export default function App() {
     let disposeInstall: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
     let disposeConsole: (() => void) | undefined;
+    let disposeMetro: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
@@ -113,6 +114,11 @@ export default function App() {
         }).then((un) => {
           disposeConsole = un;
         });
+        listen<MetroStatus>("metro-status", (e) => {
+          useTraffic.getState().setMetro(e.payload);
+        }).then((un) => {
+          disposeMetro = un;
+        });
       });
     }
     return () => {
@@ -120,6 +126,7 @@ export default function App() {
       disposeInstall?.();
       disposeConfig?.();
       disposeConsole?.();
+      disposeMetro?.();
       stopMockFn?.();
     };
   }, [ingest]);

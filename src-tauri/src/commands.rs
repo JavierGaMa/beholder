@@ -526,18 +526,25 @@ pub async fn capture_start(
     if let Some(existing) = state.proxy.lock().await.take() {
         existing.stop().await;
     }
+    if let Some(prev) = state.metro_task.lock().await.take() {
+        prev.stop().await;
+    }
 
     let proxy_runner = runner.clone();
     let proxy_serial = serial.clone();
     let avd = tokio::task::spawn_blocking(
         move || -> Result<Option<String>, String> {
             let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
-            device.set_proxy("10.0.2.2", port).map_err(|e| e.to_string())?;
+            device
+                .set_proxy(crate::metro::PROXY_HOST, port)
+                .map_err(|e| e.to_string())?;
             Ok(emu_avd_name(&proxy_runner, &proxy_serial))
         },
     )
     .await
     .map_err(|e| e.to_string())??;
+
+    let metro_task = crate::metro::spawn_metro_task(app.clone());
 
     *state.active_serial.lock().await = Some(serial.clone());
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
@@ -545,6 +552,7 @@ pub async fn capture_start(
         agent.store.set_capture(true);
     }
     state.proxy.lock().await.replace(handle);
+    *state.metro_task.lock().await = Some(metro_task);
     Ok(port)
 }
 
@@ -553,6 +561,9 @@ pub async fn capture_stop(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    if let Some(metro_task) = state.metro_task.lock().await.take() {
+        metro_task.stop().await;
+    }
     if let Some(handle) = state.proxy.lock().await.take() {
         handle.stop().await;
     }
