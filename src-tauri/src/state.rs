@@ -3,12 +3,14 @@ use crate::console::{ConsoleBatchSink, ShellBatchSink};
 use bh_console::{LogFilter, SessionHandle, ShellHandle};
 use bh_device::RealRunner;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
+use tauri::Manager;
 use tokio::sync::Mutex as AsyncMutex;
 
 pub struct AppState {
     runner: AsyncMutex<Option<Arc<RealRunner>>>,
     pub proxy: AsyncMutex<Option<bh_proxy::ProxyHandle>>,
-    pub sink: Arc<BatchSink>,
+    pub sink: StdMutex<Arc<BatchSink>>,
     pub active_serial: AsyncMutex<Option<String>>,
     pub metro_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
 }
@@ -18,10 +20,23 @@ impl AppState {
         AppState {
             runner: AsyncMutex::new(None),
             proxy: AsyncMutex::new(None),
-            sink,
+            sink: StdMutex::new(sink),
             active_serial: AsyncMutex::new(None),
             metro_task: AsyncMutex::new(None),
         }
+    }
+
+    pub fn current_sink(&self) -> Arc<BatchSink> {
+        self.sink.lock().unwrap().clone()
+    }
+
+    pub fn restart_sink(&self, app: &tauri::AppHandle) -> Arc<BatchSink> {
+        let agent = app
+            .try_state::<AgentState>()
+            .map(|a: tauri::State<AgentState>| a.store.clone());
+        let sink = Arc::new(BatchSink::spawn(app.clone(), agent));
+        *self.sink.lock().unwrap() = sink.clone();
+        sink
     }
 
     pub async fn get_runner(&self) -> Result<Arc<RealRunner>, bh_device::DeviceError> {

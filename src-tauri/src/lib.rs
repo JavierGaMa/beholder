@@ -92,6 +92,8 @@ pub fn run() {
             commands::clear_stale_proxies,
             commands::capture_start,
             commands::capture_stop,
+            commands::capture_health,
+            commands::capture_restart,
             commands::full_cleanup,
             commands::format_curl,
             commands::export_har,

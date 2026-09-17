@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { useTraffic } from "./traffic";
+import { MAX_EXCHANGES, MAX_WS_FRAMES, useTraffic } from "./traffic";
 import type { TrafficEvent } from "./types";
 
 const started = (id: number): TrafficEvent => ({
@@ -53,6 +53,61 @@ describe("traffic store ingest", () => {
     expect(conn?.url).toBe("wss://x.dev");
     expect(conn?.frames.length).toBe(1);
     expect(conn?.frames[0].direction).toBe("Sent");
+  });
+});
+
+describe("traffic store bounds", () => {
+  it("trims the exchange ring to MAX_EXCHANGES evicting oldest", () => {
+    useTraffic.getState().clear();
+    const events: TrafficEvent[] = [];
+    for (let id = 1; id <= MAX_EXCHANGES + 10; id++) events.push(started(id));
+    useTraffic.getState().ingest(events);
+    const st = useTraffic.getState();
+    expect(st.order.length).toBe(MAX_EXCHANGES);
+    expect(st.exchanges.get(1)).toBeUndefined();
+    expect(st.exchanges.get(2010)).toBeDefined();
+    expect(st.order[0]).toBe(11);
+    expect(st.requestCount).toBe(2010);
+  });
+
+  it("dedupes duplicate starts keeping one order entry", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([started(1), started(1)]);
+    const st = useTraffic.getState();
+    expect(st.order).toEqual([1]);
+    expect(st.exchanges.size).toBe(1);
+    expect(st.requestCount).toBe(2);
+  });
+
+  it("caps ws frames keeping the newest", () => {
+    useTraffic.getState().clear();
+    const events: TrafficEvent[] = [
+      { type: "Ws", kind: "Opened", id: 9, url: "wss://x.dev", opened_at: 1 } as never,
+    ];
+    for (let seq = 1; seq <= MAX_WS_FRAMES + 10; seq++) {
+      events.push({
+        type: "Ws",
+        kind: "Frame",
+        id: 9,
+        seq,
+        direction: "Sent",
+        payload: { text: "hi", is_binary: false, size: 2, truncated: false, mime: "text/plain" },
+        at: seq,
+      } as never);
+    }
+    useTraffic.getState().ingest(events);
+    const conn = useTraffic.getState().wsConnections.get(9);
+    expect(conn?.frames.length).toBe(MAX_WS_FRAMES);
+    expect(conn?.frames[0].seq).toBe(11);
+    expect(conn?.frames[conn.frames.length - 1].seq).toBe(510);
+  });
+
+  it("returns the same state object for a no-op batch", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([started(1)]);
+    const before = useTraffic.getState();
+    useTraffic.getState().ingest([completed(999)]);
+    expect(useTraffic.getState()).toBe(before);
   });
 });
 

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { ChevronDown, CircleDot, MonitorSmartphone, Plus, Settings, Square, Play } from "lucide-react";
+import { ChevronDown, CircleDot, MonitorSmartphone, Plus, RotateCcw, Settings, Square, Play } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
+import { loadBodyCapMb } from "../../lib/prefs";
 import { useAdbDevicesQuery } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
+import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
 import type { AvdInfo } from "../../store/types";
 import { isFailed } from "../requests/filters";
 import { ErrorBox } from "../../components/ui/ErrorBox";
@@ -27,6 +29,8 @@ export function CommandBar() {
 
   const avdsQ = useAvdsQuery();
   const adbQ = useAdbDevicesQuery();
+  const healthQ = useCaptureHealthQuery(captureOn);
+  const checks = healthQ.data ?? [];
   const refreshAvds = useInvalidateEmulators();
   const avds = avdsQ.data ?? [];
   const adbError = qError(adbQ.error) ?? qError(avdsQ.error);
@@ -81,7 +85,7 @@ export function CommandBar() {
         await invoke("capture_stop");
         setCapture(false);
       } else if (targetSerial) {
-        const capMb = Number(localStorage.getItem("beholder.bodyCapMb")) || 2;
+        const capMb = loadBodyCapMb();
         const port = await invoke<number>("capture_start", {
           serial: targetSerial,
           bodyCap: Math.round(capMb * 1024 * 1024),
@@ -89,6 +93,27 @@ export function CommandBar() {
         setCapture(true, port);
       }
     } catch (e) {
+      setCapture(false);
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restartCapture() {
+    if (!targetSerial) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const capMb = loadBodyCapMb();
+      const port = await invoke<number>("capture_restart", {
+        serial: targetSerial,
+        bodyCap: Math.round(capMb * 1024 * 1024),
+      });
+      setCapture(true, port);
+      useTraffic.getState().clear();
+    } catch (e) {
+      setCapture(false);
       setError(String(e));
     } finally {
       setBusy(false);
@@ -178,6 +203,15 @@ export function CommandBar() {
       <div className="flex-1" />
 
       <div className="flex items-center gap-3 font-mono text-[11px] text-muted">
+        {captureOn && (
+          <CaptureDoctor
+            checks={checks}
+            unknown={healthQ.isPending || healthQ.isError}
+            busy={busy}
+            hasTarget={targetSerial != null}
+            onRestart={restartCapture}
+          />
+        )}
         {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
         {captureOn && metro?.detected && (
           <Badge tone="accent">
@@ -217,5 +251,86 @@ function TargetRow({ avd, onSelect, active }: { avd: AvdInfo; onSelect: () => vo
       </span>
       {active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
     </button>
+  );
+}
+
+function checkTextCls(status: CaptureCheckT["status"]): string {
+  if (status === "fail") return "text-danger";
+  if (status === "warn") return "text-warn";
+  return "text-ok";
+}
+
+function CaptureDoctor({
+  checks,
+  unknown,
+  busy,
+  hasTarget,
+  onRestart,
+}: {
+  checks: CaptureCheckT[];
+  unknown: boolean;
+  busy: boolean;
+  hasTarget: boolean;
+  onRestart: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const anyFail = checks.some((c) => c.status === "fail");
+  const anyWarn = checks.some((c) => c.status === "warn");
+  const dotCls = unknown
+    ? "bg-muted/50"
+    : anyFail
+      ? "animate-pulse bg-danger"
+      : anyWarn
+        ? "bg-warn"
+        : "bg-ok";
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    window.addEventListener("mousedown", onClickOutside);
+    return () => window.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative flex items-center">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        title="Capture doctor"
+        className="flex h-4 w-4 items-center justify-center rounded hover:bg-bg"
+      >
+        <span className={clsx("h-2 w-2 rounded-full", dotCls)} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-5 w-80 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
+          <p className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted/70">Capture doctor</p>
+          {checks.length === 0 && (
+            <p className="px-2 py-1.5 text-[11px] text-muted">checking capture health...</p>
+          )}
+          {checks.map((c) => (
+            <p key={c.id} className={clsx("px-2 py-1 text-[11px] leading-relaxed", checkTextCls(c.status))}>
+              {c.title} — {c.detail}
+            </p>
+          ))}
+          <button
+            type="button"
+            disabled={busy || !hasTarget}
+            title={hasTarget ? "Restart capture" : "Select a target first"}
+            onClick={() => {
+              setOpen(false);
+              onRestart();
+            }}
+            className="mt-1 flex w-full items-center gap-1.5 rounded-md bg-danger/15 px-2.5 py-2 text-[12px] font-semibold text-danger transition-colors hover:bg-danger/25 disabled:opacity-40"
+          >
+            <RotateCcw size={12} />
+            Restart capture
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

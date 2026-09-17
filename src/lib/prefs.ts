@@ -42,6 +42,17 @@ export function saveSlowMs(v: number) {
   localStorage.setItem("beholder.slowMs", String(v));
 }
 
+export const DEFAULT_BODY_CAP_MB = 0.25;
+
+export function loadBodyCapMb(): number {
+  const v = Number(localStorage.getItem("beholder.bodyCapMb"));
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_BODY_CAP_MB;
+}
+
+export function saveBodyCapMb(v: number) {
+  localStorage.setItem("beholder.bodyCapMb", String(v));
+}
+
 export function loadSidebarCollapsed(): boolean {
   return localStorage.getItem("beholder.sidebarCollapsed") === "true";
 }

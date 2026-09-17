@@ -7,6 +7,7 @@ use bh_device::{
     ApkInstaller, AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState,
     ProxyConfigurator, RealSdkRunner, SdkTool,
 };
+use serde::Serialize;
 use std::path::Path;
 use tauri::{Emitter, Manager, State};
 
@@ -488,13 +489,23 @@ pub async fn capture_start(
     port: Option<u16>,
     body_cap: Option<usize>,
 ) -> Result<u16, String> {
+    start_capture(&state, &app, &serial, port, body_cap).await
+}
+
+async fn start_capture(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    serial: &str,
+    port: Option<u16>,
+    body_cap: Option<usize>,
+) -> Result<u16, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let ca = bh_ca::load_or_create(&dir).map_err(|e| e.to_string())?;
     let filename = bh_ca::system_cert_filename(&ca.cert_pem).map_err(|e| e.to_string())?;
 
     let cert_runner = runner.clone();
-    let cert_serial = serial.clone();
+    let cert_serial = serial.to_string();
     let cert_pem = ca.cert_pem.clone();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         let device = bh_device::AdbDevice::new(cert_runner.as_ref(), &cert_serial);
@@ -518,8 +529,16 @@ pub async fn capture_start(
             .map_err(|e| e.to_string())?
             .port(),
     };
-    let cap = body_cap.unwrap_or(2 * 1024 * 1024);
-    let handle = bh_proxy::start_mitm(port, &ca, cap, state.sink.clone())
+    let cap = body_cap.unwrap_or(256 * 1024);
+    let metro_cfg = crate::config::load(&dir)
+        .ok()
+        .map(|c| c.metro)
+        .unwrap_or_default();
+    let metro = bh_proxy::MetroBypass {
+        port: metro_cfg.port,
+        enabled: !metro_cfg.capture,
+    };
+    let handle = bh_proxy::start_mitm(port, &ca, cap, state.current_sink(), metro)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -531,7 +550,7 @@ pub async fn capture_start(
     }
 
     let proxy_runner = runner.clone();
-    let proxy_serial = serial.clone();
+    let proxy_serial = serial.to_string();
     let avd = tokio::task::spawn_blocking(
         move || -> Result<Option<String>, String> {
             let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
@@ -546,9 +565,9 @@ pub async fn capture_start(
 
     let metro_task = crate::metro::spawn_metro_task(app.clone());
 
-    *state.active_serial.lock().await = Some(serial.clone());
+    *state.active_serial.lock().await = Some(serial.to_string());
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
-        agent.store.set_target(Some(serial.clone()), avd);
+        agent.store.set_target(Some(serial.to_string()), avd);
         agent.store.set_capture(true);
     }
     state.proxy.lock().await.replace(handle);
@@ -561,6 +580,10 @@ pub async fn capture_stop(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    stop_capture(&state, &app).await
+}
+
+async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(metro_task) = state.metro_task.lock().await.take() {
         metro_task.stop().await;
     }
@@ -578,6 +601,168 @@ pub async fn capture_stop(
         agent.store.set_capture(false);
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckStatus {
+    Ok,
+    Warn,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CaptureCheck {
+    pub id: String,
+    pub title: String,
+    pub status: CheckStatus,
+    pub detail: String,
+    pub fix: Option<String>,
+}
+
+fn check(id: &str, title: &str, status: CheckStatus, detail: String, fix: Option<String>) -> CaptureCheck {
+    CaptureCheck {
+        id: id.to_string(),
+        title: title.to_string(),
+        status,
+        detail,
+        fix,
+    }
+}
+
+#[tauri::command]
+pub async fn capture_health(state: State<'_, AppState>) -> Result<Vec<CaptureCheck>, String> {
+    let port = state.proxy.lock().await.as_ref().map(|h| h.port);
+    let Some(port) = port else {
+        return Ok(vec![check(
+            "capture",
+            "Capture",
+            CheckStatus::Ok,
+            "capture stopped".into(),
+            None,
+        )]);
+    };
+
+    let sink = state.current_sink();
+    let sink_status = if sink.alive() {
+        check("sink", "Traffic sink", CheckStatus::Ok, "traffic sink is running".into(), None)
+    } else {
+        check(
+            "sink",
+            "Traffic sink",
+            CheckStatus::Fail,
+            "traffic sink is not running".into(),
+            Some("Restart capture".into()),
+        )
+    };
+
+    let connect = tokio::net::TcpStream::connect(("127.0.0.1", port));
+    let proxy_status = match tokio::time::timeout(std::time::Duration::from_millis(500), connect).await
+    {
+        Ok(Ok(_)) => check(
+            "proxy",
+            "Proxy listener",
+            CheckStatus::Ok,
+            format!("listening on 127.0.0.1:{port}"),
+            None,
+        ),
+        _ => check(
+            "proxy",
+            "Proxy listener",
+            CheckStatus::Fail,
+            format!("nothing is listening on 127.0.0.1:{port}"),
+            Some("Restart capture".into()),
+        ),
+    };
+
+    let serial = state.active_serial.lock().await.clone();
+    let device_status = device_proxy_check(&state, serial.as_deref(), port).await;
+
+    Ok(vec![sink_status, proxy_status, device_status])
+}
+
+async fn device_proxy_check(
+    state: &AppState,
+    serial: Option<&str>,
+    port: u16,
+) -> CaptureCheck {
+    let expected = format!("{}:{}", crate::metro::PROXY_HOST, port);
+    let Some(serial) = serial else {
+        return check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Warn,
+            "active target is unknown".into(),
+            Some("Restart capture".into()),
+        );
+    };
+    let runner = match state.get_runner().await {
+        Ok(r) => r,
+        Err(e) => {
+            return check(
+                "device-proxy",
+                "Device proxy",
+                CheckStatus::Fail,
+                e.to_string(),
+                None,
+            )
+        }
+    };
+    let serial = serial.to_string();
+    let read = tokio::task::spawn_blocking(move || {
+        let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
+        ProxyConfigurator::current_proxy(&device)
+    })
+    .await;
+    match read {
+        Ok(Ok(Some(actual))) if actual == expected => check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Ok,
+            format!("device routes through {actual}"),
+            None,
+        ),
+        Ok(Ok(Some(actual))) => check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Fail,
+            format!("device proxy points to {actual}, expected {expected}"),
+            Some("Restart capture".into()),
+        ),
+        Ok(Ok(None)) => check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Fail,
+            "device has no http_proxy set".into(),
+            Some("Restart capture".into()),
+        ),
+        Ok(Err(e)) => check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Fail,
+            e.to_string(),
+            Some("Restart capture".into()),
+        ),
+        Err(e) => check(
+            "device-proxy",
+            "Device proxy",
+            CheckStatus::Fail,
+            e.to_string(),
+            None,
+        ),
+    }
+}
+
+#[tauri::command]
+pub async fn capture_restart(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+    body_cap: Option<usize>,
+) -> Result<u16, String> {
+    stop_capture(&state, &app).await?;
+    state.restart_sink(&app);
+    start_capture(&state, &app, &serial, None, body_cap).await
 }
 
 #[tauri::command]

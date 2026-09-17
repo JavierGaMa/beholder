@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Copy, FileCode2, RefreshCw } from "lucide-react";
 import { ACCENTS, ACCENT_SWATCHES, THEMES, THEME_LABELS } from "../../lib/theme/themes";
-import { loadSlowMs, saveSlowMs } from "../../lib/prefs";
+import { loadBodyCapMb, loadSlowMs, saveBodyCapMb, saveSlowMs } from "../../lib/prefs";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import { applyUiConfig } from "../../lib/theme/applyConfig";
 import { invoke, isTauri } from "../../lib/tauri";
@@ -19,9 +19,7 @@ import { useUpdater } from "../updater/useUpdater";
 export function SettingsView() {
   const uiConfig = useTraffic((s) => s.uiConfig);
   const [slowMs, setSlowMs] = useState<number>(loadSlowMs);
-  const [bodyCapMb, setBodyCapMb] = useState<number>(
-    () => Number(localStorage.getItem("beholder.bodyCapMb")) || 2,
-  );
+  const [bodyCapMb, setBodyCapMb] = useState<number>(loadBodyCapMb);
 
   const config: UiConfig = uiConfig ?? DEFAULT_CONFIG;
 
@@ -34,7 +32,7 @@ export function SettingsView() {
   function changeCap(mb: number) {
     if (Number.isNaN(mb) || mb < 0) return;
     setBodyCapMb(mb);
-    localStorage.setItem("beholder.bodyCapMb", String(mb));
+    saveBodyCapMb(mb);
   }
 
   async function save(next: UiConfig) {
@@ -138,6 +136,7 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
           <input
             type="number"
             min={0}
+            step={0.25}
             value={bodyCapMb}
             onChange={(e) => changeCap(Number(e.target.value))}
             className="h-7 w-24 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"

@@ -2,6 +2,9 @@ import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 import type { UiConfig } from "../lib/theme/config-types";
 
+export const MAX_EXCHANGES = 2000;
+export const MAX_WS_FRAMES = 500;
+
 export type View = "requests" | "websockets" | "emulators" | "apks" | "console";
 
 export interface MetroStatus {
@@ -33,6 +36,7 @@ interface TrafficState {
   exchanges: Map<number, HttpExchange>;
   order: number[];
   wsConnections: Map<number, WsConnection>;
+  seen: Set<number>;
   activeView: View;
   captureOn: boolean;
   capturePort: number | null;
@@ -65,6 +69,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   exchanges: new Map(),
   order: [],
   wsConnections: new Map(),
+  seen: new Set(),
   activeView: "requests",
   captureOn: false,
   capturePort: null,
@@ -95,18 +100,21 @@ export const useTraffic = create<TrafficState>((set) => ({
       exchanges: new Map(),
       order: [],
       wsConnections: new Map(),
+      seen: new Set(),
       requestCount: 0,
     }),
   ingest: (events) =>
     set((s) => {
-      const exchanges = new Map(s.exchanges);
-      const order = s.order;
+      let exchanges = s.exchanges;
+      let order = s.order;
       let orderChanged = false;
-      const wsConnections = new Map(s.wsConnections);
+      let wsConnections = s.wsConnections;
       let count = s.requestCount;
+      const seen = s.seen;
       for (const ev of events) {
         switch (ev.type) {
           case "ExchangeStarted": {
+            if (exchanges === s.exchanges) exchanges = new Map(s.exchanges);
             exchanges.set(ev.id, {
               id: ev.id,
               request: ev.request,
@@ -115,9 +123,13 @@ export const useTraffic = create<TrafficState>((set) => ({
               timing: { ttfb_ms: null, download_ms: null, total_ms: null },
               protocol: "",
             });
-            if (!order.includes(ev.id)) {
+            if (!seen.has(ev.id)) {
+              if (!orderChanged) {
+                order = [...s.order];
+                orderChanged = true;
+              }
+              seen.add(ev.id);
               order.push(ev.id);
-              orderChanged = true;
             }
             count += 1;
             break;
@@ -125,6 +137,7 @@ export const useTraffic = create<TrafficState>((set) => ({
           case "ExchangeCompleted": {
             const ex = exchanges.get(ev.id);
             if (ex) {
+              if (exchanges === s.exchanges) exchanges = new Map(s.exchanges);
               exchanges.set(ev.id, {
                 ...ex,
                 response: ev.response,
@@ -137,20 +150,30 @@ export const useTraffic = create<TrafficState>((set) => ({
           case "ExchangeFailed": {
             const ex = exchanges.get(ev.id);
             if (ex) {
+              if (exchanges === s.exchanges) exchanges = new Map(s.exchanges);
               exchanges.set(ev.id, { ...ex, error: ev.error });
             }
             break;
           }
           case "Ws": {
+            if (wsConnections === s.wsConnections) wsConnections = new Map(s.wsConnections);
             applyWs(wsConnections, ev);
             break;
           }
         }
       }
-      if (!orderChanged && count === s.requestCount && wsConnections.size === s.wsConnections.size) {
-        if (exchanges === s.exchanges) return s;
+      if (orderChanged) {
+        while (order.length > MAX_EXCHANGES) {
+          const id = order.shift();
+          if (id == null) break;
+          exchanges.delete(id);
+          seen.delete(id);
+        }
       }
-      return { exchanges, order: [...order], wsConnections, requestCount: count };
+      if (exchanges === s.exchanges && !orderChanged && wsConnections === s.wsConnections && count === s.requestCount) {
+        return s;
+      }
+      return { exchanges, order, wsConnections, requestCount: count };
     }),
 }));
 
@@ -168,6 +191,9 @@ function applyWs(map: Map<number, WsConnection>, ev: WsEvent) {
         payload: ev.payload,
         at: ev.at,
       });
+      if (conn.frames.length > MAX_WS_FRAMES) {
+        conn.frames.splice(0, conn.frames.length - MAX_WS_FRAMES);
+      }
       map.set(ev.id, conn);
       break;
     }
