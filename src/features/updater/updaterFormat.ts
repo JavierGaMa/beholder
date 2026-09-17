@@ -10,6 +10,7 @@ export function bannerTitle(version: string): string {
 export function notesLine(notes: string | null | undefined, maxChars = 120): string | null {
   if (!notes) return null;
   const collapsed = notes.replace(/\s+/g, " ").trim();
+  if (!collapsed) return null;
   if (collapsed.length <= maxChars) return collapsed;
   return `${collapsed.slice(0, maxChars - 1).trimEnd()}…`;
 }
