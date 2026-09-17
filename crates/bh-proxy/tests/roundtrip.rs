@@ -3,9 +3,18 @@ async fn http_and_https_roundtrip() {
     let ca = bh_ca::generate_ca().unwrap();
     let sink = std::sync::Arc::new(bh_core::RecordingSink::default());
 
-    let handle = bh_proxy::start_mitm(0, &ca, 2_000_000, sink.clone())
-        .await
-        .unwrap();
+    let handle = bh_proxy::start_mitm(
+        0,
+        &ca,
+        2_000_000,
+        sink.clone(),
+        bh_proxy::MetroBypass {
+            port: 8081,
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
 
     let cert = reqwest::Certificate::from_pem(ca.cert_pem.as_bytes()).unwrap();
     let client = reqwest::Client::builder()

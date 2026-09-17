@@ -14,6 +14,12 @@ use std::sync::Arc;
 use thiserror::Error;
 use ws::RecordingWsHandler;
 
+#[derive(Clone, Copy)]
+pub struct MetroBypass {
+    pub port: u16,
+    pub enabled: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum ProxyError {
     #[error("bind failed: {0}")]
@@ -51,6 +57,7 @@ pub async fn start_mitm(
     ca: &Ca,
     body_cap: usize,
     sink: Arc<dyn TrafficSink>,
+    metro: MetroBypass,
 ) -> Result<ProxyHandle, ProxyError> {
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))
         .await
@@ -72,8 +79,8 @@ pub async fn start_mitm(
         .with_listener(listener)
         .with_ca(authority)
         .with_rustls_client(aws_lc_rs::default_provider())
-        .with_http_handler(RecordingHttpHandler::new(sink.clone(), body_cap))
-        .with_websocket_handler(RecordingWsHandler::new(sink, body_cap))
+        .with_http_handler(RecordingHttpHandler::new(sink.clone(), body_cap, metro))
+        .with_websocket_handler(RecordingWsHandler::new(sink, body_cap, metro))
         .with_graceful_shutdown(async {
             let _ = rx.await;
         })
@@ -96,7 +103,18 @@ mod tests {
     async fn starts_on_random_port_and_stops() {
         let ca = bh_ca::generate_ca().unwrap();
         let sink = Arc::new(bh_core::RecordingSink::default());
-        let handle = start_mitm(0, &ca, 1000, sink).await.unwrap();
+        let handle = start_mitm(
+            0,
+            &ca,
+            1000,
+            sink,
+            MetroBypass {
+                port: 8081,
+                enabled: false,
+            },
+        )
+        .await
+        .unwrap();
         assert!(handle.port > 0);
         handle.stop().await;
     }

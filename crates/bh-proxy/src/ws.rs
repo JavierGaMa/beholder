@@ -1,4 +1,5 @@
-use crate::handler::now_ms;
+use crate::handler::{is_metro_destination, now_ms};
+use crate::MetroBypass;
 use bh_core::types::*;
 use bh_core::TrafficSink;
 use hudsucker::{tokio_tungstenite::tungstenite::Message, WebSocketContext, WebSocketHandler};
@@ -9,16 +10,18 @@ use std::sync::Arc;
 pub struct RecordingWsHandler {
     sink: Arc<dyn TrafficSink>,
     cap: usize,
+    metro: MetroBypass,
     next_conn: Arc<AtomicU64>,
     next_seq: Arc<AtomicU64>,
     conn: Option<u64>,
 }
 
 impl RecordingWsHandler {
-    pub fn new(sink: Arc<dyn TrafficSink>, cap: usize) -> Self {
+    pub fn new(sink: Arc<dyn TrafficSink>, cap: usize, metro: MetroBypass) -> Self {
         RecordingWsHandler {
             sink,
             cap,
+            metro,
             next_conn: Arc::new(AtomicU64::new(1)),
             next_seq: Arc::new(AtomicU64::new(1)),
             conn: None,
@@ -28,12 +31,17 @@ impl RecordingWsHandler {
 
 impl WebSocketHandler for RecordingWsHandler {
     async fn handle_message(&mut self, ctx: &WebSocketContext, msg: Message) -> Option<Message> {
-        let (direction, url) = match ctx {
-            WebSocketContext::ClientToServer { dst, .. } => (WsDirection::Sent, dst.to_string()),
+        let (direction, url, peer) = match ctx {
+            WebSocketContext::ClientToServer { dst, .. } => {
+                (WsDirection::Sent, dst.to_string(), dst.clone())
+            }
             WebSocketContext::ServerToClient { src, .. } => {
-                (WsDirection::Received, src.to_string())
+                (WsDirection::Received, src.to_string(), src.clone())
             }
         };
+        if is_metro_destination(&peer, self.metro) {
+            return Some(msg);
+        }
         if self.conn.is_none() {
             let id = self.next_conn.fetch_add(1, Ordering::SeqCst);
             self.conn = Some(id);

@@ -110,6 +110,8 @@ impl Default for ApksConfig {
 pub struct MetroConfig {
     #[serde(default = "default_metro_port")]
     pub port: u16,
+    #[serde(default)]
+    pub capture: bool,
 }
 
 fn default_metro_port() -> u16 {
@@ -120,6 +122,7 @@ impl Default for MetroConfig {
     fn default() -> Self {
         MetroConfig {
             port: default_metro_port(),
+            capture: false,
         }
     }
 }
@@ -194,6 +197,8 @@ pub enum ConfigError {
 
 const TEMPLATE_HEADER: &str = "# Beholder UI configuration\n# Edit and save - changes apply live.\n# Custom colors are optional: uncomment or add under [colors].\n\n";
 
+const METRO_CAPTURE_DOC: &str = "# capture = true also records Metro traffic to loopback on the metro port;\n# false (default) relays it as a pass-through without recording\n";
+
 pub fn config_path(app_data: &std::path::Path) -> PathBuf {
     app_data.join("config.toml")
 }
@@ -212,6 +217,7 @@ pub fn load(dir: &std::path::Path) -> Result<UiConfig, ConfigError> {
 pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), ConfigError> {
     std::fs::create_dir_all(dir)?;
     let body = toml::to_string_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
+    let body = body.replacen("[metro]", &format!("[metro]\n{METRO_CAPTURE_DOC}"), 1);
     std::fs::write(config_path(dir), format!("{}{}", TEMPLATE_HEADER, body))
         .map_err(ConfigError::Io)
 }
@@ -334,6 +340,7 @@ mod tests {
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded.metro, MetroConfig::default());
         assert_eq!(loaded.metro.port, 8081);
+        assert!(!loaded.metro.capture);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -343,13 +350,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let mut config = UiConfig::default();
         config.metro.port = 8082;
+        config.metro.capture = true;
         write_config(&dir, &config).unwrap();
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded, config);
         assert_eq!(loaded.metro.port, 8082);
+        assert!(loaded.metro.capture);
         let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
         assert!(raw.contains("[metro]"));
         assert!(raw.contains("port = 8082"));
+        assert!(raw.contains("capture = true\n"));
+        assert!(!raw.contains("bypass"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn metro_capture_defaults_false_in_written_template() {
+        let dir = std::env::temp_dir().join(format!(
+            "bh-cfg-metro-tpl-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = UiConfig::default();
+        write_config(&dir, &config).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("# capture = true also records Metro traffic"));
+        assert!(raw.contains("capture = false"));
         assert!(!raw.contains("bypass"));
         std::fs::remove_dir_all(&dir).ok();
     }

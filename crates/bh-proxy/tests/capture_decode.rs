@@ -134,9 +134,18 @@ async fn capture_decodes_while_client_receives_encoded_bytes() {
 
     let ca = bh_ca::generate_ca().unwrap();
     let sink = std::sync::Arc::new(bh_core::RecordingSink::default());
-    let handle = bh_proxy::start_mitm(0, &ca, CAP, sink.clone())
-        .await
-        .unwrap();
+    let handle = bh_proxy::start_mitm(
+        0,
+        &ca,
+        CAP,
+        sink.clone(),
+        bh_proxy::MetroBypass {
+            port: 8081,
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
 
     let client = reqwest::Client::builder()
         .proxy(reqwest::Proxy::all(format!("http://127.0.0.1:{}", handle.port)).unwrap())

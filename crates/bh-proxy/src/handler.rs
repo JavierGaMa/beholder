@@ -1,4 +1,5 @@
 use crate::decode::decode_content_encoding;
+use crate::MetroBypass;
 use bh_core::types::*;
 use bh_core::TrafficSink;
 use futures::SinkExt;
@@ -15,6 +16,7 @@ use std::time::Instant;
 pub struct Shared {
     pub sink: Arc<dyn TrafficSink>,
     pub cap: usize,
+    pub metro: MetroBypass,
     pub next_exchange: AtomicU64,
 }
 
@@ -30,18 +32,21 @@ pub struct RecordingHttpHandler {
     shared: Arc<Shared>,
     current: Option<u64>,
     start: Option<Instant>,
+    bypassing: bool,
 }
 
 impl RecordingHttpHandler {
-    pub fn new(sink: Arc<dyn TrafficSink>, cap: usize) -> Self {
+    pub fn new(sink: Arc<dyn TrafficSink>, cap: usize, metro: MetroBypass) -> Self {
         RecordingHttpHandler {
             shared: Arc::new(Shared {
                 sink,
                 cap,
+                metro,
                 next_exchange: AtomicU64::new(1),
             }),
             current: None,
             start: None,
+            bypassing: false,
         }
     }
 }
@@ -99,6 +104,30 @@ pub(crate) fn rewrite_emulator_host(uri: &hudsucker::hyper::Uri) -> hudsucker::h
     builder.build().unwrap_or_else(|_| uri.clone())
 }
 
+pub(crate) fn is_metro_destination(uri: &hudsucker::hyper::Uri, metro: MetroBypass) -> bool {
+    if !metro.enabled {
+        return false;
+    }
+    let host = uri.host();
+    let port = uri.port_u16();
+    (host == Some("127.0.0.1") || host == Some("10.0.2.2")) && port == Some(metro.port)
+}
+
+fn apply_emulator_rewrite(uri: &mut hudsucker::hyper::Uri, headers: &mut HeaderMap) {
+    let emulator_target = uri.host() == Some("10.0.2.2");
+    *uri = rewrite_emulator_host(uri);
+    if emulator_target {
+        if let Some(value) = header_str(headers, "host")
+            .as_deref()
+            .and_then(rewrite_host_header_value)
+        {
+            if let Ok(v) = hudsucker::hyper::header::HeaderValue::from_str(&value) {
+                headers.insert("host", v);
+            }
+        }
+    }
+}
+
 fn rewrite_host_header_value(value: &str) -> Option<String> {
     let rest = value.strip_prefix("10.0.2.2")?;
     if rest.is_empty() || rest.starts_with(':') {
@@ -117,6 +146,13 @@ impl HttpHandler for RecordingHttpHandler {
         if req.method() == hudsucker::hyper::Method::CONNECT {
             let (mut parts, body) = req.into_parts();
             parts.uri = rewrite_emulator_host(&parts.uri);
+            return Request::from_parts(parts, body).into();
+        }
+        let bypass = is_metro_destination(req.uri(), self.shared.metro);
+        self.bypassing = bypass;
+        if bypass {
+            let (mut parts, body) = req.into_parts();
+            apply_emulator_rewrite(&mut parts.uri, &mut parts.headers);
             return Request::from_parts(parts, body).into();
         }
         let id = self.shared.next_exchange.fetch_add(1, Ordering::SeqCst);
@@ -172,23 +208,15 @@ impl HttpHandler for RecordingHttpHandler {
             },
         });
 
-        let emulator_target = parts.uri.host() == Some("10.0.2.2");
-        parts.uri = rewrite_emulator_host(&parts.uri);
-        if emulator_target {
-            if let Some(value) = header_str(&parts.headers, "host")
-                .as_deref()
-                .and_then(rewrite_host_header_value)
-            {
-                if let Ok(v) = hudsucker::hyper::header::HeaderValue::from_str(&value) {
-                    parts.headers.insert("host", v);
-                }
-            }
-        }
+        apply_emulator_rewrite(&mut parts.uri, &mut parts.headers);
 
         Request::from_parts(parts, rebuilt_body).into()
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
+        if self.bypassing {
+            return res;
+        }
         let id = self.current.unwrap_or(0);
         let start = self.start;
         let ttfb_ms = start.map(|s| s.elapsed().as_millis() as u64);
@@ -352,5 +380,55 @@ mod tests {
         );
         assert_eq!(rewrite_host_header_value("example.com"), None);
         assert_eq!(rewrite_host_header_value("10.0.2.2.evil.com"), None);
+    }
+
+    #[test]
+    fn metro_destination_matches_loopback_and_emulator_on_port() {
+        let metro = MetroBypass {
+            port: 8081,
+            enabled: true,
+        };
+        assert!(is_metro_destination(
+            &uri("http://127.0.0.1:8081/status"),
+            metro
+        ));
+        assert!(is_metro_destination(
+            &uri("http://10.0.2.2:8081/index.bundle?platform=android"),
+            metro
+        ));
+        assert!(is_metro_destination(&uri("ws://127.0.0.1:8081/hmr"), metro));
+        assert!(!is_metro_destination(
+            &uri("http://127.0.0.1:8082/status"),
+            metro
+        ));
+        assert!(!is_metro_destination(
+            &uri("http://10.0.2.2:9999/status"),
+            metro
+        ));
+        assert!(!is_metro_destination(
+            &uri("http://example.com:8081/x"),
+            metro
+        ));
+        assert!(!is_metro_destination(&uri("http://127.0.0.1/status"), metro));
+        assert!(!is_metro_destination(
+            &uri("http://localhost:8081/status"),
+            metro
+        ));
+    }
+
+    #[test]
+    fn metro_destination_requires_enabled() {
+        let metro = MetroBypass {
+            port: 8081,
+            enabled: false,
+        };
+        assert!(!is_metro_destination(
+            &uri("http://127.0.0.1:8081/status"),
+            metro
+        ));
+        assert!(!is_metro_destination(
+            &uri("http://10.0.2.2:8081/x"),
+            metro
+        ));
     }
 }

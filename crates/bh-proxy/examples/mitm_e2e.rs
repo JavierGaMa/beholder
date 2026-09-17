@@ -5,7 +5,18 @@ fn main() {
         let _ = std::fs::remove_dir_all(&dir);
         let ca = bh_ca::load_or_create(&dir).unwrap();
         let sink = std::sync::Arc::new(bh_core::RecordingSink::default());
-        let handle = bh_proxy::start_mitm(0, &ca, 2_000_000, sink).await.unwrap();
+        let handle = bh_proxy::start_mitm(
+            0,
+            &ca,
+            2_000_000,
+            sink,
+            bh_proxy::MetroBypass {
+                port: 8081,
+                enabled: false,
+            },
+        )
+        .await
+        .unwrap();
         println!("PORT={}", handle.port);
         println!("CA={}", dir.join("beholder-ca.pem").display());
         std::future::pending::<()>().await;
