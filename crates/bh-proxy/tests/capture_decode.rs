@@ -143,6 +143,7 @@ async fn capture_decodes_while_client_receives_encoded_bytes() {
             port: 8081,
             enabled: false,
         },
+        Vec::new(),
     )
     .await
     .unwrap();

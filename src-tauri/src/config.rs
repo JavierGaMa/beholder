@@ -128,6 +128,28 @@ impl Default for MetroConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProxyConfig {
+    #[serde(default = "default_tls_bypass_hosts")]
+    pub tls_bypass_hosts: Vec<String>,
+}
+
+fn default_tls_bypass_hosts() -> Vec<String> {
+    vec![
+        "www.google.com".into(),
+        "connectivitycheck.gstatic.com".into(),
+        "play.googleapis.com".into(),
+    ]
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        ProxyConfig {
+            tls_bypass_hosts: default_tls_bypass_hosts(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -151,6 +173,8 @@ pub struct UiConfig {
     pub apks: ApksConfig,
     #[serde(default)]
     pub metro: MetroConfig,
+    #[serde(default)]
+    pub proxy: ProxyConfig,
 }
 
 fn default_theme() -> String {
@@ -183,6 +207,7 @@ impl Default for UiConfig {
             agent: AgentConfig::default(),
             apks: ApksConfig::default(),
             metro: MetroConfig::default(),
+            proxy: ProxyConfig::default(),
         }
     }
 }
@@ -198,6 +223,8 @@ pub enum ConfigError {
 const TEMPLATE_HEADER: &str = "# Beholder UI configuration\n# Edit and save - changes apply live.\n# Custom colors are optional: uncomment or add under [colors].\n\n";
 
 const METRO_CAPTURE_DOC: &str = "# capture = true also records Metro traffic to loopback on the metro port;\n# false (default) relays it as a pass-through without recording\n";
+
+const PROXY_TLS_BYPASS_DOC: &str = "# tls_bypass_hosts = CONNECT tunnels to these hosts are relayed without TLS\n# interception so Android network validation probes see the real certificates;\n# set to an empty list to intercept everything\n";
 
 pub fn config_path(app_data: &std::path::Path) -> PathBuf {
     app_data.join("config.toml")
@@ -218,6 +245,7 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
     std::fs::create_dir_all(dir)?;
     let body = toml::to_string_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let body = body.replacen("[metro]", &format!("[metro]\n{METRO_CAPTURE_DOC}"), 1);
+    let body = body.replacen("[proxy]", &format!("[proxy]\n{PROXY_TLS_BYPASS_DOC}"), 1);
     std::fs::write(config_path(dir), format!("{}{}", TEMPLATE_HEADER, body))
         .map_err(ConfigError::Io)
 }
@@ -360,7 +388,7 @@ mod tests {
         assert!(raw.contains("[metro]"));
         assert!(raw.contains("port = 8082"));
         assert!(raw.contains("capture = true\n"));
-        assert!(!raw.contains("bypass"));
+        assert!(!metro_section(&raw).contains("bypass"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -376,7 +404,69 @@ mod tests {
         let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
         assert!(raw.contains("# capture = true also records Metro traffic"));
         assert!(raw.contains("capture = false"));
-        assert!(!raw.contains("bypass"));
+        assert!(!metro_section(&raw).contains("bypass"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn metro_section(raw: &str) -> String {
+        raw.split("[metro]")
+            .nth(1)
+            .unwrap_or("")
+            .split('[')
+            .next()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
+    fn proxy_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-proxy-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.proxy, ProxyConfig::default());
+        assert_eq!(
+            loaded.proxy.tls_bypass_hosts,
+            vec![
+                "www.google.com".to_string(),
+                "connectivitycheck.gstatic.com".to_string(),
+                "play.googleapis.com".to_string(),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_proxy_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-proxy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.proxy.tls_bypass_hosts = vec!["internal.example.com".into()];
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        assert_eq!(loaded.proxy.tls_bypass_hosts, vec!["internal.example.com"]);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[proxy]"));
+        assert!(raw.contains("internal.example.com"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn proxy_defaults_in_written_template() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-proxy-tpl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = UiConfig::default();
+        write_config(&dir, &config).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[proxy]"));
+        assert!(raw.contains(
+            "# tls_bypass_hosts = CONNECT tunnels to these hosts are relayed without TLS"
+        ));
+        assert!(raw.contains("www.google.com"));
+        assert!(raw.contains("connectivitycheck.gstatic.com"));
+        assert!(raw.contains("play.googleapis.com"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

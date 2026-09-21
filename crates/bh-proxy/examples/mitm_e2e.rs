@@ -14,6 +14,7 @@ fn main() {
                 port: 8081,
                 enabled: false,
             },
+            Vec::new(),
         )
         .await
         .unwrap();

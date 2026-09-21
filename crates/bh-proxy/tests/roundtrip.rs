@@ -12,6 +12,7 @@ async fn http_and_https_roundtrip() {
             port: 8081,
             enabled: false,
         },
+        Vec::new(),
     )
     .await
     .unwrap();

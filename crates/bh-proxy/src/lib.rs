@@ -58,6 +58,7 @@ pub async fn start_mitm(
     body_cap: usize,
     sink: Arc<dyn TrafficSink>,
     metro: MetroBypass,
+    tls_bypass_hosts: Vec<String>,
 ) -> Result<ProxyHandle, ProxyError> {
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))
         .await
@@ -79,7 +80,12 @@ pub async fn start_mitm(
         .with_listener(listener)
         .with_ca(authority)
         .with_rustls_client(aws_lc_rs::default_provider())
-        .with_http_handler(RecordingHttpHandler::new(sink.clone(), body_cap, metro))
+        .with_http_handler(RecordingHttpHandler::new(
+            sink.clone(),
+            body_cap,
+            metro,
+            tls_bypass_hosts,
+        ))
         .with_websocket_handler(RecordingWsHandler::new(sink, body_cap, metro))
         .with_graceful_shutdown(async {
             let _ = rx.await;
@@ -112,6 +118,7 @@ mod tests {
                 port: 8081,
                 enabled: false,
             },
+            Vec::new(),
         )
         .await
         .unwrap();

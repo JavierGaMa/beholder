@@ -27,6 +27,7 @@ async fn emulator_host_upstream_rewrites_to_loopback() {
             port: 8081,
             enabled: false,
         },
+        Vec::new(),
     )
     .await
     .unwrap();

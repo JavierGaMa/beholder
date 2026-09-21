@@ -530,17 +530,25 @@ async fn start_capture(
             .port(),
     };
     let cap = body_cap.unwrap_or(256 * 1024);
-    let metro_cfg = crate::config::load(&dir)
-        .ok()
-        .map(|c| c.metro)
-        .unwrap_or_default();
+    let cfg = crate::config::load(&dir).ok();
+    let metro_cfg = cfg.as_ref().map(|c| c.metro.clone()).unwrap_or_default();
+    let tls_bypass_hosts = cfg
+        .map(|c| c.proxy.tls_bypass_hosts)
+        .unwrap_or_else(|| crate::config::ProxyConfig::default().tls_bypass_hosts);
     let metro = bh_proxy::MetroBypass {
         port: metro_cfg.port,
         enabled: !metro_cfg.capture,
     };
-    let handle = bh_proxy::start_mitm(port, &ca, cap, state.current_sink(), metro)
-        .await
-        .map_err(|e| e.to_string())?;
+    let handle = bh_proxy::start_mitm(
+        port,
+        &ca,
+        cap,
+        state.current_sink(),
+        metro,
+        tls_bypass_hosts,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     if let Some(existing) = state.proxy.lock().await.take() {
         existing.stop().await;

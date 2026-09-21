@@ -102,6 +102,7 @@ async fn metro_emulator_http_bypass_relays_without_capture() {
             port: metro_port,
             enabled: true,
         },
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -145,6 +146,7 @@ async fn metro_loopback_http_bypass_relays_without_capture() {
             port: metro_port,
             enabled: true,
         },
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -185,6 +187,7 @@ async fn non_metro_http_is_captured_with_bypass_enabled() {
             port: metro_port,
             enabled: true,
         },
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -225,6 +228,7 @@ async fn metro_capture_enabled_keeps_capture() {
             port: metro_port,
             enabled: false,
         },
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -271,6 +275,7 @@ async fn metro_ws_bypass_relays_without_capture() {
             port: ws_port,
             enabled: true,
         },
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -313,6 +318,7 @@ async fn non_metro_ws_is_captured_with_bypass_enabled() {
             port: metro_port,
             enabled: true,
         },
+        Vec::new(),
     )
     .await
     .unwrap();

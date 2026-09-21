@@ -17,6 +17,7 @@ pub struct Shared {
     pub sink: Arc<dyn TrafficSink>,
     pub cap: usize,
     pub metro: MetroBypass,
+    pub tls_hosts: Vec<String>,
     pub next_exchange: AtomicU64,
 }
 
@@ -36,12 +37,18 @@ pub struct RecordingHttpHandler {
 }
 
 impl RecordingHttpHandler {
-    pub fn new(sink: Arc<dyn TrafficSink>, cap: usize, metro: MetroBypass) -> Self {
+    pub fn new(
+        sink: Arc<dyn TrafficSink>,
+        cap: usize,
+        metro: MetroBypass,
+        tls_hosts: Vec<String>,
+    ) -> Self {
         RecordingHttpHandler {
             shared: Arc::new(Shared {
                 sink,
                 cap,
                 metro,
+                tls_hosts,
                 next_exchange: AtomicU64::new(1),
             }),
             current: None,
@@ -111,6 +118,18 @@ pub(crate) fn is_metro_destination(uri: &hudsucker::hyper::Uri, metro: MetroBypa
     let host = uri.host();
     let port = uri.port_u16();
     (host == Some("127.0.0.1") || host == Some("10.0.2.2")) && port == Some(metro.port)
+}
+
+fn host_in_bypass(host: Option<&str>, hosts: &[String]) -> bool {
+    host.is_some_and(|h| hosts.iter().any(|b| b.eq_ignore_ascii_case(h)))
+}
+
+fn bypasses_intercept(
+    uri: &hudsucker::hyper::Uri,
+    metro: MetroBypass,
+    tls_hosts: &[String],
+) -> bool {
+    is_metro_destination(uri, metro) || host_in_bypass(uri.host(), tls_hosts)
 }
 
 fn apply_emulator_rewrite(uri: &mut hudsucker::hyper::Uri, headers: &mut HeaderMap) {
@@ -317,6 +336,10 @@ impl HttpHandler for RecordingHttpHandler {
 
         Response::from_parts(parts, final_body)
     }
+
+    async fn should_intercept(&mut self, _ctx: &HttpContext, req: &Request<Body>) -> bool {
+        !bypasses_intercept(req.uri(), self.shared.metro, &self.shared.tls_hosts)
+    }
 }
 
 #[cfg(test)]
@@ -426,9 +449,72 @@ mod tests {
             &uri("http://127.0.0.1:8081/status"),
             metro
         ));
-        assert!(!is_metro_destination(
-            &uri("http://10.0.2.2:8081/x"),
-            metro
+        assert!(!is_metro_destination(&uri("http://10.0.2.2:8081/x"), metro));
+    }
+
+    #[test]
+    fn bypass_host_requires_exact_case_insensitive_match() {
+        let hosts = vec!["google.com".to_string(), "LocalHost".to_string()];
+        assert!(host_in_bypass(Some("google.com"), &hosts));
+        assert!(host_in_bypass(Some("GOOGLE.com"), &hosts));
+        assert!(host_in_bypass(Some("Google.COM"), &hosts));
+        assert!(host_in_bypass(Some("localhost"), &hosts));
+        assert!(host_in_bypass(Some("LOCALHOST"), &hosts));
+    }
+
+    #[test]
+    fn bypass_host_rejects_subdomains_suffixes_and_missing_host() {
+        let hosts = vec!["google.com".to_string()];
+        assert!(!host_in_bypass(Some("www.google.com"), &hosts));
+        assert!(!host_in_bypass(Some("evilgoogle.com"), &hosts));
+        assert!(!host_in_bypass(Some("google.com.evil.com"), &hosts));
+        assert!(!host_in_bypass(Some("www.google.com.evil.com"), &hosts));
+        assert!(!host_in_bypass(None, &hosts));
+        assert!(!host_in_bypass(Some("google.com"), &[]));
+    }
+
+    #[test]
+    fn intercept_gate_decision_matrix() {
+        let hosts = vec!["localhost".to_string()];
+        let metro_on = MetroBypass {
+            port: 8081,
+            enabled: true,
+        };
+        let metro_off = MetroBypass {
+            port: 8081,
+            enabled: false,
+        };
+
+        assert!(bypasses_intercept(
+            &uri("localhost:9443"),
+            metro_off,
+            &hosts
         ));
+        assert!(bypasses_intercept(
+            &uri("LOCALHOST:9443"),
+            metro_off,
+            &hosts
+        ));
+        assert!(bypasses_intercept(
+            &uri("https://localhost/x"),
+            metro_off,
+            &hosts
+        ));
+        assert!(!bypasses_intercept(
+            &uri("example.com:443"),
+            metro_off,
+            &hosts
+        ));
+        assert!(!bypasses_intercept(
+            &uri("sub.localhost:443"),
+            metro_off,
+            &hosts
+        ));
+
+        assert!(bypasses_intercept(&uri("127.0.0.1:8081"), metro_on, &[]));
+        assert!(bypasses_intercept(&uri("10.0.2.2:8081"), metro_on, &[]));
+        assert!(!bypasses_intercept(&uri("127.0.0.1:8081"), metro_off, &[]));
+        assert!(!bypasses_intercept(&uri("127.0.0.1:8082"), metro_on, &[]));
+        assert!(!bypasses_intercept(&uri("example.com:8081"), metro_on, &[]));
     }
 }
