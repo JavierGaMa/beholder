@@ -27,6 +27,13 @@ pub struct TableColumn {
     pub decl_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderDir {
+    Asc,
+    Desc,
+}
+
 pub type TableRow = serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

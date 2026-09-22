@@ -560,13 +560,33 @@ pub async fn database_table_rows(
     table: String,
     page: i64,
     page_size: i64,
+    search: Option<String>,
+    order_by: Option<String>,
+    order_dir: Option<String>,
 ) -> Result<bh_db::TablePage, String> {
     let limit = page_size.clamp(1, 500);
     let offset = page.max(0).saturating_mul(limit);
+    let dir = match order_dir.as_deref() {
+        None => None,
+        Some("asc") => Some(bh_db::OrderDir::Asc),
+        Some("desc") => Some(bh_db::OrderDir::Desc),
+        Some(other) => {
+            return Err(format!("invalid order_dir '{other}': expected 'asc' or 'desc'"))
+        }
+    };
     let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
     tokio::task::spawn_blocking(move || -> Result<bh_db::TablePage, String> {
         let conn = bh_db::open_snapshot(&path).map_err(|e| e.to_string())?;
-        bh_db::table_rows(&conn, &table, limit, offset).map_err(|e| e.to_string())
+        bh_db::table_rows(
+            &conn,
+            &table,
+            limit,
+            offset,
+            search.as_deref(),
+            order_by.as_deref(),
+            dir,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
