@@ -29,6 +29,7 @@ import { useConsole } from "../../store/console";
 import { useTraffic } from "../../store/traffic";
 import { invoke, isTauri } from "../../lib/tauri";
 import { EmptyState } from "../../components/ui/primitives";
+import { useDropdownPosition } from "../../components/ui/popover";
 import { toast } from "../../components/ui/toast";
 import { isLogLine, type AppProcess, type ConsoleColumns, type LogLevel, type LogStatus, type PaneMode } from "../../store/console-types";
 import { buildExportText, buildRows, computeLineStats, filterEntries } from "./rows";
@@ -131,6 +132,7 @@ export function ConsoleView() {
 
   const effectiveSerial = serial ?? targetSerial;
   const [appMenuOpen, setAppMenuOpen] = useState(false);
+  const appMenuPos = useDropdownPosition(appMenuOpen, { width: 320, estHeight: 288 });
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const [columnsMenuPos, setColumnsMenuPos] = useState<{ right: number; top: number } | null>(null);
   const columnsBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -385,6 +387,7 @@ export function ConsoleView() {
           <div className="relative">
             <button
               type="button"
+              ref={appMenuPos.anchorRef}
               onClick={() => (appMenuOpen ? setAppMenuOpen(false) : openAppMenu())}
               title={
                 appFilter
@@ -406,7 +409,11 @@ export function ConsoleView() {
             {appMenuOpen && (
               <>
                 <div className="fixed inset-0 z-20" onClick={() => setAppMenuOpen(false)} />
-                <div className="absolute left-0 top-8 z-30 max-h-72 w-80 overflow-auto rounded-md border border-line bg-surface-2 p-1 shadow-xl">
+                <div
+                  ref={appMenuPos.menuRef}
+                  style={appMenuPos.style}
+                  className="z-30 overflow-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1 shadow-xl"
+                >
                   {appsLoading ? (
                     <div className="px-2 py-1 font-mono text-[11px] text-muted">loading...</div>
                   ) : apps.length === 0 ? (
