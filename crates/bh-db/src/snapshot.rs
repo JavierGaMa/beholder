@@ -1,4 +1,5 @@
-use crate::types::{DbError, OrderDir, TableColumn, TablePage, TableSummary};
+use crate::types::{DbError, OrderDir, QueryResult, TableColumn, TablePage, TableSummary};
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::types::ValueRef;
 use rusqlite::Connection;
 use serde_json::{Map, Value};
@@ -206,6 +207,94 @@ pub fn table_rows(
         total_rows,
         offset,
         limit,
+    })
+}
+
+pub const QUERY_ROW_CAP: usize = 500;
+
+fn starts_with_select_keyword(sql: &str) -> bool {
+    let bytes = sql.as_bytes();
+    bytes.len() >= 6
+        && bytes[..6].eq_ignore_ascii_case(b"select")
+        && (bytes.len() == 6 || !(bytes[6].is_ascii_alphanumeric() || bytes[6] == b'_'))
+}
+
+fn first_word(sql: &str) -> &str {
+    sql.split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_')
+}
+
+fn read_only_authorizer(ctx: AuthContext<'_>) -> Authorization {
+    match ctx.action {
+        AuthAction::Select
+        | AuthAction::Read { .. }
+        | AuthAction::Function { .. }
+        | AuthAction::Recursive => Authorization::Allow,
+        _ => Authorization::Deny,
+    }
+}
+
+pub fn run_query(conn: &Connection, sql: &str) -> Result<QueryResult, DbError> {
+    let started = std::time::Instant::now();
+    let trimmed = sql.trim();
+    if trimmed.is_empty() {
+        return Err(DbError::Other(
+            "read-only console: statement is empty; only SELECT statements are allowed".into(),
+        ));
+    }
+    if !starts_with_select_keyword(trimmed) {
+        return Err(DbError::Other(format!(
+            "read-only console: only SELECT statements are allowed; rejected '{}'",
+            first_word(trimmed)
+        )));
+    }
+    conn.authorizer(Some(read_only_authorizer));
+    let prepared = conn.prepare(trimmed);
+    conn.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+    let mut stmt = prepared.map_err(|e| {
+        DbError::Other(format!("read-only console: prepare rejected the statement: {e}"))
+    })?;
+    if !stmt.readonly() {
+        return Err(DbError::Other(
+            "read-only console: statement is not read-only".into(),
+        ));
+    }
+    let column_names: Vec<String> = stmt.column_names().iter().map(|n| n.to_string()).collect();
+    let column_count = column_names.len();
+    let mut rows_out: Vec<Vec<Value>> = Vec::new();
+    let mut truncated = false;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| DbError::Other(format!("read-only console: run failed: {e}")))?;
+    loop {
+        let row = rows
+            .next()
+            .map_err(|e| DbError::Other(format!("read-only console: run failed: {e}")))?;
+        let Some(row) = row else {
+            break;
+        };
+        if rows_out.len() >= QUERY_ROW_CAP {
+            truncated = true;
+            break;
+        }
+        let mut cells = Vec::with_capacity(column_count);
+        for idx in 0..column_count {
+            let value = row
+                .get_ref(idx)
+                .map_err(|e| DbError::Other(format!("read-only console: read cell: {e}")))?;
+            cells.push(value_to_json(value));
+        }
+        rows_out.push(cells);
+    }
+    let row_count = rows_out.len();
+    Ok(QueryResult {
+        columns: column_names,
+        rows: rows_out,
+        row_count,
+        truncated,
+        elapsed_ms: started.elapsed().as_millis() as u64,
     })
 }
 
@@ -662,6 +751,187 @@ mod tests {
         assert_eq!(page.rows[0]["name"], "LINUS torvalds");
         assert_eq!(page.offset, 1);
         assert_eq!(page.limit, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn user_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn assert_read_only_rejection(err: &DbError, keyword: &str) {
+        match err {
+            DbError::Other(m) => assert!(
+                m.contains("read-only") && m.contains(keyword),
+                "unexpected error message: {m}"
+            ),
+            other => panic!("expected DbError::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_query_select_returns_columns_and_rows() {
+        let (dir, conn) = users_db("q-select");
+        let res = run_query(&conn, "SELECT id, name FROM users ORDER BY id").unwrap();
+        assert_eq!(res.columns, vec!["id", "name"]);
+        assert_eq!(res.row_count, 6);
+        assert_eq!(res.rows.len(), 6);
+        assert_eq!(res.rows[0][0], 1);
+        assert_eq!(res.rows[0][1], "Ada Lovelace");
+        assert_eq!(res.rows[5][0], 10);
+        assert!(!res.truncated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_select_on_empty_table_returns_columns_without_rows() {
+        let dir = temp_dir("q-empty-table");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE blank (a INTEGER, b TEXT)", [])
+            .unwrap();
+        let res = run_query(&conn, "SELECT * FROM blank").unwrap();
+        assert_eq!(res.columns, vec!["a", "b"]);
+        assert_eq!(res.row_count, 0);
+        assert!(res.rows.is_empty());
+        assert!(!res.truncated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_insert() {
+        let (dir, conn) = users_db("q-insert");
+        let err = run_query(&conn, "INSERT INTO users VALUES (99, 'x', NULL)").unwrap_err();
+        assert_read_only_rejection(&err, "INSERT");
+        assert_eq!(user_count(&conn), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_update() {
+        let (dir, conn) = users_db("q-update");
+        let err = run_query(&conn, "UPDATE users SET name = 'x' WHERE id = 1").unwrap_err();
+        assert_read_only_rejection(&err, "UPDATE");
+        let name: String = conn
+            .query_row("SELECT name FROM users WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, "Ada Lovelace");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_delete() {
+        let (dir, conn) = users_db("q-delete");
+        let err = run_query(&conn, "DELETE FROM users").unwrap_err();
+        assert_read_only_rejection(&err, "DELETE");
+        assert_eq!(user_count(&conn), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_drop_table() {
+        let (dir, conn) = users_db("q-drop");
+        let err = run_query(&conn, "DROP TABLE users").unwrap_err();
+        assert_read_only_rejection(&err, "DROP");
+        assert!(table_exists(&conn, "users").unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_create_table() {
+        let (dir, conn) = users_db("q-create");
+        let err = run_query(&conn, "CREATE TABLE evil (v TEXT)").unwrap_err();
+        assert_read_only_rejection(&err, "CREATE");
+        assert!(!table_exists(&conn, "evil").unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_pragma_and_attach() {
+        let (dir, conn) = users_db("q-pragma");
+        let err = run_query(&conn, "PRAGMA journal_mode = WAL").unwrap_err();
+        assert_read_only_rejection(&err, "PRAGMA");
+        let err = run_query(&conn, "ATTACH DATABASE 'x.db' AS x").unwrap_err();
+        assert_read_only_rejection(&err, "ATTACH");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_rejects_multiple_statements() {
+        let (dir, conn) = users_db("q-multi");
+        let err = run_query(&conn, "SELECT 1; DROP TABLE users").unwrap_err();
+        assert_read_only_rejection(&err, "read-only console");
+        assert!(matches!(err, DbError::Other(ref m) if m.contains("not authorized")));
+        assert!(table_exists(&conn, "users").unwrap());
+        let err = run_query(&conn, "SELECT 1; SELECT 2").unwrap_err();
+        assert_read_only_rejection(&err, "read-only console");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_caps_rows_at_500_and_reports_truncation() {
+        let dir = temp_dir("q-cap");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE big (n INTEGER)", []).unwrap();
+        conn.execute("CREATE TABLE exact (n INTEGER)", []).unwrap();
+        for i in 0..503 {
+            conn.execute("INSERT INTO big VALUES (?1)", [i]).unwrap();
+        }
+        for i in 0..500 {
+            conn.execute("INSERT INTO exact VALUES (?1)", [i]).unwrap();
+        }
+        let res = run_query(&conn, "SELECT n FROM big ORDER BY n").unwrap();
+        assert_eq!(res.row_count, 500);
+        assert_eq!(res.rows.len(), 500);
+        assert!(res.truncated);
+        assert_eq!(res.rows[0][0], 0);
+        assert_eq!(res.rows[499][0], 499);
+        let res = run_query(&conn, "SELECT n FROM exact ORDER BY n").unwrap();
+        assert_eq!(res.row_count, 500);
+        assert_eq!(res.rows.len(), 500);
+        assert!(!res.truncated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_maps_blob_and_null_cells() {
+        let dir = temp_dir("q-cells");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE t (payload BLOB, note TEXT)", [])
+            .unwrap();
+        conn.execute("INSERT INTO t VALUES (X'CAFEBABE01', NULL)", [])
+            .unwrap();
+        let res = run_query(&conn, "SELECT payload, note FROM t").unwrap();
+        assert_eq!(res.rows[0][0], "<5 bytes>");
+        assert_eq!(res.rows[0][1], Value::Null);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_reports_sqlite_errors_with_message() {
+        let (dir, conn) = users_db("q-sqlerr");
+        let err = run_query(&conn, "SELECT * FROM missing_table").unwrap_err();
+        assert!(matches!(err, DbError::Other(ref m) if m.contains("no such table")));
+        let err = run_query(&conn, "SELECT n FROM users WHERE").unwrap_err();
+        assert!(matches!(err, DbError::Other(ref m) if m.len() > "read-only console: prepare rejected the statement: ".len()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_query_empty_blank_and_lookalike_prefixes_are_rejected() {
+        let (dir, conn) = users_db("q-prefix");
+        for sql in ["", "   ", "; SELECT 1", "SELECTED 1", "SELECTION"] {
+            let err = run_query(&conn, sql).unwrap_err();
+            assert!(matches!(err, DbError::Other(ref m) if m.contains("read-only console")), "sql {sql:?}");
+        }
+        let res = run_query(&conn, "select 1").unwrap();
+        assert_eq!(res.columns, vec!["1"]);
+        assert_eq!(res.row_count, 1);
+        assert_eq!(res.rows[0][0], 1);
+        let res = run_query(&conn, "  \n\t SELECT * FROM users LIMIT 2").unwrap();
+        assert_eq!(res.row_count, 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

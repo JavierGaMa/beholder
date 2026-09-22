@@ -45,6 +45,15 @@ pub struct TablePage {
     pub limit: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub row_count: usize,
+    pub truncated: bool,
+    pub elapsed_ms: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("adb not found: {0}")]
@@ -131,5 +140,23 @@ mod tests {
         assert_eq!(page["offset"], 0);
         assert_eq!(page["limit"], 50);
         assert_eq!(page["rows"][0]["v"], "a");
+    }
+
+    #[test]
+    fn query_result_serializes_snake_case() {
+        let v = serde_json::to_value(QueryResult {
+            columns: vec!["id".into(), "name".into()],
+            rows: vec![vec![serde_json::json!(1), serde_json::json!("ada")]],
+            row_count: 1,
+            truncated: true,
+            elapsed_ms: 12,
+        })
+        .unwrap();
+        assert_eq!(v["columns"][0], "id");
+        assert_eq!(v["rows"][0][0], 1);
+        assert_eq!(v["rows"][0][1], "ada");
+        assert_eq!(v["row_count"], 1);
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["elapsed_ms"], 12);
     }
 }

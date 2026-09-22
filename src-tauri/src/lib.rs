@@ -124,6 +124,7 @@ pub fn run() {
             commands::pull_database_snapshot,
             commands::database_tables,
             commands::database_table_rows,
+            commands::run_db_query,
             commands::reveal_snapshot,
             commands::export_snapshot
         ])
