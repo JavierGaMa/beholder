@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { qError } from "../../lib/query";
+import { useDropdownPosition } from "../../components/ui/popover";
 import { useAdbDevicesQuery, useInvalidateDevices } from "../../queries/devices";
 import { useAvdsQuery } from "../../queries/emulators";
 import {
@@ -50,6 +51,7 @@ export function DevicePicker({
   const [boot, setBoot] = useState<BootState>({ phase: "idle" });
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { anchorRef, menuRef, style } = useDropdownPosition(open, { width: 320, estHeight: 300 });
 
   const options = useMemo(() => buildDeviceOptions(devices, avds), [devices, avds]);
 
@@ -107,6 +109,7 @@ export function DevicePicker({
   return (
     <div ref={ref} className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen(!open)}
         className="flex h-7 items-center gap-2 rounded-md border border-line bg-bg px-2 text-[12px] text-txt hover:border-muted/50"
@@ -122,7 +125,11 @@ export function DevicePicker({
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-20 w-80 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
+        <div
+          ref={menuRef}
+          style={style}
+          className="z-20 overflow-y-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1.5 shadow-xl"
+        >
           {error && (
             <p className="px-2 py-2 text-[11px] leading-relaxed text-danger">{error}</p>
           )}

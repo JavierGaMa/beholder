@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { ChevronDown, Loader2, Package as PackageIcon, Search } from "lucide-react";
 import type { AppProcess } from "../../store/console-types";
+import { useDropdownPosition } from "../../components/ui/popover";
 import { shortPackage } from "./dbdisplay";
 
 const MAX_VISIBLE = 100;
@@ -23,6 +24,7 @@ export function PackagePicker({
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { anchorRef, menuRef, style } = useDropdownPosition(open, { width: 384, estHeight: 360 });
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -50,6 +52,7 @@ export function PackagePicker({
   return (
     <div ref={ref} className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen(!open)}
         disabled={disabled}
@@ -67,7 +70,11 @@ export function PackagePicker({
         )}
       </button>
       {open && (
-        <div className="absolute left-0 top-9 z-20 w-96 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
+        <div
+          ref={menuRef}
+          style={style}
+          className="z-20 overflow-y-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1.5 shadow-xl"
+        >
           <div className="relative">
             <Search
               size={12}
