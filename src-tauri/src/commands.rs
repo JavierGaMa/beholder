@@ -481,6 +481,125 @@ pub async fn reveal_config(app: tauri::AppHandle) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
+fn snapshot_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join("db-snapshots"))
+}
+
+fn existing_snapshot_path(
+    app: &tauri::AppHandle,
+    serial: &str,
+    package: &str,
+    db_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let root = snapshot_root(app)?;
+    let dir = bh_db::snapshot_dir(&root, serial, package, db_name).map_err(|e| e.to_string())?;
+    let path = dir.join(db_name);
+    if !path.is_file() {
+        return Err(format!(
+            "no local snapshot of {db_name} yet; press Refresh to pull one first"
+        ));
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn list_app_databases(
+    state: State<'_, AppState>,
+    serial: String,
+    package: String,
+) -> Result<Vec<bh_db::DbFile>, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        bh_db::list_databases(runner.as_ref(), &serial, &package).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn pull_database_snapshot(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<bh_db::SnapshotInfo, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let root = snapshot_root(&app)?;
+    tokio::task::spawn_blocking(move || {
+        bh_db::pull_snapshot(runner.as_ref(), &serial, &package, &db_name, &root)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn database_tables(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<Vec<bh_db::TableSummary>, String> {
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || -> Result<Vec<bh_db::TableSummary>, String> {
+        let conn = bh_db::open_snapshot(&path).map_err(|e| e.to_string())?;
+        bh_db::tables(&conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn database_table_rows(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+    table: String,
+    page: i64,
+    page_size: i64,
+) -> Result<bh_db::TablePage, String> {
+    let limit = page_size.clamp(1, 500);
+    let offset = page.max(0).saturating_mul(limit);
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || -> Result<bh_db::TablePage, String> {
+        let conn = bh_db::open_snapshot(&path).map_err(|e| e.to_string())?;
+        bh_db::table_rows(&conn, &table, limit, offset).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn reveal_snapshot(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<(), String> {
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_snapshot(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+    dest_path: String,
+) -> Result<(), String> {
+    let src = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        std::fs::copy(&src, &dest_path).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn capture_start(
     state: State<'_, AppState>,

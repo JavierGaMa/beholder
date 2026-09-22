@@ -23,6 +23,7 @@ bh-ca = { workspace = true }
 bh-device = { workspace = true }
 bh-proxy = { workspace = true }
 bh-console = { workspace = true }
+bh-db = { workspace = true }
 bh-agent = { workspace = true }
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-updater = "2"

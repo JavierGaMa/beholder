@@ -316,6 +316,7 @@ dependencies = [
  "bh-ca",
  "bh-console",
  "bh-core",
+ "bh-db",
  "bh-device",
  "bh-proxy",
  "futures-util",

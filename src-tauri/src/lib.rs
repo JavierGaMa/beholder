@@ -119,7 +119,13 @@ pub fn run() {
             commands::agent_set_focus_app,
             commands::agent_set_enabled,
             commands::agent_bridge_status,
-            commands::agent_mcp_config
+            commands::agent_mcp_config,
+            commands::list_app_databases,
+            commands::pull_database_snapshot,
+            commands::database_tables,
+            commands::database_table_rows,
+            commands::reveal_snapshot,
+            commands::export_snapshot
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
