@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeftRight,
+  Database,
   MonitorSmartphone,
   Package,
   PanelLeftClose,
@@ -23,6 +24,7 @@ import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
+import { DatabasesView } from "./features/database/DatabasesView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
@@ -43,6 +45,7 @@ const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeo
     items: [
       { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
       { id: "apks", label: "APKs", icon: Package },
+      { id: "database", label: "Databases", icon: Database },
       { id: "console", label: "Console", icon: SquareTerminal },
     ],
   },
@@ -237,6 +240,7 @@ export default function App() {
           {activeView === "websockets" && <WebSocketsView />}
           {activeView === "emulators" && <EmulatorsView />}
           {activeView === "apks" && <ApksView />}
+          {activeView === "database" && <DatabasesView />}
           {activeView === "console" && <ConsoleView />}
         </main>
       </div>

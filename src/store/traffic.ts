@@ -5,7 +5,7 @@ import type { UiConfig } from "../lib/theme/config-types";
 export const MAX_EXCHANGES = 2000;
 export const MAX_WS_FRAMES = 500;
 
-export type View = "requests" | "websockets" | "emulators" | "apks" | "console";
+export type View = "requests" | "websockets" | "emulators" | "apks" | "console" | "database";
 
 export interface MetroStatus {
   detected: boolean;
