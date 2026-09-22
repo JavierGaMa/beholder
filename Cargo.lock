@@ -310,7 +310,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "beholder"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bh-agent",
  "bh-ca",
@@ -337,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "beholder-mcp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "bh-agent"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bh-console",
  "bh-core",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "bh-ca"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bh-core",
  "md5",
@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "bh-console"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "bh-device",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "bh-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "bh-db"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bh-device",
  "rusqlite",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "bh-device"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "bh-proxy"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bh-ca",
  "bh-core",
