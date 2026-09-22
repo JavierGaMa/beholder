@@ -2,6 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "Beholder",
+  base: "/beholder/",
   description: "Non-invasive network traffic inspector for React Native apps on Android emulators",
   lang: "en-US",
   cleanUrls: true,
