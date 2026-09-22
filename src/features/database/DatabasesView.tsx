@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
@@ -28,6 +29,7 @@ import {
 } from "../../queries/databases";
 import { DbList } from "./DbList";
 import { PackagePicker } from "./PackagePicker";
+import { SqlConsole } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
 import {
   clampPage,
@@ -37,6 +39,8 @@ import {
   nextOrderState,
   normalizeSearch,
   pageCount,
+  prefillQuery,
+  pushHistory,
   shortPackage,
   snapshotKey,
   sortDatabases,
@@ -56,6 +60,9 @@ export function DatabasesView() {
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotInfo>>({});
   const [pullError, setPullError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [sqlOpen, setSqlOpen] = useState(false);
+  const [sqlText, setSqlText] = useState("");
+  const [sqlHistory, setSqlHistory] = useState<string[]>([]);
 
   const packagesQ = useAppPackagesQuery(serial, isTauri && serial !== "");
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
@@ -118,6 +125,7 @@ export function DatabasesView() {
     setPage(0);
     setSearch("");
     setOrder(null);
+    setSqlOpen(false);
   }, [selectedDb]);
 
   useEffect(() => {
@@ -155,6 +163,11 @@ export function DatabasesView() {
     } catch (e) {
       setPullError(qError(e) ?? String(e));
     }
+  }
+
+  function toggleSql() {
+    if (!sqlOpen && sqlText.trim() === "") setSqlText(prefillQuery(table));
+    setSqlOpen(!sqlOpen);
   }
 
   async function onReveal() {
@@ -311,7 +324,20 @@ export function DatabasesView() {
               </button>
             </div>
           ) : viewerReady ? (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
+              {sqlOpen && (
+                <SqlConsole
+                  serial={serial}
+                  pkg={pkg ?? ""}
+                  dbName={selectedDb ?? ""}
+                  table={table}
+                  text={sqlText}
+                  onTextChange={setSqlText}
+                  history={sqlHistory}
+                  onRan={(sql) => setSqlHistory((h) => pushHistory(h, sql))}
+                  onClose={() => setSqlOpen(false)}
+                />
+              )}
               <div className="flex min-h-0 flex-1">
                 <aside className="flex w-56 shrink-0 flex-col border-r border-line">
                   <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
@@ -473,6 +499,23 @@ export function DatabasesView() {
                       </button>
                       <button
                         type="button"
+                        onClick={toggleSql}
+                        title={
+                          sqlOpen
+                            ? "Hide the SQL console"
+                            : "Open a read-only SQL console on this snapshot"
+                        }
+                        className={clsx(
+                          "flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] hover:text-txt",
+                          sqlOpen
+                            ? "border-accent/40 bg-accent/10 text-accent"
+                            : "border-line text-muted",
+                        )}
+                      >
+                        <SquareTerminal size={11} /> SQL
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void onReveal()}
                         title="Reveal the snapshot file in Finder"
                         className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt"
@@ -497,7 +540,7 @@ export function DatabasesView() {
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           ) : null}
         </main>
       </div>

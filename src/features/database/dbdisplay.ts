@@ -1,4 +1,4 @@
-import type { DbFile, TableColumn, TableOrder } from "../../queries/databases";
+import type { DbFile, QueryResult, TableColumn, TableOrder, TablePage } from "../../queries/databases";
 
 const BLOB_MARKER_RE = /^<\d+ bytes>$/;
 
@@ -79,4 +79,27 @@ export function nextOrderState(col: string, current: TableOrder | null): TableOr
 export function normalizeSearch(input: string): string | null {
   const trimmed = input.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+export function prefillQuery(tableName: string | null): string {
+  if (tableName == null) return "";
+  return `SELECT * FROM "${tableName.replace(/"/g, '""')}" LIMIT 50`;
+}
+
+export function pushHistory(history: string[], sql: string, cap = 10): string[] {
+  const trimmed = sql.trim();
+  if (trimmed === "") return history;
+  return [trimmed, ...history.filter((h) => h !== trimmed)].slice(0, cap);
+}
+
+export function queryResultToPage(result: QueryResult): TablePage {
+  return {
+    columns: result.columns.map((name) => ({ name, decl_type: null })),
+    rows: result.rows.map((cells) =>
+      Object.fromEntries(result.columns.map((name, i) => [name, cells[i]])),
+    ),
+    total_rows: result.row_count,
+    offset: 0,
+    limit: result.row_count,
+  };
 }

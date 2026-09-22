@@ -39,6 +39,14 @@ export interface TableOrder {
   dir: OrderDir;
 }
 
+export interface QueryResult {
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+  elapsed_ms: number;
+}
+
 export const DATABASES_STALE_MS = 30_000;
 
 export function useAppPackagesQuery(serial: string, enabled: boolean) {
@@ -133,6 +141,18 @@ export function usePullSnapshot() {
         queryKey: ["db-rows", vars.serial, vars.pkg, vars.dbName],
       });
     },
+  });
+}
+
+export function useRunDbQuery() {
+  return useMutation({
+    mutationFn: (vars: { serial: string; pkg: string; dbName: string; sql: string }) =>
+      invoke<QueryResult>("run_db_query", {
+        serial: vars.serial,
+        package: vars.pkg,
+        dbName: vars.dbName,
+        sql: vars.sql,
+      }),
   });
 }
 

@@ -10,6 +10,9 @@ import {
   nextOrderState,
   normalizeSearch,
   pageCount,
+  prefillQuery,
+  pushHistory,
+  queryResultToPage,
   shortPackage,
   snapshotKey,
   sortDatabases,
@@ -226,5 +229,91 @@ describe("normalizeSearch", () => {
   it("passes like wildcards and backslashes through unescaped", () => {
     expect(normalizeSearch("a%b_c\\d")).toBe("a%b_c\\d");
     expect(normalizeSearch("100%")).toBe("100%");
+  });
+});
+
+describe("prefillQuery", () => {
+  it("returns an empty string without a table", () => {
+    expect(prefillQuery(null)).toBe("");
+  });
+
+  it("builds a quoted select with limit 50", () => {
+    expect(prefillQuery("users")).toBe('SELECT * FROM "users" LIMIT 50');
+  });
+
+  it("escapes embedded double quotes in the table name", () => {
+    expect(prefillQuery('weird "quoted"')).toBe(
+      'SELECT * FROM "weird ""quoted""" LIMIT 50',
+    );
+  });
+});
+
+describe("pushHistory", () => {
+  it("prepends the newest entry", () => {
+    expect(pushHistory(["SELECT 1"], "SELECT 2")).toEqual(["SELECT 2", "SELECT 1"]);
+  });
+
+  it("ignores empty and whitespace-only sql without changing the reference", () => {
+    const history = ["SELECT 1"];
+    expect(pushHistory(history, "   ")).toBe(history);
+    expect(pushHistory(history, "")).toBe(history);
+  });
+
+  it("trims entries before storing them", () => {
+    expect(pushHistory([], "  SELECT 1  ")).toEqual(["SELECT 1"]);
+  });
+
+  it("removes an earlier duplicate instead of keeping both", () => {
+    const history = ["SELECT 1", "SELECT 2", "SELECT 3"];
+    expect(pushHistory(history, "SELECT 2")).toEqual(["SELECT 2", "SELECT 1", "SELECT 3"]);
+  });
+
+  it("caps the history at 10 entries", () => {
+    let history: string[] = [];
+    for (let i = 1; i <= 12; i++) history = pushHistory(history, `SELECT ${i}`);
+    expect(history).toHaveLength(10);
+    expect(history[0]).toBe("SELECT 12");
+    expect(history).not.toContain("SELECT 1");
+    expect(history).not.toContain("SELECT 2");
+    expect(history).toContain("SELECT 3");
+  });
+});
+
+describe("queryResultToPage", () => {
+  it("maps arrays-per-row to the table page shape", () => {
+    const page = queryResultToPage({
+      columns: ["id", "name"],
+      rows: [
+        [1, "ada"],
+        [2, null],
+      ],
+      row_count: 2,
+      truncated: false,
+      elapsed_ms: 4,
+    });
+    expect(page.columns).toEqual([
+      { name: "id", decl_type: null },
+      { name: "name", decl_type: null },
+    ]);
+    expect(page.rows).toEqual([
+      { id: 1, name: "ada" },
+      { id: 2, name: null },
+    ]);
+    expect(page.total_rows).toBe(2);
+    expect(page.offset).toBe(0);
+    expect(page.limit).toBe(2);
+  });
+
+  it("keeps an empty result renderable with zero rows", () => {
+    const page = queryResultToPage({
+      columns: ["a"],
+      rows: [],
+      row_count: 0,
+      truncated: false,
+      elapsed_ms: 1,
+    });
+    expect(page.rows).toEqual([]);
+    expect(page.columns).toEqual([{ name: "a", decl_type: null }]);
+    expect(page.total_rows).toBe(0);
   });
 });

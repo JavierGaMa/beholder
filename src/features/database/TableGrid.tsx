@@ -35,13 +35,13 @@ function Cell({ value }: { value: unknown }) {
 export function TableGrid({
   page,
   offsetBase,
-  order,
+  order = null,
   onSort,
 }: {
   page: TablePage;
   offsetBase: number;
-  order: TableOrder | null;
-  onSort: (col: string) => void;
+  order?: TableOrder | null;
+  onSort?: (col: string) => void;
 }) {
   return (
     <div className="h-full overflow-auto">
@@ -59,23 +59,32 @@ export function TableGrid({
                   title={columnTitle(col)}
                   className="whitespace-nowrap border-b border-line px-3 py-2 font-mono text-[11px] font-medium text-muted"
                 >
-                  <button
-                    type="button"
-                    onClick={() => onSort(col.name)}
-                    className="flex items-center gap-1 text-left hover:text-txt"
-                  >
-                    <span>{col.name}</span>
-                    {col.decl_type && (
-                      <span className="font-normal text-muted/45">{col.decl_type}</span>
-                    )}
-                    {active && order.dir === "asc" && (
-                      <ChevronUp size={11} className="shrink-0 text-accent" />
-                    )}
-                    {active && order.dir === "desc" && (
-                      <ChevronDown size={11} className="shrink-0 text-accent" />
-                    )}
-                    {!active && <ChevronsUpDown size={11} className="shrink-0 text-muted/30" />}
-                  </button>
+                  {onSort != null ? (
+                    <button
+                      type="button"
+                      onClick={() => onSort(col.name)}
+                      className="flex items-center gap-1 text-left hover:text-txt"
+                    >
+                      <span>{col.name}</span>
+                      {col.decl_type && (
+                        <span className="font-normal text-muted/45">{col.decl_type}</span>
+                      )}
+                      {active && order.dir === "asc" && (
+                        <ChevronUp size={11} className="shrink-0 text-accent" />
+                      )}
+                      {active && order.dir === "desc" && (
+                        <ChevronDown size={11} className="shrink-0 text-accent" />
+                      )}
+                      {!active && <ChevronsUpDown size={11} className="shrink-0 text-muted/30" />}
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1 text-left">
+                      <span>{col.name}</span>
+                      {col.decl_type && (
+                        <span className="font-normal text-muted/45">{col.decl_type}</span>
+                      )}
+                    </span>
+                  )}
                 </th>
               );
             })}
