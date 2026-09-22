@@ -1,4 +1,4 @@
-import type { DbFile, TableColumn } from "../../queries/databases";
+import type { DbFile, TableColumn, TableOrder } from "../../queries/databases";
 
 const BLOB_MARKER_RE = /^<\d+ bytes>$/;
 
@@ -68,4 +68,15 @@ export function snapshotKey(serial: string, pkg: string, dbName: string): string
 export function joinExportPath(dir: string, fileName: string): string {
   const trimmed = dir.endsWith("/") || dir.endsWith("\\") ? dir.slice(0, -1) : dir;
   return `${trimmed}/${fileName}`;
+}
+
+export function nextOrderState(col: string, current: TableOrder | null): TableOrder | null {
+  if (current == null || current.col !== col) return { col, dir: "asc" };
+  if (current.dir === "asc") return { col, dir: "desc" };
+  return null;
+}
+
+export function normalizeSearch(input: string): string | null {
+  const trimmed = input.trim();
+  return trimmed === "" ? null : trimmed;
 }

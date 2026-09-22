@@ -32,6 +32,13 @@ export interface TablePage {
   limit: number;
 }
 
+export type OrderDir = "asc" | "desc";
+
+export interface TableOrder {
+  col: string;
+  dir: OrderDir;
+}
+
 export const DATABASES_STALE_MS = 30_000;
 
 export function useAppPackagesQuery(serial: string, enabled: boolean) {
@@ -73,10 +80,22 @@ export function useTableRowsQuery(
   table: string,
   page: number,
   pageSize: number,
+  search: string,
+  order: TableOrder | null,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: ["db-rows", serial, pkg, dbName, table, page],
+    queryKey: [
+      "db-rows",
+      serial,
+      pkg,
+      dbName,
+      table,
+      page,
+      search,
+      order?.col ?? null,
+      order?.dir ?? null,
+    ],
     queryFn: () =>
       invoke<TablePage>("database_table_rows", {
         serial,
@@ -85,6 +104,9 @@ export function useTableRowsQuery(
         table,
         page,
         pageSize,
+        search: search === "" ? undefined : search,
+        orderBy: order?.col,
+        orderDir: order?.dir,
       }),
     enabled,
     staleTime: DATABASES_STALE_MS,

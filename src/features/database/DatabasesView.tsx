@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, FileDown, FolderOpen, Loader2, RefreshCw } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileDown,
+  FolderOpen,
+  Loader2,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { EmptyState } from "../../components/ui/primitives";
@@ -15,6 +24,7 @@ import {
   usePullSnapshot,
   useTableRowsQuery,
   type SnapshotInfo,
+  type TableOrder,
 } from "../../queries/databases";
 import { DbList } from "./DbList";
 import { PackagePicker } from "./PackagePicker";
@@ -24,6 +34,8 @@ import {
   formatPulledAt,
   formatRowCount,
   joinExportPath,
+  nextOrderState,
+  normalizeSearch,
   pageCount,
   shortPackage,
   snapshotKey,
@@ -31,6 +43,7 @@ import {
 } from "./dbdisplay";
 
 const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function DatabasesView() {
   const [serial, setSerial] = useState("");
@@ -38,6 +51,8 @@ export function DatabasesView() {
   const [selectedDb, setSelectedDb] = useState<string | null>(null);
   const [table, setTable] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [search, setSearch] = useState("");
+  const [order, setOrder] = useState<TableOrder | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotInfo>>({});
   const [pullError, setPullError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -46,6 +61,13 @@ export function DatabasesView() {
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
   const pull = usePullSnapshot();
   const invalidateAll = useInvalidateDatabases(serial, pkg);
+
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
+  const querySearch = normalizeSearch(debouncedSearch) ?? "";
 
   const apps = packagesQ.data ?? [];
   const dbs = useMemo(() => sortDatabases(dbsQ.data ?? []), [dbsQ.data]);
@@ -73,6 +95,8 @@ export function DatabasesView() {
     table ?? "",
     page,
     PAGE_SIZE,
+    querySearch,
+    order,
     viewerReady && table != null,
   );
   const tablePage = rowsQ.data;
@@ -92,11 +116,19 @@ export function DatabasesView() {
   useEffect(() => {
     setTable(null);
     setPage(0);
+    setSearch("");
+    setOrder(null);
   }, [selectedDb]);
 
   useEffect(() => {
     setPage(0);
+    setSearch("");
+    setOrder(null);
   }, [table]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [querySearch, order]);
 
   useEffect(() => {
     if (!viewerReady) return;
@@ -322,6 +354,38 @@ export function DatabasesView() {
                   </div>
                 </aside>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1">
+                    <div className="relative w-64">
+                      <Search
+                        size={12}
+                        className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted/70"
+                      />
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") setSearch("");
+                        }}
+                        disabled={table == null}
+                        placeholder="search rows"
+                        title="Substring match across all columns (case-insensitive)"
+                        className="h-7 w-full rounded-md border border-line bg-bg pl-6 pr-6 font-mono text-[11px] text-txt placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-40"
+                      />
+                      {search !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => setSearch("")}
+                          title="Clear search"
+                          className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-muted/70 hover:text-txt"
+                        >
+                          <X size={10} />
+                        </button>
+                      )}
+                    </div>
+                    {querySearch !== "" && (
+                      <span className="font-mono text-[10px] text-muted/70">filter active</span>
+                    )}
+                  </div>
                   <div className="min-h-0 flex-1">
                     {table != null && rowsError != null ? (
                       <div className="p-3">
@@ -332,12 +396,24 @@ export function DatabasesView() {
                         <Loader2 size={16} className="animate-spin text-accent" />
                       </div>
                     ) : tablePage.rows.length === 0 ? (
-                      <EmptyState
-                        title="Table is empty"
-                        hint={`No rows in ${table} · press Refresh after the app writes data`}
-                      />
+                      querySearch !== "" ? (
+                        <EmptyState
+                          title="No matching rows"
+                          hint={`Nothing in ${table} contains “${querySearch}”`}
+                        />
+                      ) : (
+                        <EmptyState
+                          title="Table is empty"
+                          hint={`No rows in ${table} · press Refresh after the app writes data`}
+                        />
+                      )
                     ) : (
-                      <TableGrid page={tablePage} offsetBase={tablePage.offset} />
+                      <TableGrid
+                        page={tablePage}
+                        offsetBase={tablePage.offset}
+                        order={order}
+                        onSort={(col) => setOrder((cur) => nextOrderState(col, cur))}
+                      />
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">

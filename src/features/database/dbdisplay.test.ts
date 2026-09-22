@@ -7,6 +7,8 @@ import {
   formatRowCount,
   humanizeSize,
   joinExportPath,
+  nextOrderState,
+  normalizeSearch,
   pageCount,
   shortPackage,
   snapshotKey,
@@ -186,5 +188,43 @@ describe("joinExportPath", () => {
   it("does not double the separator when the dir ends with one", () => {
     expect(joinExportPath("/Users/x/Downloads/", "app.db")).toBe("/Users/x/Downloads/app.db");
     expect(joinExportPath("C:\\Users\\x", "app.db")).toBe("C:\\Users\\x/app.db");
+  });
+});
+
+describe("nextOrderState", () => {
+  it("starts ascending on first click", () => {
+    expect(nextOrderState("id", null)).toEqual({ col: "id", dir: "asc" });
+  });
+
+  it("starts ascending when a different column is active", () => {
+    expect(nextOrderState("name", { col: "id", dir: "desc" })).toEqual({
+      col: "name",
+      dir: "asc",
+    });
+  });
+
+  it("toggles ascending to descending on the same column", () => {
+    expect(nextOrderState("id", { col: "id", dir: "asc" })).toEqual({ col: "id", dir: "desc" });
+  });
+
+  it("clears ordering on the third click of the same column", () => {
+    expect(nextOrderState("id", { col: "id", dir: "desc" })).toBeNull();
+  });
+});
+
+describe("normalizeSearch", () => {
+  it("returns null for empty and whitespace-only input", () => {
+    expect(normalizeSearch("")).toBeNull();
+    expect(normalizeSearch("   ")).toBeNull();
+    expect(normalizeSearch("\t\n")).toBeNull();
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(normalizeSearch("  ada  ")).toBe("ada");
+  });
+
+  it("passes like wildcards and backslashes through unescaped", () => {
+    expect(normalizeSearch("a%b_c\\d")).toBe("a%b_c\\d");
+    expect(normalizeSearch("100%")).toBe("100%");
   });
 });
