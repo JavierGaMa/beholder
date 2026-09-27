@@ -178,7 +178,6 @@ fn spawn_config_watcher(app: tauri::AppHandle, dir: std::path::PathBuf) {
     {
         return;
     }
-    drop(watcher);
 
     loop {
         if rx.recv().is_err() {
