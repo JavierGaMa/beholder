@@ -285,7 +285,9 @@ export function ApksView() {
             <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] uppercase tracking-wider text-muted/70">
               <span>
                 {filtered.length} builds
-                {mode === "all" && query.trim() !== "" ? ` matching "${query.trim()}"` : ""}
+                {mode === "all" && query.trim() !== "" ? (
+                  <span className="normal-case"> matching “{query.trim()}”</span>
+                ) : null}
               </span>
               {refreshing && (
                 <span className="flex items-center gap-1 normal-case">
