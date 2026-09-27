@@ -1,5 +1,7 @@
 import type { ApkEntry } from "../../store/types";
 
+export type ApksViewMode = "tracks" | "all";
+
 export interface BuildTrack {
   key: string;
   env: string;
@@ -12,12 +14,34 @@ export function trackKey(env: string, flavor: string): string {
   return `${env}/${flavor}`;
 }
 
-function normalizedEnv(env: string | null | undefined): string {
+export function normalizedEnv(env: string | null | undefined): string {
   return env?.toUpperCase() || "UNKNOWN";
 }
 
-function normalizedFlavor(flavor: string | null | undefined): string {
+export function normalizedFlavor(flavor: string | null | undefined): string {
   return flavor?.trim() || "default";
+}
+
+export function shouldAutoSwitchMode(mode: ApksViewMode, query: string): ApksViewMode {
+  if (query.trim() !== "") return "all";
+  return mode;
+}
+
+export function sortByLastModifiedDesc(entries: ApkEntry[]): ApkEntry[] {
+  const stamped = entries.map((entry, index) => {
+    const at = new Date(entry.last_modified).getTime();
+    return { entry, index, at: Number.isFinite(at) ? at : null };
+  });
+  stamped.sort((a, b) => {
+    if (a.at == null || b.at == null) {
+      if (a.at != null) return -1;
+      if (b.at != null) return 1;
+      return a.index - b.index;
+    }
+    if (a.at !== b.at) return b.at - a.at;
+    return a.index - b.index;
+  });
+  return stamped.map((s) => s.entry);
 }
 
 function byRecencyDesc(a: ApkEntry, b: ApkEntry): number {

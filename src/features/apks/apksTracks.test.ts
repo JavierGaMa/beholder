@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ApkEntry } from "../../store/types";
-import { buildTracks, capTracks, formatRelativeLastModified, trackKey } from "./apksTracks";
+import {
+  buildTracks,
+  capTracks,
+  formatRelativeLastModified,
+  shouldAutoSwitchMode,
+  sortByLastModifiedDesc,
+  trackKey,
+} from "./apksTracks";
 
 function entry(partial: Partial<ApkEntry>): ApkEntry {
   return {
@@ -114,6 +121,68 @@ describe("capTracks", () => {
 
   it("returns nothing for a zero budget", () => {
     expect(capTracks([track("a", 1)], 0)).toEqual([]);
+  });
+});
+
+describe("sortByLastModifiedDesc", () => {
+  it("sorts entries newest first", () => {
+    const sorted = sortByLastModifiedDesc([
+      entry({ name: "old.apk", last_modified: "Mon, 07 Jul 2026 09:00:00 GMT" }),
+      entry({ name: "new.apk", last_modified: "Wed, 09 Jul 2026 09:00:00 GMT" }),
+      entry({ name: "mid.apk", last_modified: "Tue, 08 Jul 2026 09:00:00 GMT" }),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["new.apk", "mid.apk", "old.apk"]);
+  });
+
+  it("places invalid dates last, preserving input order", () => {
+    const sorted = sortByLastModifiedDesc([
+      entry({ name: "bad-1.apk", last_modified: "not-a-date" }),
+      entry({ name: "good.apk", last_modified: "Tue, 08 Jul 2026 09:00:00 GMT" }),
+      entry({ name: "bad-2.apk", last_modified: "" }),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["good.apk", "bad-1.apk", "bad-2.apk"]);
+  });
+
+  it("keeps input order for equal timestamps", () => {
+    const at = "Tue, 08 Jul 2026 09:00:00 GMT";
+    const sorted = sortByLastModifiedDesc([
+      entry({ name: "b.apk", last_modified: at }),
+      entry({ name: "a.apk", last_modified: at }),
+      entry({ name: "c.apk", last_modified: at }),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["b.apk", "a.apk", "c.apk"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const input = [
+      entry({ name: "old.apk", last_modified: "Mon, 07 Jul 2026 09:00:00 GMT" }),
+      entry({ name: "new.apk", last_modified: "Wed, 09 Jul 2026 09:00:00 GMT" }),
+    ];
+    sortByLastModifiedDesc(input);
+    expect(input.map((e) => e.name)).toEqual(["old.apk", "new.apk"]);
+  });
+
+  it("returns an empty array for no entries", () => {
+    expect(sortByLastModifiedDesc([])).toEqual([]);
+  });
+});
+
+describe("shouldAutoSwitchMode", () => {
+  it("switches tracks to all when the query is non-empty", () => {
+    expect(shouldAutoSwitchMode("tracks", "release")).toBe("all");
+  });
+
+  it("keeps all when the query is non-empty", () => {
+    expect(shouldAutoSwitchMode("all", "release")).toBe("all");
+  });
+
+  it("keeps the current mode when the query is empty", () => {
+    expect(shouldAutoSwitchMode("tracks", "")).toBe("tracks");
+    expect(shouldAutoSwitchMode("all", "")).toBe("all");
+  });
+
+  it("treats a whitespace-only query as empty", () => {
+    expect(shouldAutoSwitchMode("tracks", "   ")).toBe("tracks");
   });
 });
 

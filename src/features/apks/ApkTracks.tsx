@@ -17,7 +17,12 @@ import { useDropdownPosition } from "../../components/ui/popover";
 import { Badge, Panel } from "../../components/ui/primitives";
 import { downloadPct, formatBytes, type ApkEntry } from "./apksFormat";
 import { localFileName, type DownloadPhase, type LocalApk } from "./apksLocalState";
-import { formatRelativeLastModified, type BuildTrack } from "./apksTracks";
+import {
+  formatRelativeLastModified,
+  normalizedEnv,
+  normalizedFlavor,
+  type BuildTrack,
+} from "./apksTracks";
 import {
   applyApksTestResult,
   canSaveApks,
@@ -423,6 +428,66 @@ function HistoryRow({
   );
 }
 
+export function AllBuildsRow({
+  apk,
+  now,
+  state,
+  serial,
+  deviceSelected,
+  downloaded,
+  onInstall,
+  onRevealLocal,
+  onDeleteLocal,
+}: {
+  apk: ApkEntry;
+  now: number;
+  state: DownloadPhase;
+  serial: string;
+  deviceSelected: boolean;
+  downloaded?: LocalApk;
+  onInstall: (entry: ApkEntry) => void;
+  onRevealLocal: (entry: ApkEntry) => void;
+  onDeleteLocal: (entry: ApkEntry) => void;
+}) {
+  const busy = state.phase === "downloading" || state.phase === "installing";
+  const env = normalizedEnv(apk.env);
+  const flavor = normalizedFlavor(apk.flavor);
+  const rel = formatRelativeLastModified(apk.last_modified, now);
+  return (
+    <div className="flex items-center gap-2 py-1.5" title={apk.name}>
+      <EnvBadge env={env} />
+      <span
+        className="w-28 min-w-0 shrink truncate font-mono text-[11px] text-muted"
+        title={flavor}
+      >
+        {flavor}
+      </span>
+      <span className="shrink-0 font-mono text-[12px] text-txt/90">v{apk.version ?? "?"}</span>
+      {apk.build != null && (
+        <span className="shrink-0 font-mono text-[10px] text-muted">#{apk.build}</span>
+      )}
+      <span className="min-w-0 flex-1 truncate text-[10px] text-muted/80">
+        {[rel, formatBytes(apk.size_bytes)].filter(Boolean).join(" · ")}
+      </span>
+      {downloaded && <Badge tone="ok">local</Badge>}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <HistoryAction
+          state={state}
+          serial={serial}
+          deviceSelected={deviceSelected}
+          onInstall={() => onInstall(apk)}
+        />
+        <RowMenu
+          downloaded={downloaded}
+          busy={busy}
+          onReveal={() => onRevealLocal(apk)}
+          onDelete={() => onDeleteLocal(apk)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function TrackCard({
   track,
   now,
@@ -468,7 +533,7 @@ export function TrackCard({
             onClick={() => setShowHistory(!showHistory)}
             className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted transition-colors hover:text-txt"
           >
-            {track.history.length} previous
+            {showHistory ? "Hide" : `Show ${track.history.length} previous`}
             <ChevronDown
               size={12}
               className={clsx("transition-transform", showHistory && "rotate-180")}

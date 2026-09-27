@@ -13,8 +13,14 @@ import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
 import { filterApks, type ApkEntry, type EnvFilter } from "./apksFormat";
 import { DevicePicker } from "./DevicePicker";
 import { ApksOnboarding } from "./ApksOnboarding";
-import { SourceChip, TrackCard } from "./ApkTracks";
-import { buildTracks, capTracks } from "./apksTracks";
+import { SourceChip, TrackCard, AllBuildsRow } from "./ApkTracks";
+import {
+  buildTracks,
+  capTracks,
+  shouldAutoSwitchMode,
+  sortByLastModifiedDesc,
+  type ApksViewMode,
+} from "./apksTracks";
 import {
   applyDownloadProgress,
   effectiveDirLabel,
@@ -28,6 +34,11 @@ const MAX_RENDERED = 200;
 const NOW_TICK_MS = 30_000;
 
 const ENV_FILTERS = ["all", "QA", "PROD"] as const;
+
+const VIEW_MODES: { value: ApksViewMode; label: string }[] = [
+  { value: "tracks", label: "Tracks" },
+  { value: "all", label: "All builds" },
+];
 
 export function ApksView() {
   const listUrl = useTraffic(
@@ -46,6 +57,7 @@ export function ApksView() {
   const [serial, setSerial] = useState("");
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
+  const [mode, setMode] = useState<ApksViewMode>("tracks");
   const [rows, setRows] = useState<Record<string, DownloadPhase>>({});
   const [now, setNow] = useState(() => Date.now());
 
@@ -134,7 +146,14 @@ export function ApksView() {
   }
 
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
-  const tracks = useMemo(() => capTracks(buildTracks(filtered), MAX_RENDERED), [filtered]);
+  const tracks = useMemo(
+    () => (mode === "tracks" ? capTracks(buildTracks(filtered), MAX_RENDERED) : []),
+    [mode, filtered],
+  );
+  const allBuilds = useMemo(
+    () => (mode === "all" ? sortByLastModifiedDesc(filtered).slice(0, MAX_RENDERED) : []),
+    [mode, filtered],
+  );
   const dirLabel = effectiveDirLabel(downloadDir, dirQ.data?.dir);
   const localByKey = useMemo(
     () => matchLocalFiles(apksQ.data ?? [], localQ.data ?? []),
@@ -161,7 +180,11 @@ export function ApksView() {
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setQuery(next);
+              setMode((cur) => shouldAutoSwitchMode(cur, next));
+            }}
             placeholder="Search builds"
             className="h-7 min-w-40 flex-1 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
           />
@@ -177,6 +200,21 @@ export function ApksView() {
                 )}
               >
                 {v === "all" ? "All" : v}
+              </button>
+            ))}
+          </div>
+          <div className="flex h-7 overflow-hidden rounded-md border border-line">
+            {VIEW_MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => setMode(m.value)}
+                className={clsx(
+                  "h-7 px-2 text-[11px] font-medium transition-colors",
+                  mode === m.value ? "bg-accent text-accent-fg" : "bg-bg text-muted hover:text-txt",
+                )}
+              >
+                {m.label}
               </button>
             ))}
           </div>
@@ -236,39 +274,64 @@ export function ApksView() {
               hint={
                 entries.length === 0
                   ? "Published APKs from the builds container will appear here."
-                  : "Adjust the search or environment filter."
+                  : mode === "all"
+                    ? "Adjust the search or environment filter, or switch back to Tracks."
+                    : "Adjust the search or environment filter."
               }
             />
           </div>
         ) : filtered.length > 0 ? (
           <div className="mt-3">
             <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] uppercase tracking-wider text-muted/70">
-              <span>{filtered.length} builds</span>
+              <span>
+                {filtered.length} builds
+                {mode === "all" && query.trim() !== "" ? ` matching "${query.trim()}"` : ""}
+              </span>
               {refreshing && (
                 <span className="flex items-center gap-1 normal-case">
                   <Loader2 size={10} className="animate-spin" /> refreshing
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              {tracks.map((track) => (
-                <TrackCard
-                  key={track.key}
-                  track={track}
-                  now={now}
-                  rows={rows}
-                  serial={serial}
-                  deviceSelected={serial !== ""}
-                  localByKey={localByKey}
-                  onInstall={install}
-                  onRevealLocal={revealLocal}
-                  onDeleteLocal={deleteLocal}
-                />
-              ))}
-            </div>
+            {mode === "all" ? (
+              <div className="divide-y divide-line/60 border-t border-line/60">
+                {allBuilds.map((apk) => (
+                  <AllBuildsRow
+                    key={apk.name}
+                    apk={apk}
+                    now={now}
+                    state={rows[localFileName(apk.name)] ?? { phase: "idle" }}
+                    serial={serial}
+                    deviceSelected={serial !== ""}
+                    downloaded={localByKey[localFileName(apk.name)]}
+                    onInstall={install}
+                    onRevealLocal={revealLocal}
+                    onDeleteLocal={deleteLocal}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {tracks.map((track) => (
+                  <TrackCard
+                    key={track.key}
+                    track={track}
+                    now={now}
+                    rows={rows}
+                    serial={serial}
+                    deviceSelected={serial !== ""}
+                    localByKey={localByKey}
+                    onInstall={install}
+                    onRevealLocal={revealLocal}
+                    onDeleteLocal={deleteLocal}
+                  />
+                ))}
+              </div>
+            )}
             {filtered.length > MAX_RENDERED && (
               <p className="px-1 pt-2 text-[11px] text-muted">
-                Showing first {MAX_RENDERED} of {filtered.length} — refine your search.
+                Showing first {MAX_RENDERED} of {filtered.length}
+                {mode === "all" ? " builds" : ""} — refine your search.
               </p>
             )}
           </div>
