@@ -79,6 +79,7 @@ pub fn run() {
             commands::reveal_apks_dir,
             commands::reveal_apk,
             commands::delete_apk,
+            commands::clear_apks_source,
             commands::list_devices,
             commands::current_proxy,
             commands::list_avds,

@@ -50,6 +50,19 @@ pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<
 }
 
 #[tauri::command]
+pub async fn clear_apks_source(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if !cfg.apks.list_url.is_empty() {
+        let mut next = cfg.clone();
+        next.apks.list_url = String::new();
+        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+        let _ = app.emit("config-changed", &next);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn download_apk(
     app: tauri::AppHandle,
     url: String,

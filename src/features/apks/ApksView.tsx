@@ -56,6 +56,7 @@ export function ApksView() {
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
   const [rows, setRows] = useState<Record<string, DownloadPhase>>({});
+  const [editingSource, setEditingSource] = useState(false);
 
   async function refresh() {
     await apksQ.refetch();
@@ -136,6 +137,14 @@ export function ApksView() {
     }
   }
 
+  async function removeSource() {
+    try {
+      await invoke("clear_apks_source");
+    } catch (e) {
+      toast(String(e), "danger");
+    }
+  }
+
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
   const visible = filtered.slice(0, MAX_RENDERED);
   const dirLabel = effectiveDirLabel(downloadDir, dirQ.data?.dir);
@@ -144,18 +153,53 @@ export function ApksView() {
     [apksQ.data, localQ.data],
   );
 
-  if (!configured) {
+  if (!configured || editingSource) {
     return (
       <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
-        <h1 className="text-sm font-semibold text-txt">APKs</h1>
-        <ApksOnboarding onSaved={() => void refresh()} />
+        <div className="flex items-center justify-between">
+          <h1 className="text-sm font-semibold text-txt">APKs</h1>
+          {editingSource && (
+            <button
+              type="button"
+              onClick={() => setEditingSource(false)}
+              className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-txt"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+        <ApksOnboarding
+          initialUrl={editingSource && configured ? listUrl : ""}
+          onSaved={() => {
+            setEditingSource(false);
+            void refresh();
+          }}
+        />
       </div>
     );
   }
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
-      <h1 className="text-sm font-semibold text-txt">APKs</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-sm font-semibold text-txt">APKs</h1>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditingSource(true)}
+            className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-txt"
+          >
+            Change source
+          </button>
+          <button
+            type="button"
+            onClick={() => void removeSource()}
+            className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-danger"
+          >
+            Remove source
+          </button>
+        </div>
+      </div>
 
       <Panel className="p-4">
         <div className="flex flex-wrap items-center gap-2">

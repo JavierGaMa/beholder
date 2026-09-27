@@ -13,8 +13,14 @@ import {
 const URL_PLACEHOLDER =
   "https://<account>.blob.core.windows.net/<container>?restype=container&comp=list&prefix=APKs/";
 
-export function ApksOnboarding({ onSaved }: { onSaved: () => void }) {
-  const [url, setUrl] = useState("");
+export function ApksOnboarding({
+  initialUrl,
+  onSaved,
+}: {
+  initialUrl?: string;
+  onSaved: () => void;
+}) {
+  const [url, setUrl] = useState(initialUrl ?? "");
   const [test, setTest] = useState<ApksTestState>({ phase: "idle" });
   const [saving, setSaving] = useState(false);
 
