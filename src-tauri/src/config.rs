@@ -92,6 +92,8 @@ impl Default for AgentConfig {
 pub struct ApksConfig {
     #[serde(default = "default_apks_list_url")]
     pub list_url: String,
+    #[serde(default)]
+    pub download_dir: Option<String>,
 }
 
 fn default_apks_list_url() -> String {
@@ -102,6 +104,7 @@ impl Default for ApksConfig {
     fn default() -> Self {
         ApksConfig {
             list_url: default_apks_list_url(),
+            download_dir: None,
         }
     }
 }
@@ -336,6 +339,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let mut config = UiConfig::default();
         config.apks.list_url = "https://example.com/contenidos?restype=container&comp=list".into();
+        config.apks.download_dir = Some("~/Downloads/beholder-apks".into());
         write_config(&dir, &config).unwrap();
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded, config);
@@ -344,6 +348,7 @@ mod tests {
         assert!(raw.contains(
             "list_url = \"https://example.com/contenidos?restype=container&comp=list\""
         ));
+        assert!(raw.contains("download_dir = \"~/Downloads/beholder-apks\""));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -356,6 +361,30 @@ mod tests {
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded.apks, ApksConfig::default());
         assert!(loaded.apks.list_url.is_empty());
+        assert!(loaded.apks.download_dir.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn apks_download_dir_defaults_when_key_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-apks-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            config_path(&dir),
+            "[apks]\nlist_url = \"https://example.com/contenidos\"\n",
+        )
+        .unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.apks.list_url, "https://example.com/contenidos");
+        assert!(loaded.apks.download_dir.is_none());
+        let mut config = UiConfig::default();
+        config.apks.list_url = "https://example.com/contenidos".into();
+        write_config(&dir, &config).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(!raw.contains("download_dir"));
+        let reloaded = load(&dir).unwrap();
+        assert_eq!(reloaded, config);
         std::fs::remove_dir_all(&dir).ok();
     }
 

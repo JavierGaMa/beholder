@@ -19,6 +19,7 @@ export interface ConsoleConfig {
 
 export interface ApksConfig {
   list_url: string;
+  download_dir?: string | null;
 }
 
 export interface MetroConfig {
@@ -49,6 +50,7 @@ export const DEFAULT_CONFIG: UiConfig = {
   console: { ring_lines: 10000, show_tid: false, default_buffer: "main" },
   apks: {
     list_url: "",
+    download_dir: null,
   },
   metro: { port: 8081 },
 };

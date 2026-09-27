@@ -12,3 +12,12 @@ export function useApksQuery(listUrl: string, enabled: boolean) {
     staleTime: APKS_STALE_MS,
   });
 }
+
+export function useApksDirQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ["apks-dir"],
+    queryFn: () => invoke<{ dir: string }>("apks_download_dir"),
+    enabled,
+    retry: false,
+  });
+}

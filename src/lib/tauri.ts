@@ -52,6 +52,8 @@ async function mockInvoke<T>(cmd: string): Promise<T> {
         { name: "advisor-v0.0.4-QA-build-4-release-RN-from-07-07-2026.apk", url: "https://example.dev/advisor-v0.0.4.apk", version: "0.0.4", env: "QA", build: 4, flavor: "release", date: "07-07-2026", size_bytes: 85404672, last_modified: "Mon, 07 Jul 2026 09:12:44 GMT" },
         { name: "advisor-v0.0.0-jdv-QA-build-1-release-RN-from-20-04-2026.apk", url: "https://example.dev/advisor-v0.0.0-jdv.apk", version: "0.0.0", env: "QA", build: 1, flavor: "release", date: "20-04-2026", size_bytes: 83856384, last_modified: "Mon, 20 Apr 2026 16:45:12 GMT" },
       ] as T;
+    case "apks_download_dir":
+      return { dir: "~/Downloads/beholder-apks" } as T;
     default:
       return undefined as T;
   }

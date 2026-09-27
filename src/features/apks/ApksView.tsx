@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CircleCheck, Download, Loader2, RefreshCw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
-import { useApksQuery } from "../../queries/apks";
+import { useApksDirQuery, useApksQuery } from "../../queries/apks";
 import type { ApkEntry } from "./apksFormat";
 import { Badge, EmptyState, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
@@ -13,7 +14,12 @@ import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
 import { downloadPct, filterApks, formatBytes, type EnvFilter } from "./apksFormat";
 import { DevicePicker } from "./DevicePicker";
 import { ApksOnboarding } from "./ApksOnboarding";
-import { applyDownloadProgress, localFileName, type DownloadPhase } from "./apksLocalState";
+import {
+  applyDownloadProgress,
+  effectiveDirLabel,
+  localFileName,
+  type DownloadPhase,
+} from "./apksLocalState";
 
 const MAX_RENDERED = 200;
 
@@ -36,8 +42,11 @@ export function ApksView() {
   const listUrl = useTraffic(
     (s) => s.uiConfig?.apks?.list_url ?? DEFAULT_CONFIG.apks?.list_url ?? "",
   );
+  const downloadDir = useTraffic((s) => s.uiConfig?.apks?.download_dir ?? null);
   const configured = listUrl.trim() !== "";
   const apksQ = useApksQuery(listUrl, configured);
+  const dirQ = useApksDirQuery(configured);
+  const queryClient = useQueryClient();
   const entries = apksQ.data ?? [];
   const status = apksQ.isPending && configured ? "loading" : apksQ.error != null ? "error" : "ready";
   const error = qError(apksQ.error);
@@ -69,6 +78,10 @@ export function ApksView() {
     };
   }, []);
 
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ["apks-dir"] });
+  }, [downloadDir, queryClient]);
+
   function setRow(name: string, phase: DownloadPhase) {
     setRows((cur) => ({ ...cur, [name]: phase }));
   }
@@ -95,6 +108,7 @@ export function ApksView() {
 
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
   const visible = filtered.slice(0, MAX_RENDERED);
+  const dirLabel = effectiveDirLabel(downloadDir, dirQ.data?.dir);
 
   if (!configured) {
     return (
@@ -143,6 +157,15 @@ export function ApksView() {
             <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> Refresh
           </button>
         </div>
+
+        {dirLabel && (
+          <p
+            className="mt-2 truncate font-mono text-[10px] text-muted/70"
+            title={dirLabel}
+          >
+            {dirLabel}
+          </p>
+        )}
 
         {error && (
           <div className="mt-3 flex items-center gap-2">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDownloadProgress,
+  effectiveDirLabel,
   localFileName,
   type DownloadPhase,
 } from "./apksLocalState";
@@ -71,5 +72,26 @@ describe("applyDownloadProgress", () => {
     const next = applyDownloadProgress(rows, { name: "foo.apk", received: 40, total: 100 });
     expect(next).toBe(rows);
     expect(next["APKs/foo.apk"]).toEqual({ phase: "downloading", received: 0, total: 100 });
+  });
+});
+
+describe("effectiveDirLabel", () => {
+  it("shows the resolved directory when present", () => {
+    expect(effectiveDirLabel(null, "/data/beholder/apks")).toBe("/data/beholder/apks");
+    expect(effectiveDirLabel("~/Downloads/x", "/data/beholder/apks")).toBe(
+      "/data/beholder/apks",
+    );
+  });
+
+  it("falls back to the raw configured value when resolution is empty", () => {
+    expect(effectiveDirLabel("~/Downloads/x", undefined)).toBe("~/Downloads/x");
+    expect(effectiveDirLabel("~/Downloads/x", "")).toBe("~/Downloads/x");
+    expect(effectiveDirLabel("apks", null)).toBe("apks");
+  });
+
+  it("renders nothing when both are empty", () => {
+    expect(effectiveDirLabel(null, undefined)).toBe("");
+    expect(effectiveDirLabel(undefined, null)).toBe("");
+    expect(effectiveDirLabel("", "")).toBe("");
   });
 });

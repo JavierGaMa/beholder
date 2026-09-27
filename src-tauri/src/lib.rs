@@ -74,6 +74,7 @@ pub fn run() {
             commands::set_apks_config,
             commands::download_apk,
             commands::install_apk,
+            commands::apks_download_dir,
             commands::list_devices,
             commands::current_proxy,
             commands::list_avds,

@@ -25,3 +25,12 @@ export function applyDownloadProgress(
     },
   };
 }
+
+export function effectiveDirLabel(
+  configuredRaw: string | null | undefined,
+  resolved: string | null | undefined,
+): string {
+  if (resolved != null && resolved !== "") return resolved;
+  if (configuredRaw != null && configuredRaw !== "") return configuredRaw;
+  return "";
+}

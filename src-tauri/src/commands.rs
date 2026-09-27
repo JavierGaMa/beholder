@@ -72,6 +72,27 @@ pub async fn install_apk(state: State<'_, AppState>, serial: String, path: Strin
     ApkInstaller::install_apk(&device, &path).map_err(|e| e.to_string())
 }
 
+fn resolve_apks_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    let default_dir = dir.join("apks");
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    crate::apks::effective_download_dir(&home, &default_dir, &cfg.apks)
+}
+
+#[derive(serde::Serialize)]
+pub struct ApksDirInfo {
+    pub dir: String,
+}
+
+#[tauri::command]
+pub async fn apks_download_dir(app: tauri::AppHandle) -> Result<ApksDirInfo, String> {
+    let dir = resolve_apks_dir(&app)?;
+    Ok(ApksDirInfo {
+        dir: dir.to_string_lossy().to_string(),
+    })
+}
+
 #[tauri::command]
 pub async fn list_devices(state: State<'_, AppState>) -> Result<Vec<bh_device::Device>, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;

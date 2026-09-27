@@ -1,4 +1,6 @@
+use crate::config::ApksConfig;
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 
 const MAX_PAGES: usize = 100;
 
@@ -264,17 +266,47 @@ pub async fn list_apks(list_url: &str) -> Result<Vec<ApkEntry>, String> {
     Ok(entries)
 }
 
+pub fn sanitize_file_name(name: &str) -> Result<String, String> {
+    std::path::Path::new(name)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("invalid apk file name: {name}"))
+        .map(str::to_string)
+}
+
+pub fn effective_download_dir(
+    home: &Path,
+    default_dir: &Path,
+    apks: &ApksConfig,
+) -> Result<PathBuf, String> {
+    let Some(raw) = apks.download_dir.as_deref() else {
+        return Ok(default_dir.to_path_buf());
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(default_dir.to_path_buf());
+    }
+    if trimmed == "~" {
+        return Ok(home.to_path_buf());
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        return Ok(home.join(rest));
+    }
+    if trimmed.starts_with('/') {
+        return Ok(PathBuf::from(trimmed));
+    }
+    Err(format!(
+        "apks.download_dir must be an absolute path (start with / or ~): {trimmed}"
+    ))
+}
+
 pub async fn download_apk(app: &tauri::AppHandle, url: &str, name: &str) -> Result<String, String> {
     use futures_util::StreamExt;
     use tauri::{Emitter, Manager};
     use tokio::io::AsyncWriteExt;
 
-    let safe = std::path::Path::new(name)
-        .file_name()
-        .and_then(|f| f.to_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("invalid apk file name: {name}"))?
-        .to_string();
+    let safe = sanitize_file_name(name)?;
     let dir = app
         .path()
         .app_local_data_dir()
@@ -326,6 +358,108 @@ pub async fn download_apk(app: &tauri::AppHandle, url: &str, name: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_strips_blob_prefixes() {
+        assert_eq!(sanitize_file_name("APKs/foo.apk").unwrap(), "foo.apk");
+        assert_eq!(sanitize_file_name("contenidos/APKs/foo.apk").unwrap(), "foo.apk");
+    }
+
+    #[test]
+    fn sanitize_keeps_plain_names() {
+        assert_eq!(sanitize_file_name("foo.apk").unwrap(), "foo.apk");
+    }
+
+    #[test]
+    fn sanitize_reduces_traversal_to_a_bare_file_name() {
+        assert_eq!(sanitize_file_name("../config.toml").unwrap(), "config.toml");
+        assert_eq!(sanitize_file_name("/etc/passwd").unwrap(), "passwd");
+    }
+
+    #[test]
+    fn sanitize_rejects_degenerate_names() {
+        for name in ["", ".", "..", "/", "//"] {
+            assert_eq!(
+                sanitize_file_name(name).unwrap_err(),
+                format!("invalid apk file name: {name}"),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_drops_trailing_slashes_like_path_file_name() {
+        assert_eq!(sanitize_file_name("foo.apk/").unwrap(), "foo.apk");
+        assert_eq!(sanitize_file_name("APKs/foo.apk/").unwrap(), "foo.apk");
+    }
+
+    fn apks_with_download_dir(raw: &str) -> ApksConfig {
+        ApksConfig {
+            download_dir: Some(raw.into()),
+            ..ApksConfig::default()
+        }
+    }
+
+    #[test]
+    fn effective_dir_defaults_when_unset_or_blank() {
+        let home = Path::new("/home/tester");
+        let default_dir = Path::new("/data/beholder/apks");
+        assert_eq!(
+            effective_download_dir(home, default_dir, &ApksConfig::default()).unwrap(),
+            PathBuf::from("/data/beholder/apks")
+        );
+        for raw in ["", "   "] {
+            assert_eq!(
+                effective_download_dir(home, default_dir, &apks_with_download_dir(raw)).unwrap(),
+                PathBuf::from("/data/beholder/apks"),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn effective_dir_expands_home_relative() {
+        let home = Path::new("/home/tester");
+        let default_dir = Path::new("/data/beholder/apks");
+        assert_eq!(
+            effective_download_dir(home, default_dir, &apks_with_download_dir("~")).unwrap(),
+            PathBuf::from("/home/tester")
+        );
+        assert_eq!(
+            effective_download_dir(home, default_dir, &apks_with_download_dir("~/x")).unwrap(),
+            PathBuf::from("/home/tester/x")
+        );
+    }
+
+    #[test]
+    fn effective_dir_passes_absolute_through_trimmed_without_canonicalization() {
+        let home = Path::new("/home/tester");
+        let default_dir = Path::new("/data/beholder/apks");
+        let missing = std::env::temp_dir().join(format!(
+            "bh-apks-no-such-dir-{}-{}",
+            std::process::id(),
+            "nonexistent"
+        ));
+        let raw = format!("  {}  ", missing.display());
+        assert_eq!(
+            effective_download_dir(home, default_dir, &apks_with_download_dir(&raw)).unwrap(),
+            missing
+        );
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn effective_dir_rejects_relative_paths_naming_the_value() {
+        let home = Path::new("/home/tester");
+        let default_dir = Path::new("/data/beholder/apks");
+        for raw in ["apks", "Downloads/apks", "~foo"] {
+            assert_eq!(
+                effective_download_dir(home, default_dir, &apks_with_download_dir(raw)).unwrap_err(),
+                format!("apks.download_dir must be an absolute path (start with / or ~): {raw}"),
+                "{raw}"
+            );
+        }
+    }
 
     #[test]
     fn parses_all_real_samples() {
