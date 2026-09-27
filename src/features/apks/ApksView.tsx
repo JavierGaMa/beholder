@@ -93,7 +93,11 @@ export function ApksView() {
     const key = localFileName(entry.name);
     try {
       setRow(key, { phase: "downloading", received: 0, total: entry.size_bytes });
-      const path = await invoke<string>("download_apk", { url: entry.url, name: entry.name });
+      const path = await invoke<string>("download_apk", {
+        url: entry.url,
+        name: entry.name,
+        expectedSizeBytes: entry.size_bytes || undefined,
+      });
       await queryClient.invalidateQueries({ queryKey: ["apks-local"] });
       setRow(key, { phase: "installing" });
       await invoke("install_apk", { serial, path });

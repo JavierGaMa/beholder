@@ -54,8 +54,9 @@ pub async fn download_apk(
     app: tauri::AppHandle,
     url: String,
     name: String,
+    expected_size_bytes: Option<u64>,
 ) -> Result<String, String> {
-    crate::apks::download_apk(&app, &url, &name).await
+    crate::apks::download_apk(&app, &url, &name, expected_size_bytes).await
 }
 
 #[tauri::command]
@@ -72,14 +73,6 @@ pub async fn install_apk(state: State<'_, AppState>, serial: String, path: Strin
     ApkInstaller::install_apk(&device, &path).map_err(|e| e.to_string())
 }
 
-fn resolve_apks_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    let default_dir = dir.join("apks");
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    crate::apks::effective_download_dir(&home, &default_dir, &cfg.apks)
-}
-
 #[derive(serde::Serialize)]
 pub struct ApksDirInfo {
     pub dir: String,
@@ -87,7 +80,7 @@ pub struct ApksDirInfo {
 
 #[tauri::command]
 pub async fn apks_download_dir(app: tauri::AppHandle) -> Result<ApksDirInfo, String> {
-    let dir = resolve_apks_dir(&app)?;
+    let dir = crate::apks::resolve_apks_dir(&app)?;
     Ok(ApksDirInfo {
         dir: dir.to_string_lossy().to_string(),
     })
@@ -102,7 +95,7 @@ pub struct LocalApk {
 
 #[tauri::command]
 pub async fn list_local_apks(app: tauri::AppHandle) -> Result<Vec<LocalApk>, String> {
-    let dir = resolve_apks_dir(&app)?;
+    let dir = crate::apks::resolve_apks_dir(&app)?;
     let mut files = Vec::new();
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -127,14 +120,14 @@ pub async fn list_local_apks(app: tauri::AppHandle) -> Result<Vec<LocalApk>, Str
 
 #[tauri::command]
 pub async fn reveal_apks_dir(app: tauri::AppHandle) -> Result<(), String> {
-    let dir = resolve_apks_dir(&app)?;
+    let dir = crate::apks::resolve_apks_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     tauri_plugin_opener::reveal_item_in_dir(&dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn reveal_apk(app: tauri::AppHandle, name: String) -> Result<(), String> {
-    let dir = resolve_apks_dir(&app)?;
+    let dir = crate::apks::resolve_apks_dir(&app)?;
     let safe = crate::apks::sanitize_file_name(&name)?;
     let path = dir.join(&safe);
     if !path.exists() {
@@ -145,7 +138,7 @@ pub async fn reveal_apk(app: tauri::AppHandle, name: String) -> Result<(), Strin
 
 #[tauri::command]
 pub async fn delete_apk(app: tauri::AppHandle, name: String) -> Result<(), String> {
-    let dir = resolve_apks_dir(&app)?;
+    let dir = crate::apks::resolve_apks_dir(&app)?;
     let safe = crate::apks::sanitize_file_name(&name)?;
     let path = dir.join(&safe);
     match std::fs::remove_file(&path) {

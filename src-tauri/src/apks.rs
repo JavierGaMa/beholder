@@ -301,19 +301,47 @@ pub fn effective_download_dir(
     ))
 }
 
-pub async fn download_apk(app: &tauri::AppHandle, url: &str, name: &str) -> Result<String, String> {
+pub fn existing_download_for(
+    dir: &Path,
+    safe_name: &str,
+    expected_size_bytes: Option<u64>,
+) -> Result<Option<PathBuf>, String> {
+    let Some(expected) = expected_size_bytes.filter(|s| *s > 0) else {
+        return Ok(None);
+    };
+    match std::fs::metadata(dir.join(safe_name)) {
+        Ok(meta) => Ok((meta.len() == expected).then(|| dir.join(safe_name))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn resolve_apks_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    let default_dir = dir.join("apks");
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    effective_download_dir(&home, &default_dir, &cfg.apks)
+}
+
+pub async fn download_apk(
+    app: &tauri::AppHandle,
+    url: &str,
+    name: &str,
+    expected_size_bytes: Option<u64>,
+) -> Result<String, String> {
     use futures_util::StreamExt;
-    use tauri::{Emitter, Manager};
+    use tauri::Emitter;
     use tokio::io::AsyncWriteExt;
 
     let safe = sanitize_file_name(name)?;
-    let dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("apks");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = resolve_apks_dir(app)?;
     let dest = dir.join(&safe);
+    if let Some(existing) = existing_download_for(&dir, &safe, expected_size_bytes)? {
+        return Ok(existing.to_string_lossy().to_string());
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let response = reqwest::get(url)
         .await
@@ -459,6 +487,70 @@ mod tests {
                 "{raw}"
             );
         }
+    }
+
+    fn temp_apks_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "bh-apks-existing-{}-{label}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn existing_download_missing_file_yields_none() {
+        let dir = temp_apks_dir("missing");
+        assert_eq!(
+            existing_download_for(&dir, "foo.apk", Some(10)).unwrap(),
+            None
+        );
+        let absent_dir = std::env::temp_dir().join(format!(
+            "bh-apks-existing-{}-absent-dir",
+            std::process::id()
+        ));
+        assert_eq!(
+            existing_download_for(&absent_dir, "foo.apk", Some(10)).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn existing_download_exact_size_match_yields_path() {
+        let dir = temp_apks_dir("exact");
+        std::fs::write(dir.join("foo.apk"), vec![0u8; 4]).unwrap();
+        assert_eq!(
+            existing_download_for(&dir, "foo.apk", Some(4)).unwrap(),
+            Some(dir.join("foo.apk"))
+        );
+    }
+
+    #[test]
+    fn existing_download_size_mismatch_yields_none() {
+        let dir = temp_apks_dir("mismatch");
+        std::fs::write(dir.join("foo.apk"), vec![0u8; 3]).unwrap();
+        assert_eq!(
+            existing_download_for(&dir, "foo.apk", Some(4)).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn existing_download_unknown_or_zero_expected_never_reuses() {
+        let dir = temp_apks_dir("unknown");
+        std::fs::write(dir.join("foo.apk"), vec![0u8; 4]).unwrap();
+        assert_eq!(existing_download_for(&dir, "foo.apk", None).unwrap(), None);
+        assert_eq!(
+            existing_download_for(&dir, "foo.apk", Some(0)).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn existing_download_unexpected_io_error_is_err() {
+        let dir = temp_apks_dir("io-error");
+        std::fs::write(dir.join("blocker"), b"x").unwrap();
+        assert!(existing_download_for(&dir, "blocker/foo.apk", Some(1)).is_err());
     }
 
     #[test]
