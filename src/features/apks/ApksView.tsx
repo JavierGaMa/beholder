@@ -13,13 +13,7 @@ import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
 import { downloadPct, filterApks, formatBytes, type EnvFilter } from "./apksFormat";
 import { DevicePicker } from "./DevicePicker";
 import { ApksOnboarding } from "./ApksOnboarding";
-
-type Phase =
-  | { phase: "idle" }
-  | { phase: "downloading"; received: number; total: number }
-  | { phase: "installing" }
-  | { phase: "done" }
-  | { phase: "error"; message: string };
+import { applyDownloadProgress, localFileName, type DownloadPhase } from "./apksLocalState";
 
 const MAX_RENDERED = 200;
 
@@ -51,7 +45,7 @@ export function ApksView() {
   const [serial, setSerial] = useState("");
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
-  const [rows, setRows] = useState<Record<string, Phase>>({});
+  const [rows, setRows] = useState<Record<string, DownloadPhase>>({});
 
   async function refresh() {
     await apksQ.refetch();
@@ -63,18 +57,7 @@ export function ApksView() {
     let cancelled = false;
     import("@tauri-apps/api/event").then(({ listen }) =>
       listen<{ name: string; received: number; total: number }>("apk-download-progress", (e) => {
-        setRows((cur) => {
-          const row = cur[e.payload.name];
-          if (!row || row.phase !== "downloading") return cur;
-          return {
-            ...cur,
-            [e.payload.name]: {
-              phase: "downloading",
-              received: e.payload.received,
-              total: e.payload.total,
-            },
-          };
-        });
+        setRows((rows) => applyDownloadProgress(rows, e.payload));
       }).then((un) => {
         if (cancelled) un();
         else unlisten = un;
@@ -86,25 +69,26 @@ export function ApksView() {
     };
   }, []);
 
-  function setRow(name: string, phase: Phase) {
+  function setRow(name: string, phase: DownloadPhase) {
     setRows((cur) => ({ ...cur, [name]: phase }));
   }
 
   async function install(entry: ApkEntry) {
     if (!serial) return;
+    const key = localFileName(entry.name);
     try {
       let path = localPaths.get(entry.name);
       if (!path) {
-        setRow(entry.name, { phase: "downloading", received: 0, total: entry.size_bytes });
+        setRow(key, { phase: "downloading", received: 0, total: entry.size_bytes });
         path = await invoke<string>("download_apk", { url: entry.url, name: entry.name });
         localPaths.set(entry.name, path);
       }
-      setRow(entry.name, { phase: "installing" });
+      setRow(key, { phase: "installing" });
       await invoke("install_apk", { serial, path });
-      setRow(entry.name, { phase: "done" });
+      setRow(key, { phase: "done" });
       toast(`installed on ${serial}`);
     } catch (e) {
-      setRow(entry.name, { phase: "error", message: String(e) });
+      setRow(key, { phase: "error", message: String(e) });
       toast(String(e), "danger");
     }
   }
@@ -201,16 +185,19 @@ export function ApksView() {
               )}
             </div>
             <div className="divide-y divide-line/60">
-              {visible.map((apk) => (
-                <ApkRow
-                  key={apk.name}
-                  apk={apk}
-                  state={rows[apk.name] ?? { phase: "idle" }}
-                  serial={serial}
-                  deviceSelected={serial !== ""}
-                  onInstall={() => install(apk)}
-                />
-              ))}
+              {visible.map((apk) => {
+                const key = localFileName(apk.name);
+                return (
+                  <ApkRow
+                    key={key}
+                    apk={apk}
+                    state={rows[key] ?? { phase: "idle" }}
+                    serial={serial}
+                    deviceSelected={serial !== ""}
+                    onInstall={() => install(apk)}
+                  />
+                );
+              })}
             </div>
             {visible.length < filtered.length && (
               <p className="px-3 py-2 text-[11px] text-muted">
@@ -232,7 +219,7 @@ function ApkRow({
   onInstall,
 }: {
   apk: ApkEntry;
-  state: Phase;
+  state: DownloadPhase;
   serial: string;
   deviceSelected: boolean;
   onInstall: () => void;
