@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "../lib/tauri";
 import type { ApkEntry } from "../store/types";
+import type { LocalApk } from "../features/apks/apksLocalState";
 
 export const APKS_STALE_MS = 60_000;
 
@@ -19,5 +20,13 @@ export function useApksDirQuery(enabled: boolean) {
     queryFn: () => invoke<{ dir: string }>("apks_download_dir"),
     enabled,
     retry: false,
+  });
+}
+
+export function useLocalApksQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ["apks-local"],
+    queryFn: () => invoke<LocalApk[]>("list_local_apks"),
+    enabled,
   });
 }

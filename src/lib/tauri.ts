@@ -54,6 +54,8 @@ async function mockInvoke<T>(cmd: string): Promise<T> {
       ] as T;
     case "apks_download_dir":
       return { dir: "~/Downloads/beholder-apks" } as T;
+    case "list_local_apks":
+      return [] as T;
     default:
       return undefined as T;
   }

@@ -93,6 +93,70 @@ pub async fn apks_download_dir(app: tauri::AppHandle) -> Result<ApksDirInfo, Str
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct LocalApk {
+    pub name: String,
+    pub size_bytes: u64,
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn list_local_apks(app: tauri::AppHandle) -> Result<Vec<LocalApk>, String> {
+    let dir = resolve_apks_dir(&app)?;
+    let mut files = Vec::new();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(files),
+        Err(e) => return Err(e.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        if !meta.is_file() {
+            continue;
+        }
+        files.push(LocalApk {
+            name: entry.file_name().to_string_lossy().to_string(),
+            size_bytes: meta.len(),
+            path: entry.path().to_string_lossy().to_string(),
+        });
+    }
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(files)
+}
+
+#[tauri::command]
+pub async fn reveal_apks_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = resolve_apks_dir(&app)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    tauri_plugin_opener::reveal_item_in_dir(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn reveal_apk(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let dir = resolve_apks_dir(&app)?;
+    let safe = crate::apks::sanitize_file_name(&name)?;
+    let path = dir.join(&safe);
+    if !path.exists() {
+        return Err(format!("local file not found: {name}"));
+    }
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_apk(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let dir = resolve_apks_dir(&app)?;
+    let safe = crate::apks::sanitize_file_name(&name)?;
+    let path = dir.join(&safe);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(format!("local file not found: {name}"))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn list_devices(state: State<'_, AppState>) -> Result<Vec<bh_device::Device>, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;

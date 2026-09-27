@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CircleCheck, Download, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, CircleCheck, Download, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
-import { useApksDirQuery, useApksQuery } from "../../queries/apks";
+import { useApksDirQuery, useApksQuery, useLocalApksQuery } from "../../queries/apks";
 import type { ApkEntry } from "./apksFormat";
 import { Badge, EmptyState, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
@@ -18,12 +18,12 @@ import {
   applyDownloadProgress,
   effectiveDirLabel,
   localFileName,
+  matchLocalFiles,
   type DownloadPhase,
+  type LocalApk,
 } from "./apksLocalState";
 
 const MAX_RENDERED = 200;
-
-const localPaths = new Map<string, string>();
 
 const ENV_FILTERS = ["all", "QA", "PROD"] as const;
 
@@ -46,6 +46,7 @@ export function ApksView() {
   const configured = listUrl.trim() !== "";
   const apksQ = useApksQuery(listUrl, configured);
   const dirQ = useApksDirQuery(configured);
+  const localQ = useLocalApksQuery(configured);
   const queryClient = useQueryClient();
   const entries = apksQ.data ?? [];
   const status = apksQ.isPending && configured ? "loading" : apksQ.error != null ? "error" : "ready";
@@ -80,6 +81,7 @@ export function ApksView() {
 
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: ["apks-dir"] });
+    void queryClient.invalidateQueries({ queryKey: ["apks-local"] });
   }, [downloadDir, queryClient]);
 
   function setRow(name: string, phase: DownloadPhase) {
@@ -90,12 +92,9 @@ export function ApksView() {
     if (!serial) return;
     const key = localFileName(entry.name);
     try {
-      let path = localPaths.get(entry.name);
-      if (!path) {
-        setRow(key, { phase: "downloading", received: 0, total: entry.size_bytes });
-        path = await invoke<string>("download_apk", { url: entry.url, name: entry.name });
-        localPaths.set(entry.name, path);
-      }
+      setRow(key, { phase: "downloading", received: 0, total: entry.size_bytes });
+      const path = await invoke<string>("download_apk", { url: entry.url, name: entry.name });
+      await queryClient.invalidateQueries({ queryKey: ["apks-local"] });
       setRow(key, { phase: "installing" });
       await invoke("install_apk", { serial, path });
       setRow(key, { phase: "done" });
@@ -106,9 +105,40 @@ export function ApksView() {
     }
   }
 
+  async function revealDir() {
+    try {
+      await invoke("reveal_apks_dir");
+    } catch (e) {
+      toast(String(e), "danger");
+    }
+  }
+
+  async function revealLocal(entry: ApkEntry) {
+    try {
+      await invoke("reveal_apk", { name: localFileName(entry.name) });
+    } catch (e) {
+      toast(String(e), "danger");
+      void queryClient.invalidateQueries({ queryKey: ["apks-local"] });
+    }
+  }
+
+  async function deleteLocal(entry: ApkEntry) {
+    try {
+      await invoke("delete_apk", { name: localFileName(entry.name) });
+    } catch (e) {
+      toast(String(e), "danger");
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: ["apks-local"] });
+    }
+  }
+
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
   const visible = filtered.slice(0, MAX_RENDERED);
   const dirLabel = effectiveDirLabel(downloadDir, dirQ.data?.dir);
+  const localByKey = useMemo(
+    () => matchLocalFiles(apksQ.data ?? [], localQ.data ?? []),
+    [apksQ.data, localQ.data],
+  );
 
   if (!configured) {
     return (
@@ -159,12 +189,21 @@ export function ApksView() {
         </div>
 
         {dirLabel && (
-          <p
-            className="mt-2 truncate font-mono text-[10px] text-muted/70"
-            title={dirLabel}
-          >
-            {dirLabel}
-          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <p
+              className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted/70"
+              title={dirLabel}
+            >
+              {dirLabel}
+            </p>
+            <button
+              type="button"
+              onClick={() => void revealDir()}
+              className="h-6 shrink-0 rounded-md border border-line px-2 text-[10px] font-medium text-muted hover:text-txt"
+            >
+              Reveal
+            </button>
+          </div>
         )}
 
         {error && (
@@ -217,7 +256,10 @@ export function ApksView() {
                     state={rows[key] ?? { phase: "idle" }}
                     serial={serial}
                     deviceSelected={serial !== ""}
+                    downloaded={localByKey[key]}
                     onInstall={() => install(apk)}
+                    onRevealLocal={() => revealLocal(apk)}
+                    onDeleteLocal={() => deleteLocal(apk)}
                   />
                 );
               })}
@@ -239,13 +281,19 @@ function ApkRow({
   state,
   serial,
   deviceSelected,
+  downloaded,
   onInstall,
+  onRevealLocal,
+  onDeleteLocal,
 }: {
   apk: ApkEntry;
   state: DownloadPhase;
   serial: string;
   deviceSelected: boolean;
+  downloaded?: LocalApk;
   onInstall: () => void;
+  onRevealLocal: () => void;
+  onDeleteLocal: () => void;
 }) {
   const pct = state.phase === "downloading" ? downloadPct(state.received, state.total) : 0;
   const busy = state.phase === "downloading" || state.phase === "installing";
@@ -266,6 +314,7 @@ function ApkRow({
           ) : (
             <Badge>unknown</Badge>
           )}
+          {downloaded && <Badge tone="ok">downloaded</Badge>}
         </div>
         <p className="mt-0.5 truncate text-[11px] text-muted/80">{apkMeta(apk)}</p>
         {state.phase === "error" && (
@@ -277,7 +326,29 @@ function ApkRow({
           </p>
         )}
       </div>
-      <div className="shrink-0">
+      <div className="flex shrink-0 items-center gap-2">
+        {downloaded && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onRevealLocal}
+              disabled={busy}
+              title={`Reveal ${downloaded.name} in the file manager`}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-txt disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FolderOpen size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={onDeleteLocal}
+              disabled={busy}
+              title={`Delete ${downloaded.name} from the downloads directory`}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
         {state.phase === "done" ? (
           <span className="flex items-center gap-1 text-[11px] font-medium text-ok">
             <CircleCheck size={12} /> installed

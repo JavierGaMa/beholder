@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { ApkEntry } from "../../store/types";
 import {
   applyDownloadProgress,
   effectiveDirLabel,
   localFileName,
+  matchLocalFiles,
   type DownloadPhase,
+  type LocalApk,
 } from "./apksLocalState";
 
 describe("localFileName", () => {
@@ -93,5 +96,31 @@ describe("effectiveDirLabel", () => {
     expect(effectiveDirLabel(null, undefined)).toBe("");
     expect(effectiveDirLabel(undefined, null)).toBe("");
     expect(effectiveDirLabel("", "")).toBe("");
+  });
+});
+
+describe("matchLocalFiles", () => {
+  const foo: LocalApk = { name: "foo.apk", size_bytes: 100, path: "/data/apks/foo.apk" };
+
+  function entry(name: string) {
+    return { name } as ApkEntry;
+  }
+
+  it("returns matches keyed by local file name for downloaded entries", () => {
+    expect(matchLocalFiles([entry("foo.apk"), entry("bar.apk")], [foo])).toEqual({
+      "foo.apk": foo,
+    });
+  });
+
+  it("omits entries with no local file", () => {
+    expect(matchLocalFiles([entry("bar.apk"), entry("baz.apk")], [foo])).toEqual({});
+  });
+
+  it("keys a prefixed blob name to its local file name", () => {
+    expect(matchLocalFiles([entry("APKs/foo.apk")], [foo])).toEqual({ "foo.apk": foo });
+  });
+
+  it("never matches degenerate entry names", () => {
+    expect(matchLocalFiles([entry(""), entry("/"), entry(".")], [foo])).toEqual({});
   });
 });
