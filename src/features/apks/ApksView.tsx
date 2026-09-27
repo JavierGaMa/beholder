@@ -1,42 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CircleCheck, Download, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { useApksDirQuery, useApksQuery, useLocalApksQuery } from "../../queries/apks";
-import type { ApkEntry } from "./apksFormat";
-import { Badge, EmptyState, Panel } from "../../components/ui/primitives";
+import { EmptyState, Panel } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
 import { useTraffic } from "../../store/traffic";
 import { DEFAULT_CONFIG } from "../../lib/theme/config-types";
-import { downloadPct, filterApks, formatBytes, type EnvFilter } from "./apksFormat";
+import { filterApks, type ApkEntry, type EnvFilter } from "./apksFormat";
 import { DevicePicker } from "./DevicePicker";
 import { ApksOnboarding } from "./ApksOnboarding";
+import { SourceChip, TrackCard } from "./ApkTracks";
+import { buildTracks, capTracks } from "./apksTracks";
 import {
   applyDownloadProgress,
   effectiveDirLabel,
   localFileName,
   matchLocalFiles,
   type DownloadPhase,
-  type LocalApk,
 } from "./apksLocalState";
 
 const MAX_RENDERED = 200;
 
-const ENV_FILTERS = ["all", "QA", "PROD"] as const;
+const NOW_TICK_MS = 30_000;
 
-function apkMeta(apk: ApkEntry): string {
-  return [
-    apk.build != null ? `build ${apk.build}` : null,
-    apk.flavor,
-    apk.date,
-    formatBytes(apk.size_bytes),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
+const ENV_FILTERS = ["all", "QA", "PROD"] as const;
 
 export function ApksView() {
   const listUrl = useTraffic(
@@ -56,11 +47,16 @@ export function ApksView() {
   const [query, setQuery] = useState("");
   const [env, setEnv] = useState<EnvFilter>("all");
   const [rows, setRows] = useState<Record<string, DownloadPhase>>({});
-  const [editingSource, setEditingSource] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   async function refresh() {
     await apksQ.refetch();
   }
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -137,44 +133,19 @@ export function ApksView() {
     }
   }
 
-  async function removeSource() {
-    try {
-      await invoke("clear_apks_source");
-    } catch (e) {
-      toast(String(e), "danger");
-    }
-  }
-
   const filtered = useMemo(() => filterApks(entries, query, env), [entries, query, env]);
-  const visible = filtered.slice(0, MAX_RENDERED);
+  const tracks = useMemo(() => capTracks(buildTracks(filtered), MAX_RENDERED), [filtered]);
   const dirLabel = effectiveDirLabel(downloadDir, dirQ.data?.dir);
   const localByKey = useMemo(
     () => matchLocalFiles(apksQ.data ?? [], localQ.data ?? []),
     [apksQ.data, localQ.data],
   );
 
-  if (!configured || editingSource) {
+  if (!configured) {
     return (
       <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-sm font-semibold text-txt">APKs</h1>
-          {editingSource && (
-            <button
-              type="button"
-              onClick={() => setEditingSource(false)}
-              className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-txt"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-        <ApksOnboarding
-          initialUrl={editingSource && configured ? listUrl : ""}
-          onSaved={() => {
-            setEditingSource(false);
-            void refresh();
-          }}
-        />
+        <h1 className="text-sm font-semibold text-txt">APKs</h1>
+        <ApksOnboarding onSaved={() => void refresh()} />
       </div>
     );
   }
@@ -183,22 +154,7 @@ export function ApksView() {
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-sm font-semibold text-txt">APKs</h1>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEditingSource(true)}
-            className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-txt"
-          >
-            Change source
-          </button>
-          <button
-            type="button"
-            onClick={() => void removeSource()}
-            className="h-7 rounded-md border border-line px-2.5 text-[12px] font-medium text-muted hover:text-danger"
-          >
-            Remove source
-          </button>
-        </div>
+        <SourceChip listUrl={listUrl} buildCount={entries.length} onSaved={() => void refresh()} />
       </div>
 
       <Panel className="p-4">
@@ -268,9 +224,9 @@ export function ApksView() {
         )}
 
         {status === "loading" ? (
-          <div className="mt-3 flex flex-col gap-1.5">
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-12 animate-pulse rounded-md bg-surface-2/60" />
+              <div key={i} className="h-20 animate-pulse rounded-md bg-surface-2/60" />
             ))}
           </div>
         ) : filtered.length === 0 && !error ? (
@@ -285,8 +241,8 @@ export function ApksView() {
             />
           </div>
         ) : filtered.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-md border border-line">
-            <div className="flex items-center justify-between border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
+          <div className="mt-3">
+            <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] uppercase tracking-wider text-muted/70">
               <span>{filtered.length} builds</span>
               {refreshing && (
                 <span className="flex items-center gap-1 normal-case">
@@ -294,149 +250,30 @@ export function ApksView() {
                 </span>
               )}
             </div>
-            <div className="divide-y divide-line/60">
-              {visible.map((apk) => {
-                const key = localFileName(apk.name);
-                return (
-                  <ApkRow
-                    key={key}
-                    apk={apk}
-                    state={rows[key] ?? { phase: "idle" }}
-                    serial={serial}
-                    deviceSelected={serial !== ""}
-                    downloaded={localByKey[key]}
-                    onInstall={() => install(apk)}
-                    onRevealLocal={() => revealLocal(apk)}
-                    onDeleteLocal={() => deleteLocal(apk)}
-                  />
-                );
-              })}
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {tracks.map((track) => (
+                <TrackCard
+                  key={track.key}
+                  track={track}
+                  now={now}
+                  rows={rows}
+                  serial={serial}
+                  deviceSelected={serial !== ""}
+                  localByKey={localByKey}
+                  onInstall={install}
+                  onRevealLocal={revealLocal}
+                  onDeleteLocal={deleteLocal}
+                />
+              ))}
             </div>
-            {visible.length < filtered.length && (
-              <p className="px-3 py-2 text-[11px] text-muted">
+            {filtered.length > MAX_RENDERED && (
+              <p className="px-1 pt-2 text-[11px] text-muted">
                 Showing first {MAX_RENDERED} of {filtered.length} — refine your search.
               </p>
             )}
           </div>
         ) : null}
       </Panel>
-    </div>
-  );
-}
-
-function ApkRow({
-  apk,
-  state,
-  serial,
-  deviceSelected,
-  downloaded,
-  onInstall,
-  onRevealLocal,
-  onDeleteLocal,
-}: {
-  apk: ApkEntry;
-  state: DownloadPhase;
-  serial: string;
-  deviceSelected: boolean;
-  downloaded?: LocalApk;
-  onInstall: () => void;
-  onRevealLocal: () => void;
-  onDeleteLocal: () => void;
-}) {
-  const pct = state.phase === "downloading" ? downloadPct(state.received, state.total) : 0;
-  const busy = state.phase === "downloading" || state.phase === "installing";
-  return (
-    <div
-      className={clsx(
-        "relative flex items-center gap-3 px-3 py-2.5 transition-colors",
-        !busy && "hover:bg-surface-2/50",
-        busy && "bg-accent/5",
-      )}
-      title={apk.name}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[13px] font-semibold text-txt">v{apk.version ?? "?"}</span>
-          {apk.env ? (
-            <Badge tone={apk.env === "PROD" ? "ok" : "warn"}>{apk.env}</Badge>
-          ) : (
-            <Badge>unknown</Badge>
-          )}
-          {downloaded && <Badge tone="ok">downloaded</Badge>}
-        </div>
-        <p className="mt-0.5 truncate text-[11px] text-muted/80">{apkMeta(apk)}</p>
-        {state.phase === "error" && (
-          <p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-danger">
-            <AlertCircle size={10} className="shrink-0" />
-            <span className="truncate" title={state.message}>
-              {state.message}
-            </span>
-          </p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {downloaded && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={onRevealLocal}
-              disabled={busy}
-              title={`Reveal ${downloaded.name} in the file manager`}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-txt disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <FolderOpen size={12} />
-            </button>
-            <button
-              type="button"
-              onClick={onDeleteLocal}
-              disabled={busy}
-              title={`Delete ${downloaded.name} from the downloads directory`}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        )}
-        {state.phase === "done" ? (
-          <span className="flex items-center gap-1 text-[11px] font-medium text-ok">
-            <CircleCheck size={12} /> installed
-          </span>
-        ) : state.phase === "installing" ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-accent">
-            <Loader2 size={12} className="animate-spin" /> installing
-          </span>
-        ) : state.phase === "downloading" ? (
-          <span className="flex items-center gap-1.5 font-mono text-[11px] text-accent">
-            <Loader2 size={12} className="animate-spin" /> {pct}%
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={onInstall}
-            disabled={!deviceSelected}
-            title={deviceSelected ? `Install on ${serial}` : "Select a device first"}
-            className={clsx(
-              "flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-semibold transition-colors",
-              deviceSelected
-                ? "bg-accent text-accent-fg"
-                : "border border-line text-muted disabled:opacity-40",
-            )}
-          >
-            {state.phase === "error" ? (
-              "Retry"
-            ) : (
-              <>
-                <Download size={11} /> Install
-              </>
-            )}
-          </button>
-        )}
-      </div>
-      {state.phase === "downloading" && (
-        <div className="absolute inset-x-0 bottom-0 h-0.5 bg-surface-2">
-          <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-        </div>
-      )}
     </div>
   );
 }
