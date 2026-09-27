@@ -14,15 +14,10 @@ import { invoke } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { toast } from "../../components/ui/toast";
 import { useDropdownPosition } from "../../components/ui/popover";
-import { Badge, Panel } from "../../components/ui/primitives";
+import { Badge } from "../../components/ui/primitives";
 import { downloadPct, formatBytes, type ApkEntry } from "./apksFormat";
 import { localFileName, type DownloadPhase, type LocalApk } from "./apksLocalState";
-import {
-  formatRelativeLastModified,
-  normalizedEnv,
-  normalizedFlavor,
-  type BuildTrack,
-} from "./apksTracks";
+import { formatRelativeLastModified, normalizedEnv, normalizedFlavor } from "./apksTracks";
 import {
   applyApksTestResult,
   canSaveApks,
@@ -330,105 +325,7 @@ function LatestAction({
   );
 }
 
-function HistoryAction({
-  state,
-  serial,
-  deviceSelected,
-  onInstall,
-}: {
-  state: DownloadPhase;
-  serial: string;
-  deviceSelected: boolean;
-  onInstall: () => void;
-}) {
-  if (state.phase === "done") {
-    return <CircleCheck size={12} className="text-ok" />;
-  }
-  if (state.phase === "installing") {
-    return <Loader2 size={12} className="animate-spin text-accent" />;
-  }
-  if (state.phase === "downloading") {
-    return (
-      <span className="font-mono text-[10px] text-accent">
-        {downloadPct(state.received, state.total)}%
-      </span>
-    );
-  }
-  const title =
-    state.phase === "error"
-      ? `Retry — ${state.message}`
-      : deviceSelected
-        ? `Install on ${serial}`
-        : "Select a device first";
-  return (
-    <button
-      type="button"
-      onClick={onInstall}
-      disabled={!deviceSelected}
-      title={title}
-      className={clsx(
-        "flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-txt disabled:cursor-not-allowed disabled:opacity-40",
-        state.phase === "error" && "border-danger/50 text-danger hover:text-danger",
-      )}
-    >
-      <Download size={12} />
-    </button>
-  );
-}
-
-function HistoryRow({
-  apk,
-  now,
-  state,
-  serial,
-  deviceSelected,
-  downloaded,
-  onInstall,
-  onReveal,
-  onDelete,
-}: {
-  apk: ApkEntry;
-  now: number;
-  state: DownloadPhase;
-  serial: string;
-  deviceSelected: boolean;
-  downloaded?: LocalApk;
-  onInstall: () => void;
-  onReveal: () => void;
-  onDelete: () => void;
-}) {
-  const busy = state.phase === "downloading" || state.phase === "installing";
-  const rel = formatRelativeLastModified(apk.last_modified, now);
-  return (
-    <div className="flex items-center gap-2 py-1.5" title={apk.name}>
-      <span
-        className={clsx(
-          "h-1.5 w-1.5 shrink-0 rounded-full",
-          downloaded ? "bg-ok" : "bg-line",
-        )}
-        title={downloaded ? "Downloaded" : "Not downloaded"}
-      />
-      <span className="shrink-0 font-mono text-[12px] text-txt/90">v{apk.version ?? "?"}</span>
-      {apk.build != null && (
-        <span className="shrink-0 font-mono text-[10px] text-muted">#{apk.build}</span>
-      )}
-      <span className="min-w-0 flex-1 truncate text-[10px] text-muted/80">
-        {[rel, formatBytes(apk.size_bytes)].filter(Boolean).join(" · ")}
-      </span>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <HistoryAction
-          state={state}
-          serial={serial}
-          deviceSelected={deviceSelected}
-          onInstall={onInstall}
-        />
-        <RowMenu downloaded={downloaded} busy={busy} onReveal={onReveal} onDelete={onDelete} />
-      </div>
-    </div>
-  );
-}
-
-export function AllBuildsRow({
+export function BuildCard({
   apk,
   now,
   state,
@@ -453,25 +350,60 @@ export function AllBuildsRow({
   const env = normalizedEnv(apk.env);
   const flavor = normalizedFlavor(apk.flavor);
   const rel = formatRelativeLastModified(apk.last_modified, now);
+  const displayName = apk.version
+    ? `v${apk.version}`
+    : localFileName(apk.name).replace(/\.apk$/i, "");
   return (
-    <div className="flex items-center gap-2 py-1.5" title={apk.name}>
-      <EnvBadge env={env} />
-      <span
-        className="w-28 min-w-0 shrink truncate font-mono text-[11px] text-muted"
-        title={flavor}
-      >
-        {flavor}
-      </span>
-      <span className="shrink-0 font-mono text-[12px] text-txt/90">v{apk.version ?? "?"}</span>
-      {apk.build != null && (
-        <span className="shrink-0 font-mono text-[10px] text-muted">#{apk.build}</span>
+    <div className="flex flex-col gap-2 rounded-md border border-line bg-surface p-3 transition-colors hover:border-accent/50">
+      <div className="flex min-w-0 items-center gap-2">
+        <EnvBadge env={env} />
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+          title={flavor}
+        >
+          {flavor}
+        </span>
+        {rel && <span className="shrink-0 text-[10px] text-muted/80">{rel}</span>}
+      </div>
+
+      <div className="min-w-0" title={apk.name}>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="min-w-0 truncate font-mono text-[15px] font-semibold text-txt">
+            {displayName}
+          </span>
+          {apk.build != null && (
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+              #{apk.build}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="font-mono text-[11px] tabular-nums text-muted/80">
+            {formatBytes(apk.size_bytes)}
+          </span>
+          {downloaded && <Badge tone="ok">local</Badge>}
+        </div>
+      </div>
+
+      {state.phase === "downloading" && (
+        <div className="h-1 w-full overflow-hidden rounded bg-surface-2">
+          <div
+            className="h-full bg-accent transition-[width]"
+            style={{ width: `${downloadPct(state.received, state.total)}%` }}
+          />
+        </div>
       )}
-      <span className="min-w-0 flex-1 truncate text-[10px] text-muted/80">
-        {[rel, formatBytes(apk.size_bytes)].filter(Boolean).join(" · ")}
-      </span>
-      {downloaded && <Badge tone="ok">local</Badge>}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <HistoryAction
+      {state.phase === "error" && (
+        <p className="flex items-center gap-1 font-mono text-[10px] text-danger">
+          <AlertCircle size={10} className="shrink-0" />
+          <span className="truncate" title={state.message}>
+            {state.message}
+          </span>
+        </p>
+      )}
+
+      <div className="mt-auto flex items-center justify-between gap-2">
+        <LatestAction
           state={state}
           serial={serial}
           deviceSelected={deviceSelected}
@@ -485,132 +417,5 @@ export function AllBuildsRow({
         />
       </div>
     </div>
-  );
-}
-
-export function TrackCard({
-  track,
-  now,
-  rows,
-  serial,
-  deviceSelected,
-  localByKey,
-  onInstall,
-  onRevealLocal,
-  onDeleteLocal,
-}: {
-  track: BuildTrack;
-  now: number;
-  rows: Record<string, DownloadPhase>;
-  serial: string;
-  deviceSelected: boolean;
-  localByKey: Record<string, LocalApk>;
-  onInstall: (entry: ApkEntry) => void;
-  onRevealLocal: (entry: ApkEntry) => void;
-  onDeleteLocal: (entry: ApkEntry) => void;
-}) {
-  const [showHistory, setShowHistory] = useState(false);
-  const latest = track.latest;
-  const latestKey = localFileName(latest.name);
-  const state = rows[latestKey] ?? { phase: "idle" };
-  const busy = state.phase === "downloading" || state.phase === "installing";
-  const downloaded = localByKey[latestKey];
-  const rel = formatRelativeLastModified(latest.last_modified, now);
-
-  return (
-    <Panel className="flex flex-col p-3">
-      <div className="flex items-center gap-2">
-        <EnvBadge env={track.env} />
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-[12px] text-txt/90"
-          title={track.flavor}
-        >
-          {track.flavor}
-        </span>
-        {track.history.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted transition-colors hover:text-txt"
-          >
-            {showHistory ? "Hide" : `Show ${track.history.length} previous`}
-            <ChevronDown
-              size={12}
-              className={clsx("transition-transform", showHistory && "rotate-180")}
-            />
-          </button>
-        )}
-      </div>
-
-      <div className="mt-2.5 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5" title={latest.name}>
-            <span className="font-mono text-[15px] font-semibold text-txt">
-              v{latest.version ?? "?"}
-            </span>
-            {latest.build != null && (
-              <span className="font-mono text-[11px] text-muted">#{latest.build}</span>
-            )}
-            {rel && <span className="text-[11px] text-muted/80">{rel}</span>}
-            <span className="font-mono text-[11px] text-muted/80">
-              {formatBytes(latest.size_bytes)}
-            </span>
-            {downloaded && <Badge tone="ok">local</Badge>}
-          </div>
-          {state.phase === "downloading" && (
-            <div className="mt-2 h-1 w-full max-w-64 overflow-hidden rounded bg-surface-2">
-              <div
-                className="h-full bg-accent transition-[width]"
-                style={{ width: `${downloadPct(state.received, state.total)}%` }}
-              />
-            </div>
-          )}
-          {state.phase === "error" && (
-            <p className="mt-1.5 flex items-center gap-1 font-mono text-[10px] text-danger">
-              <AlertCircle size={10} className="shrink-0" />
-              <span className="truncate" title={state.message}>
-                {state.message}
-              </span>
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <LatestAction
-            state={state}
-            serial={serial}
-            deviceSelected={deviceSelected}
-            onInstall={() => onInstall(latest)}
-          />
-          <RowMenu
-            downloaded={downloaded}
-            busy={busy}
-            onReveal={() => onRevealLocal(latest)}
-            onDelete={() => onDeleteLocal(latest)}
-          />
-        </div>
-      </div>
-
-      {showHistory && (
-        <div className="mt-2.5 divide-y divide-line/60 border-t border-line/60">
-          {track.history.map((apk) => {
-            const key = localFileName(apk.name);
-            return (
-              <HistoryRow
-                key={key}
-                apk={apk}
-                now={now}
-                state={rows[key] ?? { phase: "idle" }}
-                serial={serial}
-                deviceSelected={deviceSelected}
-                downloaded={localByKey[key]}
-                onInstall={() => onInstall(apk)}
-                onReveal={() => onRevealLocal(apk)}
-                onDelete={() => onDeleteLocal(apk)}
-              />
-            );
-          })}
-        </div>
-      )}
-    </Panel>
   );
 }
