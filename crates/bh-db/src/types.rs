@@ -61,6 +61,12 @@ pub struct QueryResult {
     pub elapsed_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MutationResult {
+    pub changes: u64,
+    pub elapsed_ms: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("adb not found: {0}")]
@@ -191,5 +197,20 @@ mod tests {
         assert_eq!(v["row_count"], 1);
         assert_eq!(v["truncated"], true);
         assert_eq!(v["elapsed_ms"], 12);
+    }
+
+    #[test]
+    fn mutation_result_serializes_snake_case() {
+        let v = serde_json::to_value(MutationResult {
+            changes: 3,
+            elapsed_ms: 5,
+        })
+        .unwrap();
+        assert_eq!(v["changes"], 3);
+        assert_eq!(v["elapsed_ms"], 5);
+        assert_eq!(
+            v,
+            serde_json::json!({"changes": 3u64, "elapsed_ms": 5u64})
+        );
     }
 }

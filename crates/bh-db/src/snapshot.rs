@@ -1,15 +1,24 @@
 use crate::types::{
-    DbError, OrderDir, QueryResult, TableColumn, TablePage, TableSchema, TableSummary,
+    DbError, MutationResult, OrderDir, QueryResult, TableColumn, TablePage, TableSchema,
+    TableSummary,
 };
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::types::ValueRef;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use serde_json::{Map, Value};
 use std::path::Path;
 
 pub fn open_snapshot(path: &Path) -> Result<Connection, DbError> {
     Connection::open(path)
         .map_err(|e| DbError::Other(format!("open snapshot {}: {e}", path.display())))
+}
+
+pub fn open_snapshot_rw(path: &Path) -> Result<Connection, DbError> {
+    Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| DbError::Other(format!("open snapshot {}: {e}", path.display())))
 }
 
 fn quote_ident(name: &str) -> String {
@@ -316,6 +325,48 @@ pub fn run_query(conn: &Connection, sql: &str) -> Result<QueryResult, DbError> {
         truncated,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+pub fn run_mutation(conn: &Connection, sql: &str) -> Result<MutationResult, DbError> {
+    let started = std::time::Instant::now();
+    let trimmed = sql.trim();
+    if trimmed.is_empty() {
+        return Err(DbError::Other(
+            "edit mode: statement is empty; write statements only".into(),
+        ));
+    }
+    conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS beholder_change_reset (x);\nDELETE FROM beholder_change_reset;",
+    )
+    .map_err(|e| DbError::Other(format!("edit mode: reset change counter: {e}")))?;
+    let changes = conn
+        .execute(trimmed, [])
+        .map_err(|e| match e {
+            rusqlite::Error::ExecuteReturnedResults => DbError::Other(
+                "edit mode runs write statements only; run reads with the console in read mode or use the run button"
+                    .into(),
+            ),
+            rusqlite::Error::MultipleStatement => {
+                DbError::Other("edit mode runs one statement at a time".into())
+            }
+            other => DbError::Other(format!("edit mode: run failed: {other}")),
+        })? as u64;
+    Ok(MutationResult {
+        changes,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+pub fn checkpoint(conn: &Connection) -> Result<(), DbError> {
+    let busy: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+        .map_err(|e| DbError::Other(format!("wal checkpoint: {e}")))?;
+    if busy != 0 {
+        return Err(DbError::Other(
+            "wal checkpoint busy: another connection holds the snapshot".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1075,6 +1126,148 @@ mod tests {
         assert_eq!(res.rows[0][0], 1);
         let res = run_query(&conn, "  \n\t SELECT * FROM users LIMIT 2").unwrap();
         assert_eq!(res.row_count, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_snapshot_rw_requires_existing_file() {
+        let dir = temp_dir("rw-missing");
+        let err = open_snapshot_rw(&dir.join("nope.db")).unwrap_err();
+        assert!(err.to_string().contains("open snapshot"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_snapshot_rw_writes_and_reads_back() {
+        let (dir, conn) = users_db("rw-roundtrip");
+        drop(conn);
+        let rw = open_snapshot_rw(&dir.join("app.db")).unwrap();
+        run_mutation(&rw, "INSERT INTO users VALUES (99, 'rw', NULL)").unwrap();
+        let name: String = rw
+            .query_row("SELECT name FROM users WHERE id = 99", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, "rw");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_inserts_updates_deletes_and_reports_changes() {
+        let (dir, conn) = users_db("m-roundtrip");
+        let res = run_mutation(&conn, "INSERT INTO users VALUES (20, 'new', NULL)").unwrap();
+        assert_eq!(res.changes, 1);
+        let res = run_mutation(&conn, "UPDATE users SET note = 'n' WHERE id <= 2").unwrap();
+        assert_eq!(res.changes, 2);
+        let res = run_mutation(&conn, "DELETE FROM users WHERE id = 20").unwrap();
+        assert_eq!(res.changes, 1);
+        assert_eq!(user_count(&conn), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_creates_alters_and_drops() {
+        let (dir, conn) = users_db("m-ddl");
+        let res = run_mutation(&conn, "CREATE TABLE extra (v TEXT)").unwrap();
+        assert_eq!(res.changes, 0);
+        let res = run_mutation(&conn, "INSERT INTO extra VALUES ('x')").unwrap();
+        assert_eq!(res.changes, 1);
+        let res = run_mutation(&conn, "ALTER TABLE extra ADD COLUMN w TEXT").unwrap();
+        assert_eq!(res.changes, 0);
+        let res = run_mutation(&conn, "DROP TABLE extra").unwrap();
+        assert_eq!(res.changes, 0);
+        assert!(!table_exists(&conn, "extra").unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_reports_elapsed_and_zero_change_writes() {
+        let (dir, conn) = users_db("m-elapsed");
+        let res = run_mutation(&conn, "UPDATE users SET note = NULL WHERE id = -1").unwrap();
+        assert_eq!(res.changes, 0);
+        assert!(res.elapsed_ms < 5_000);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_rejects_row_returning_statement_with_guidance() {
+        let (dir, conn) = users_db("m-select");
+        for sql in [
+            "SELECT * FROM users",
+            "EXPLAIN SELECT * FROM users",
+            "PRAGMA table_info(users)",
+        ] {
+            let err = run_mutation(&conn, sql).unwrap_err();
+            assert!(
+                matches!(err, DbError::Other(ref m) if m.contains("write statements only")
+                    && m.contains("read mode")),
+                "sql {sql:?} gave: {err}"
+            );
+        }
+        assert_eq!(user_count(&conn), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_rejects_multiple_statements() {
+        let (dir, conn) = users_db("m-multi");
+        let err = run_mutation(&conn, "UPDATE users SET note = NULL; UPDATE users SET note = 'x'")
+            .unwrap_err();
+        assert!(matches!(err, DbError::Other(ref m) if m.contains("one statement")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_rejects_empty_statement() {
+        let (dir, conn) = users_db("m-empty");
+        for sql in ["", "   ", "\n"] {
+            let err = run_mutation(&conn, sql).unwrap_err();
+            assert!(matches!(err, DbError::Other(ref m) if m.contains("empty")));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mutation_reports_sqlite_errors_without_applying() {
+        let (dir, conn) = users_db("m-sqlerr");
+        let err = run_mutation(&conn, "UPDATE missing SET v = 1").unwrap_err();
+        assert!(matches!(err, DbError::Other(ref m) if m.contains("no such table")));
+        let err = run_mutation(&conn, "INSERT INTO users VALUES (1)").unwrap_err();
+        assert!(
+            matches!(err, DbError::Other(ref m) if m.contains("edit mode: run failed"))
+        );
+        assert_eq!(user_count(&conn), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checkpoint_truncates_wal_after_writes() {
+        let dir = temp_dir("m-checkpoint");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        conn.execute("CREATE TABLE t (v TEXT)", []).unwrap();
+        for i in 0..10 {
+            conn.execute("INSERT INTO t VALUES (?1)", [format!("row-{i}")])
+                .unwrap();
+        }
+        let wal = dir.join("app.db-wal");
+        assert!(wal.exists() && wal.metadata().unwrap().len() > 0);
+
+        checkpoint(&conn).unwrap();
+
+        assert!(!wal.exists() || wal.metadata().unwrap().len() == 0);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 10);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checkpoint_succeeds_on_non_wal_database() {
+        let (dir, conn) = users_db("m-checkpoint-delete");
+        checkpoint(&conn).unwrap();
+        assert_eq!(user_count(&conn), 6);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

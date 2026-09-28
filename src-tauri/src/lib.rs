@@ -132,6 +132,8 @@ pub fn run() {
             commands::database_schema,
             commands::database_table_rows,
             commands::run_db_query,
+            commands::run_db_mutation,
+            commands::apply_db_to_device,
             commands::reveal_snapshot,
             commands::export_snapshot,
             commands::export_query_text

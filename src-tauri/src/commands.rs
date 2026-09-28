@@ -717,6 +717,41 @@ pub async fn run_db_query(
 }
 
 #[tauri::command]
+pub async fn run_db_mutation(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+    sql: String,
+) -> Result<bh_db::MutationResult, String> {
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || -> Result<bh_db::MutationResult, String> {
+        let conn = bh_db::open_snapshot_rw(&path).map_err(|e| e.to_string())?;
+        bh_db::run_mutation(&conn, &sql).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn apply_db_to_device(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || {
+        bh_db::apply_to_device(runner.as_ref(), &serial, &package, &db_name, &path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn reveal_snapshot(
     app: tauri::AppHandle,
     serial: String,

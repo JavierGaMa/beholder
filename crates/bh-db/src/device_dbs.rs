@@ -226,6 +226,63 @@ pub fn pull_snapshot(
     })
 }
 
+fn run_shell_ok(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<(), DeviceError> {
+    let out = runner.run(&["-s", serial, "shell", cmd])?;
+    if !out.success {
+        return Err(DeviceError::Other(format!(
+            "shell '{cmd}' failed: {}{}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )));
+    }
+    Ok(())
+}
+
+pub fn apply_to_device(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    package: &str,
+    db_name: &str,
+    snapshot_path: &Path,
+) -> Result<(), DeviceError> {
+    if !is_valid_component(serial, true) {
+        return Err(DeviceError::Other(format!("invalid serial: {serial}")));
+    }
+    if !is_valid_component(package, false) {
+        return Err(DeviceError::Other(format!("invalid package name: {package}")));
+    }
+    if !is_valid_component(db_name, true) {
+        return Err(DeviceError::Other(format!("invalid database name: {db_name}")));
+    }
+
+    run_shell_ok(runner, serial, &format!("am force-stop {package}"))?;
+
+    let conn = crate::snapshot::open_snapshot_rw(snapshot_path)
+        .map_err(|e| DeviceError::Other(format!("open snapshot for checkpoint: {e}")))?;
+    crate::snapshot::checkpoint(&conn)
+        .map_err(|e| DeviceError::Other(format!("checkpoint snapshot: {e}")))?;
+
+    let local = snapshot_path.to_string_lossy().to_string();
+    let remote = format!("/data/data/{package}/databases/{db_name}");
+    let out = runner.run(&["-s", serial, "push", &local, &remote])?;
+    if !out.success {
+        return Err(DeviceError::CommandFailed {
+            program: "adb push".into(),
+            args: vec![local],
+            stderr: format!("{}{}", out.stdout, out.stderr),
+        });
+    }
+
+    for suffix in ["-wal", "-shm"] {
+        run_shell_ok(
+            runner,
+            serial,
+            &format!("rm -f /data/data/{package}/databases/{db_name}{suffix}"),
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,5 +585,130 @@ mod tests {
     fn snapshot_dir_rejects_slashes_in_serial() {
         let err = snapshot_dir(Path::new("/tmp"), "e/mu", "com.x", "app.db").unwrap_err();
         assert!(err.to_string().contains("invalid serial"));
+    }
+
+    fn snapshot_with_wal(tag: &str) -> (std::path::PathBuf, rusqlite::Connection) {
+        let dir = std::env::temp_dir().join(format!(
+            "bh-db-apply-{tag}-{}-{}",
+            std::process::id(),
+            runner_call_count()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("app.db");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        conn.execute("CREATE TABLE t (v TEXT)", []).unwrap();
+        conn.execute("INSERT INTO t VALUES ('pending-in-wal')", [])
+            .unwrap();
+        (path, conn)
+    }
+
+    fn runner_call_count() -> u64 {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[test]
+    fn apply_to_device_force_stops_checkpoints_pushes_then_cleans_up() {
+        let (path, conn) = snapshot_with_wal("order");
+        let wal = path
+            .parent()
+            .unwrap()
+            .join(format!("{}-wal", path.file_name().unwrap().to_string_lossy()));
+        assert!(wal.exists() && wal.metadata().unwrap().len() > 0);
+
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("");
+        runner.enqueue_ok("app.db: 1 file pushed, 12 bytes/s");
+        runner.enqueue_ok("");
+        runner.enqueue_ok("");
+
+        apply_to_device(&runner, "emu", "com.x", "app.db", &path).unwrap();
+
+        assert!(
+            !wal.exists() || wal.metadata().unwrap().len() == 0,
+            "wal must be checkpointed before push"
+        );
+        let local = path.to_string_lossy().to_string();
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 4);
+        assert_eq!(calls[0], vec!["-s", "emu", "shell", "am force-stop com.x"]);
+        assert_eq!(calls[1], vec!["-s", "emu", "push", &local, "/data/data/com.x/databases/app.db"]);
+        assert_eq!(
+            calls[2],
+            vec![
+                "-s",
+                "emu",
+                "shell",
+                "rm -f /data/data/com.x/databases/app.db-wal"
+            ]
+        );
+        assert_eq!(
+            calls[3],
+            vec![
+                "-s",
+                "emu",
+                "shell",
+                "rm -f /data/data/com.x/databases/app.db-shm"
+            ]
+        );
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_to_device_push_failure_carries_raw_output_and_skips_cleanup() {
+        let (path, conn) = snapshot_with_wal("push-fail");
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("");
+        runner.enqueue_fail("adb: error: failed to push app.db: Read-only file system");
+
+        let err = apply_to_device(&runner, "emu", "com.x", "app.db", &path).unwrap_err();
+        match err {
+            DeviceError::CommandFailed {
+                program,
+                args,
+                stderr,
+            } => {
+                assert_eq!(program, "adb push");
+                assert_eq!(args, vec![path.to_string_lossy().to_string()]);
+                assert!(stderr.contains("Read-only file system"), "raw output: {stderr}");
+            }
+            other => panic!("expected CommandFailed, got {other:?}"),
+        }
+        assert_eq!(runner.calls.lock().unwrap().len(), 2);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_to_device_force_stop_failure_aborts_with_raw_output() {
+        let (path, conn) = snapshot_with_wal("fs-fail");
+        let runner = FakeRunner::new();
+        runner.enqueue_fail("Error: java.lang.SecurityException: Permission Denial");
+
+        let err = apply_to_device(&runner, "emu", "com.x", "app.db", &path).unwrap_err();
+        assert!(
+            matches!(err, DeviceError::Other(ref m) if m.contains("am force-stop com.x")
+                && m.contains("Permission Denial")),
+            "unexpected error: {err}"
+        );
+        assert_eq!(runner.calls.lock().unwrap().len(), 1);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_to_device_rejects_unsafe_components_without_running_adb() {
+        let (path, conn) = snapshot_with_wal("invalid");
+        let runner = FakeRunner::new();
+        let err = apply_to_device(&runner, "emu", "com.x; rm -rf /", "app.db", &path).unwrap_err();
+        assert!(err.to_string().contains("invalid package"));
+        let err = apply_to_device(&runner, "emu", "com.x", "../evil", &path).unwrap_err();
+        assert!(err.to_string().contains("invalid database name"));
+        assert!(runner.calls.lock().unwrap().is_empty());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
