@@ -24,20 +24,24 @@ export function formatCsv(columns: string[], rows: unknown[][]): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function formatTsv(columns: string[], rows: unknown[][]): string {
-  const flatten = (field: string) => field.replace(/[\t\n\r]/g, " ");
-  const lines = [columns.map(flatten).join("\t")];
-  for (const row of rows) {
-    lines.push(row.map((cell) => flatten(cellText(cell))).join("\t"));
-  }
-  return `${lines.join("\n")}\n`;
-}
-
 export function resultSummary(result: QueryResult): string {
   return `${formatRowCount(result.row_count)} rows · ${result.elapsed_ms} ms`;
 }
 
-export function csvFileName(now: Date = new Date()): string {
+function markdownCell(value: unknown): string {
+  return cellText(value).replace(/\|/g, "\\|").replace(/\r\n|\n|\r/g, "<br>");
+}
+
+export function formatMarkdownTable(columns: string[], rows: unknown[][]): string {
+  const rowLine = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  const lines = [rowLine(columns.map(markdownCell)), rowLine(columns.map(() => "---"))];
+  for (const row of rows) {
+    lines.push(rowLine(row.map(markdownCell)));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export function exportBaseName(now: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
-  return `query-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}.csv`;
+  return `query-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
 }

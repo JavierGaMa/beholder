@@ -56,7 +56,29 @@ import {
   snapshotKey,
   sortDatabases,
 } from "./dbdisplay";
-import { csvFileName, formatTsv, resultSummary } from "./queryResults";
+import { exportBaseName, formatCsv, formatMarkdownTable, resultSummary } from "./queryResults";
+
+function execCopyCommand(): boolean {
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  }
+}
+
+function copyViaHiddenTextarea(text: string): boolean {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = execCopyCommand();
+  ta.remove();
+  return ok;
+}
 
 export function DatabasesView() {
   const [serial, setSerial] = useState("");
@@ -65,7 +87,7 @@ export function DatabasesView() {
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotInfo>>({});
   const [pullError, setPullError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportingResult, setExportingResult] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
@@ -191,34 +213,43 @@ export function DatabasesView() {
 
   async function onCopyResult() {
     if (result == null) return;
+    const markdown = formatMarkdownTable(result.columns, result.rows);
+    let copied: boolean;
     try {
-      await navigator.clipboard.writeText(formatTsv(result.columns, result.rows));
-      toast(`Copied ${formatRowCount(result.rows.length)} rows`);
-    } catch (e) {
-      toast(qError(e) ?? String(e), "danger");
+      await navigator.clipboard.writeText(markdown);
+      copied = true;
+    } catch {
+      copied = copyViaHiddenTextarea(markdown);
+    }
+    if (copied) {
+      toast(`Copied ${formatRowCount(result.rows.length)} rows as Markdown`);
+    } else {
+      toast("Copy failed: clipboard unavailable", "danger");
     }
   }
 
-  async function onExportCsv() {
-    if (result == null || exportingCsv) return;
-    setExportingCsv(true);
+  async function onExportResult() {
+    if (result == null || exportingResult) return;
+    setExportingResult(true);
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const dest = await save({
-        filters: [{ name: "CSV", extensions: ["csv"] }],
-        defaultPath: csvFileName(),
+        filters: [
+          { name: "Markdown", extensions: ["md"] },
+          { name: "CSV", extensions: ["csv"] },
+        ],
+        defaultPath: exportBaseName(),
       });
       if (typeof dest !== "string") return;
-      await invoke("export_query_result", {
-        destPath: dest,
-        columns: result.columns,
-        rows: result.rows,
-      });
+      const content = dest.toLowerCase().endsWith(".csv")
+        ? formatCsv(result.columns, result.rows)
+        : formatMarkdownTable(result.columns, result.rows);
+      await invoke("export_query_text", { destPath: dest, content });
       toast(`Exported to ${dest}`);
     } catch (e) {
       toast(qError(e) ?? String(e), "danger");
     } finally {
-      setExportingCsv(false);
+      setExportingResult(false);
     }
   }
 
@@ -554,19 +585,19 @@ export function DatabasesView() {
                         type="button"
                         onClick={() => void onCopyResult()}
                         disabled={run.isPending || result == null || result.rows.length === 0}
-                        title="Copy the result as TSV to the clipboard"
+                        title="Copy the result as Markdown to the clipboard"
                         className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
                         <Copy size={11} /> Copy
                       </button>
                       <button
                         type="button"
-                        onClick={() => void onExportCsv()}
-                        disabled={run.isPending || exportingCsv || result == null}
-                        title="Export the result as a CSV file"
+                        onClick={() => void onExportResult()}
+                        disabled={run.isPending || exportingResult || result == null}
+                        title="Export the result as Markdown or CSV"
                         className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
-                        {exportingCsv ? (
+                        {exportingResult ? (
                           <Loader2 size={11} className="animate-spin" />
                         ) : (
                           <FileDown size={11} />

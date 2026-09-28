@@ -134,7 +134,7 @@ pub fn run() {
             commands::run_db_query,
             commands::reveal_snapshot,
             commands::export_snapshot,
-            commands::export_query_result
+            commands::export_query_text
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

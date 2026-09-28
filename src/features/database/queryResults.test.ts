@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { csvEscapeField, csvFileName, formatCsv, formatTsv, resultSummary } from "./queryResults";
+import {
+  csvEscapeField,
+  exportBaseName,
+  formatCsv,
+  formatMarkdownTable,
+  resultSummary,
+} from "./queryResults";
 import type { QueryResult } from "../../queries/databases";
 
 function qr(overrides: Partial<QueryResult> = {}): QueryResult {
@@ -67,23 +73,32 @@ describe("formatCsv", () => {
   });
 });
 
-describe("formatTsv", () => {
-  it("joins cells with tabs and terminates each line", () => {
-    const out = formatTsv(["id", "name"], [
+describe("formatMarkdownTable", () => {
+  it("renders header, separator and rows as a pipe table", () => {
+    const out = formatMarkdownTable(["id", "name"], [
       [1, "ada"],
       [2, null],
     ]);
-    expect(out).toBe("id\tname\n1\tada\n2\t\n");
+    expect(out).toBe("| id | name |\n| --- | --- |\n| 1 | ada |\n| 2 |  |\n");
   });
 
-  it("replaces tabs and newlines inside fields with spaces", () => {
-    const out = formatTsv(["col"], [["a\tb\nc\rd"]]);
-    expect(out).toBe("col\na b c d\n");
+  it("escapes pipes and newlines inside cells", () => {
+    const out = formatMarkdownTable(["a|b", "plain"], [["x|y", "line1\nline2"]]);
+    expect(out).toBe("| a\\|b | plain |\n| --- | --- |\n| x\\|y | line1<br>line2 |\n");
   });
 
-  it("renders booleans and numbers the same as csv", () => {
-    const out = formatTsv(["x"], [[true, 3.5]]);
-    expect(out).toBe("x\ntrue\t3.5\n");
+  it("collapses crlf newlines into a single line break", () => {
+    const out = formatMarkdownTable(["col"], [["l1\r\nl2\r"]]);
+    expect(out).toBe("| col |\n| --- |\n| l1<br>l2<br> |\n");
+  });
+
+  it("renders booleans, numbers and missing values", () => {
+    const out = formatMarkdownTable(["x", "y", "z"], [[true, 3.5, undefined]]);
+    expect(out).toBe("| x | y | z |\n| --- | --- | --- |\n| true | 3.5 |  |\n");
+  });
+
+  it("writes header and separator only for an empty result", () => {
+    expect(formatMarkdownTable(["a", "b"], [])).toBe("| a | b |\n| --- | --- |\n");
   });
 });
 
@@ -97,12 +112,12 @@ describe("resultSummary", () => {
   });
 });
 
-describe("csvFileName", () => {
-  it("embeds a sortable local timestamp with a csv extension", () => {
-    expect(csvFileName(new Date(2026, 8, 27, 14, 3, 5))).toBe("query-20260927-140305.csv");
+describe("exportBaseName", () => {
+  it("embeds a sortable local timestamp without an extension", () => {
+    expect(exportBaseName(new Date(2026, 8, 27, 14, 3, 5))).toBe("query-20260927-140305");
   });
 
   it("pads single-digit components", () => {
-    expect(csvFileName(new Date(2026, 0, 2, 1, 2, 3))).toBe("query-20260102-010203.csv");
+    expect(exportBaseName(new Date(2026, 0, 2, 1, 2, 3))).toBe("query-20260102-010203");
   });
 });
