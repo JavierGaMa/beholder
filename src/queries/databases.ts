@@ -53,6 +53,11 @@ export interface QueryResult {
   elapsed_ms: number;
 }
 
+export interface MutationResult {
+  changes: number;
+  elapsed_ms: number;
+}
+
 export const DATABASES_STALE_MS = 30_000;
 
 export function useAppPackagesQuery(serial: string, enabled: boolean) {
@@ -133,6 +138,47 @@ export function useRunDbQuery() {
         dbName: vars.dbName,
         sql: vars.sql,
       }),
+  });
+}
+
+export function useRunDbMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { serial: string; pkg: string; dbName: string; sql: string }) =>
+      invoke<MutationResult>("run_db_mutation", {
+        serial: vars.serial,
+        package: vars.pkg,
+        dbName: vars.dbName,
+        sql: vars.sql,
+      }),
+    onSuccess: (_res, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["db-tables", vars.serial, vars.pkg, vars.dbName],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["db-schema", vars.serial, vars.pkg, vars.dbName],
+      });
+    },
+  });
+}
+
+export function useApplyDbToDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { serial: string; pkg: string; dbName: string }) =>
+      invoke<void>("apply_db_to_device", {
+        serial: vars.serial,
+        package: vars.pkg,
+        dbName: vars.dbName,
+      }),
+    onSuccess: (_res, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["db-tables", vars.serial, vars.pkg, vars.dbName],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["db-schema", vars.serial, vars.pkg, vars.dbName],
+      });
+    },
   });
 }
 

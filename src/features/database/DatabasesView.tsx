@@ -9,8 +9,12 @@ import {
   FolderOpen,
   GripHorizontal,
   Loader2,
+  Pencil,
   RefreshCw,
+  RotateCcw,
   SquareTerminal,
+  Upload,
+  X,
 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
@@ -22,10 +26,13 @@ import { DevicePicker } from "../apks/DevicePicker";
 import {
   useAppDatabasesQuery,
   useAppPackagesQuery,
+  useApplyDbToDevice,
   useDatabaseTablesQuery,
   useInvalidateDatabases,
   usePullSnapshot,
+  useRunDbMutation,
   useRunDbQuery,
+  type MutationResult,
   type QueryResult,
   type SnapshotInfo,
 } from "../../queries/databases";
@@ -68,6 +75,14 @@ import {
   wrapCountQuery,
   wrapPageQuery,
 } from "./queryResults";
+import {
+  appendPending,
+  clearPending,
+  isWriteStatement,
+  type PendingWrite,
+} from "./writes";
+
+type WritePanel = "none" | "history" | "apply";
 
 function execCopyCommand(): boolean {
   try {
@@ -105,6 +120,10 @@ export function DatabasesView() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [lastRunSql, setLastRunSql] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
+  const [lastMutation, setLastMutation] = useState<MutationResult | null>(null);
+  const [writePanel, setWritePanel] = useState<WritePanel>("none");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const lastRunSqlRef = useRef<string | null>(null);
@@ -144,6 +163,8 @@ export function DatabasesView() {
   const pull = usePullSnapshot();
   const invalidateAll = useInvalidateDatabases(serial, pkg);
   const run = useRunDbQuery();
+  const runMutation = useRunDbMutation();
+  const applyToDevice = useApplyDbToDevice();
 
   const apps = packagesQ.data ?? [];
   const dbs = useMemo(() => sortDatabases(dbsQ.data ?? []), [dbsQ.data]);
@@ -167,11 +188,19 @@ export function DatabasesView() {
   useEffect(() => {
     setPkg(null);
     setSnapshots({});
+    setEditMode(false);
+    setPendingWrites(clearPending());
+    setLastMutation(null);
+    setWritePanel("none");
   }, [serial]);
 
   useEffect(() => {
     setSelectedDb(null);
     setPullError(null);
+    setEditMode(false);
+    setPendingWrites(clearPending());
+    setLastMutation(null);
+    setWritePanel("none");
   }, [pkg]);
 
   useEffect(() => {
@@ -181,6 +210,10 @@ export function DatabasesView() {
     setLastRunSql(null);
     setPage(0);
     setTotal(null);
+    setEditMode(false);
+    setPendingWrites(clearPending());
+    setLastMutation(null);
+    setWritePanel("none");
     lastRunSqlRef.current = null;
   }, [selectedDb]);
 
@@ -211,11 +244,15 @@ export function DatabasesView() {
 
   async function runSql(sqlArg?: string) {
     const sql = (sqlArg ?? sqlText).trim();
-    if (sql === "" || run.isPending || !viewerReady) return;
+    if (sql === "" || run.isPending || runMutation.isPending || !viewerReady) return;
     lastRunSqlRef.current = sql;
     setLastRunSql(sql);
     setPage(0);
     setTotal(null);
+    if (editMode && isWriteStatement(sql)) {
+      await executeWrite(sql);
+      return;
+    }
     try {
       const res = await run.mutateAsync({ serial, pkg: pkg ?? "", dbName: selectedDb ?? "", sql });
       setResult(res);
@@ -232,8 +269,61 @@ export function DatabasesView() {
     }
   }
 
+  async function executeWrite(sql: string): Promise<boolean> {
+    if (!viewerReady || selectedDb == null) return false;
+    try {
+      const res = await runMutation.mutateAsync({
+        serial,
+        pkg: pkg ?? "",
+        dbName: selectedDb,
+        sql,
+      });
+      setPendingWrites((w) => appendPending(w, { sql, changes: res.changes, at: Date.now() }));
+      setLastMutation(res);
+      return true;
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+      return false;
+    }
+  }
+
+  async function onApplyToDevice() {
+    if (!viewerReady || selectedDb == null || pkg == null || applyToDevice.isPending) return;
+    try {
+      await applyToDevice.mutateAsync({ serial, pkg, dbName: selectedDb });
+      setPendingWrites(clearPending());
+      setWritePanel("none");
+      const info = await pull.mutateAsync({ serial, pkg, dbName: selectedDb });
+      setSnapshots((cur) => ({ ...cur, [snapshotKey(serial, pkg, selectedDb)]: info }));
+      toast(`Applied ${selectedDb} to ${serial}`);
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+    }
+  }
+
+  async function onRevert() {
+    if (!viewerReady || selectedDb == null || pkg == null || pull.isPending) return;
+    const { confirm } = await import("@tauri-apps/plugin-dialog");
+    const yes = await confirm(
+        `Discard local changes and re-pull ${selectedDb} from the device?`,
+        { title: "Revert to device state", kind: "warning" },
+    );
+    if (!yes) return;
+    try {
+      const info = await pull.mutateAsync({ serial, pkg, dbName: selectedDb });
+      setSnapshots((cur) => ({ ...cur, [snapshotKey(serial, pkg, selectedDb)]: info }));
+      setPendingWrites(clearPending());
+      setLastMutation(null);
+      setWritePanel("none");
+      toast(`Reverted ${selectedDb} to device state`);
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+    }
+  }
+
   async function runPage(nextPage: number) {
-    if (lastRunSql == null || run.isPending || !viewerReady || nextPage < 0) return;
+    if (lastRunSql == null || run.isPending || runMutation.isPending || !viewerReady || nextPage < 0)
+      return;
     const offset = nextPage * QUERY_PAGE_SIZE;
     try {
       const res = await run.mutateAsync({
@@ -633,7 +723,7 @@ export function DatabasesView() {
                         text={sqlText}
                         onTextChange={setSqlText}
                         history={sqlHistory}
-                        running={run.isPending}
+                        running={run.isPending || runMutation.isPending}
                         onRun={() => void runSql()}
                         onClose={() => setSqlOpen(false)}
                       />
@@ -649,6 +739,15 @@ export function DatabasesView() {
                   )}
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
                     <span className="font-mono text-[11px] text-muted">{summaryText}</span>
+                    {lastMutation != null && !run.isPending && !runMutation.isPending && (
+                      <span
+                        title={`Applied to the local snapshot; the grid keeps the previous query result:\n${lastMutation.changes} change${lastMutation.changes === 1 ? "" : "s"} · ${lastMutation.elapsed_ms} ms`}
+                        className="font-mono text-[11px] text-accent"
+                      >
+                        {formatRowCount(lastMutation.changes)} row{lastMutation.changes === 1 ? "" : "s"}{" "}
+                        changed · {lastMutation.elapsed_ms} ms
+                      </span>
+                    )}
                     {!run.isPending && queryError == null && result?.truncated && (
                       <span
                         title="The result was capped at 500 rows — narrow it with WHERE or LIMIT"
@@ -658,6 +757,61 @@ export function DatabasesView() {
                       </span>
                     )}
                     <span className="ml-auto flex items-center gap-2">
+                      {editMode && pendingWrites.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWritePanel(writePanel === "history" ? "none" : "history")
+                          }
+                          title="Statements applied to the local snapshot since the last apply or revert"
+                          className="flex h-7 items-center gap-1 rounded-md border border-warn/40 bg-warn/10 px-2 text-[11px] font-medium text-warn"
+                        >
+                          {pendingWrites.length} pending
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditMode((m) => !m)}
+                        title="Edit mode: writes apply to the local snapshot, then Apply to device pushes them"
+                        className={clsx(
+                          "flex h-7 items-center gap-1 rounded-md border px-2 text-[11px]",
+                          editMode
+                            ? "border-danger/40 bg-danger/10 font-medium text-danger"
+                            : "border-line text-muted hover:text-txt",
+                        )}
+                      >
+                        <Pencil size={11} /> Edit
+                      </button>
+                      {editMode && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void onRevert()}
+                            disabled={pull.isPending}
+                            title="Discard local changes and re-pull the snapshot from the device"
+                            className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                          >
+                            <RotateCcw size={11} className={pull.isPending ? "animate-spin" : ""} />{" "}
+                            Revert
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWritePanel(writePanel === "apply" ? "none" : "apply")
+                            }
+                            disabled={applyToDevice.isPending || pull.isPending}
+                            title="Push the local snapshot to the device (force-stops the app first)"
+                            className="flex h-7 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2 text-[11px] font-medium text-danger hover:bg-danger/20 disabled:opacity-40"
+                          >
+                            {applyToDevice.isPending ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Upload size={11} />
+                            )}{" "}
+                            Apply to device
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => void onCopyResult()}
@@ -683,6 +837,112 @@ export function DatabasesView() {
                       </button>
                     </span>
                   </div>
+                  {editMode && writePanel === "history" && (
+                    <section className="shrink-0 border-b border-line bg-surface px-3 py-2">
+                      <header className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wider text-muted/70">
+                          Applied to snapshot
+                        </span>
+                        <span className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPendingWrites(clearPending())}
+                            title="Clear this list only; statements already applied to the snapshot stay applied"
+                            className="h-6 rounded-md border border-line px-2 text-[10px] text-muted hover:text-txt"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWritePanel("none")}
+                            title="Close the statement list"
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      </header>
+                      <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-y-auto">
+                        {pendingWrites.map((w, i) => (
+                          <li
+                            key={`${w.at}-${i}`}
+                            className="flex items-baseline gap-2 font-mono text-[11px]"
+                          >
+                            <span className="shrink-0 tabular-nums text-muted/60">
+                              {formatRowCount(w.changes)} change{w.changes === 1 ? "" : "s"}
+                            </span>
+                            <span className="min-w-0 break-all text-txt/90">{w.sql}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                  {editMode && writePanel === "apply" && (
+                    <section className="shrink-0 border-b border-line bg-surface px-3 py-2">
+                      <header className="flex items-center gap-2">
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-danger">
+                          Apply to device
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setWritePanel("none")}
+                          title="Close without pushing"
+                          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                        >
+                          <X size={10} />
+                        </button>
+                      </header>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                        Pushes the local snapshot of{" "}
+                        <span className="font-mono text-txt/90">{selectedDb}</span> to{" "}
+                        <span className="font-mono text-txt/90">{pkg}</span> on{" "}
+                        <span className="font-mono text-txt/90">{serial}</span>. This{" "}
+                        <span className="text-warn">force-stops {pkg}</span> before pushing and
+                        removes its -wal and -shm files.
+                      </p>
+                      {pendingWrites.length > 0 ? (
+                        <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-y-auto">
+                          {pendingWrites.map((w, i) => (
+                            <li
+                              key={`${w.at}-${i}`}
+                              className="flex items-baseline gap-2 font-mono text-[11px]"
+                            >
+                              <span className="shrink-0 tabular-nums text-muted/60">
+                                {formatRowCount(w.changes)} change{w.changes === 1 ? "" : "s"}
+                              </span>
+                              <span className="min-w-0 break-all text-txt/90">{w.sql}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-[11px] text-muted/70">
+                          History is empty; the snapshot still contains any writes you applied.
+                        </p>
+                      )}
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWritePanel("none")}
+                          className="h-7 rounded-md border border-line px-2.5 text-[11px] text-muted hover:text-txt"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onApplyToDevice()}
+                          disabled={applyToDevice.isPending || pull.isPending}
+                          className="flex h-7 items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-2.5 text-[11px] font-medium text-danger hover:bg-danger/20 disabled:opacity-40"
+                        >
+                          {applyToDevice.isPending ? (
+                            <Loader2 size={11} className="animate-spin" />
+                          ) : (
+                            <Upload size={11} />
+                          )}{" "}
+                          Push to device
+                        </button>
+                      </div>
+                    </section>
+                  )}
                   <div className="min-h-0 flex-1">
                     {queryError != null ? (
                       <div className="p-3">
