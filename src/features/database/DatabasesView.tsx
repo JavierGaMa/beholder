@@ -31,7 +31,7 @@ import {
 } from "../../queries/databases";
 import { DbList } from "./DbList";
 import { PackagePicker } from "./PackagePicker";
-import { SqlConsole } from "./SqlConsole";
+import { SqlConsole, type SqlConsoleHandle } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
 import { usePaneResize } from "./usePaneResize";
 import {
@@ -77,8 +77,10 @@ export function DatabasesView() {
   const [sqlOpen, setSqlOpen] = useState(false);
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
+  const [pendingRun, setPendingRun] = useState<{ sql: string } | null>(null);
   const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
   const columnRef = useRef<HTMLDivElement>(null);
+  const sqlRef = useRef<SqlConsoleHandle | null>(null);
 
   useEffect(() => {
     saveDbLayout(layout);
@@ -220,6 +222,17 @@ export function DatabasesView() {
   function toggleSql() {
     if (!sqlOpen && sqlText.trim() === "") setSqlText(prefillQuery(table));
     setSqlOpen(!sqlOpen);
+  }
+
+  function onTableClick(name: string) {
+    const sql = prefillQuery(name);
+    setTable(name);
+    setSqlText(sql);
+    if (sqlOpen) sqlRef.current?.run(sql);
+    else {
+      setPendingRun({ sql });
+      setSqlOpen(true);
+    }
   }
 
   async function onReveal() {
@@ -482,7 +495,7 @@ export function DatabasesView() {
                             <button
                               key={t.name}
                               type="button"
-                              onClick={() => setTable(t.name)}
+                              onClick={() => onTableClick(t.name)}
                               title={t.name}
                               className={clsx(
                                 "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-surface-2",
@@ -680,6 +693,7 @@ export function DatabasesView() {
                     <GripHorizontal size={11} className="text-muted/70" />
                   </div>
                   <SqlConsole
+                    ref={sqlRef}
                     serial={serial}
                     pkg={pkg ?? ""}
                     dbName={selectedDb ?? ""}
@@ -689,6 +703,8 @@ export function DatabasesView() {
                     history={sqlHistory}
                     onRan={(sql) => setSqlHistory((h) => pushHistory(h, sql))}
                     onClose={() => setSqlOpen(false)}
+                    pendingRun={pendingRun}
+                    onPendingRunDone={() => setPendingRun(null)}
                   />
                 </div>
               )}

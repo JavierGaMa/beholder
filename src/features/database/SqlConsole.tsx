@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { History, Loader2, Play, X } from "lucide-react";
 import { qError } from "../../lib/query";
 import { EmptyState } from "../../components/ui/primitives";
@@ -10,6 +19,10 @@ import { formatRowCount, queryResultToPage } from "./dbdisplay";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
 
+export interface SqlConsoleHandle {
+  run: (sql: string) => void;
+}
+
 export function SqlConsole({
   serial,
   pkg,
@@ -20,6 +33,9 @@ export function SqlConsole({
   history,
   onRan,
   onClose,
+  ref,
+  pendingRun,
+  onPendingRunDone,
 }: {
   serial: string;
   pkg: string;
@@ -30,6 +46,9 @@ export function SqlConsole({
   history: string[];
   onRan: (sql: string) => void;
   onClose: () => void;
+  ref?: Ref<SqlConsoleHandle>;
+  pendingRun: { sql: string } | null;
+  onPendingRunDone: () => void;
 }) {
   const run = useRunDbQuery();
   const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
@@ -55,8 +74,8 @@ export function SqlConsole({
     return () => window.removeEventListener("mousedown", onClickOutside);
   }, [historyOpen]);
 
-  async function onRun() {
-    const sql = text.trim();
+  async function runSql(sqlArg?: string) {
+    const sql = (sqlArg ?? text).trim();
     if (sql === "" || run.isPending) return;
     try {
       const res = await run.mutateAsync({ serial, pkg, dbName, sql });
@@ -66,6 +85,14 @@ export function SqlConsole({
       setResult(null);
     }
   }
+
+  useImperativeHandle(ref, () => ({ run: (sql) => void runSql(sql) }));
+
+  useEffect(() => {
+    if (pendingRun == null) return;
+    void runSql(pendingRun.sql);
+    onPendingRunDone();
+  }, [pendingRun]);
 
   return (
     <section className="flex h-full min-h-0 flex-col border-line bg-bg">
@@ -116,7 +143,7 @@ export function SqlConsole({
           </div>
           <button
             type="button"
-            onClick={() => void onRun()}
+            onClick={() => void runSql()}
             disabled={run.isPending || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
             className="flex h-6 items-center gap-1 rounded-md border border-line bg-bg px-2 text-[11px] font-medium text-txt hover:bg-surface-2 disabled:opacity-40"
@@ -149,7 +176,7 @@ export function SqlConsole({
           <SqlCodeEditor
             value={text}
             onChange={onTextChange}
-            onRun={() => void onRun()}
+            onRun={() => void runSql()}
             schema={schemaQuery.data ?? []}
             placeholder='SELECT * FROM "table" LIMIT 50'
           />
