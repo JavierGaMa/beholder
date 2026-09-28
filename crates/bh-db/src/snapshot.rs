@@ -1,4 +1,6 @@
-use crate::types::{DbError, OrderDir, QueryResult, TableColumn, TablePage, TableSummary};
+use crate::types::{
+    DbError, OrderDir, QueryResult, TableColumn, TablePage, TableSchema, TableSummary,
+};
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::types::ValueRef;
 use rusqlite::Connection;
@@ -74,6 +76,24 @@ pub fn table_columns(conn: &Connection, table: &str) -> Result<Vec<TableColumn>,
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| DbError::Other(format!("table_info {table}: {e}")))?;
     Ok(columns)
+}
+
+pub fn schema(conn: &Connection) -> Result<Vec<TableSchema>, DbError> {
+    let summaries = tables(conn)?;
+    let mut schemas = Vec::with_capacity(summaries.len());
+    for summary in summaries {
+        let columns = match table_columns(conn, &summary.name) {
+            Ok(columns) => columns,
+            Err(DbError::NotFound(_)) => continue,
+            Err(e) => return Err(e),
+        };
+        schemas.push(TableSchema {
+            name: summary.name,
+            row_count: summary.row_count,
+            columns,
+        });
+    }
+    Ok(schemas)
 }
 
 fn value_to_json(value: ValueRef<'_>) -> Value {
@@ -469,6 +489,129 @@ mod tests {
                 },
             ]
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_reports_tables_with_row_counts_and_full_column_lists() {
+        let dir = temp_dir("schema-multi");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", [])
+            .unwrap();
+        conn.execute("INSERT INTO users VALUES (1, 'ada')", [])
+            .unwrap();
+        conn.execute("INSERT INTO users VALUES (2, 'grace')", [])
+            .unwrap();
+        conn.execute("CREATE TABLE events (kind TEXT)", [])
+            .unwrap();
+        conn.execute("INSERT INTO events VALUES ('tap')", [])
+            .unwrap();
+
+        let schemas = schema(&conn).unwrap();
+        assert_eq!(
+            schemas,
+            vec![
+                TableSchema {
+                    name: "events".into(),
+                    row_count: 1,
+                    columns: vec![TableColumn {
+                        name: "kind".into(),
+                        decl_type: Some("TEXT".into()),
+                    }],
+                },
+                TableSchema {
+                    name: "users".into(),
+                    row_count: 2,
+                    columns: vec![
+                        TableColumn {
+                            name: "id".into(),
+                            decl_type: Some("INTEGER".into()),
+                        },
+                        TableColumn {
+                            name: "name".into(),
+                            decl_type: Some("TEXT".into()),
+                        },
+                    ],
+                },
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_preserves_declared_column_order() {
+        let dir = temp_dir("schema-order");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE t (beta TEXT, alpha INTEGER, gamma REAL)", [])
+            .unwrap();
+
+        let schemas = schema(&conn).unwrap();
+        let names: Vec<&str> = schemas[0]
+            .columns
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["beta", "alpha", "gamma"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_returns_quoted_and_odd_table_names_as_stored() {
+        let dir = temp_dir("schema-odd");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE \"odd table\" (v TEXT)", [])
+            .unwrap();
+        conn.execute("CREATE TABLE \"order\" (v TEXT)", [])
+            .unwrap();
+        conn.execute("CREATE TABLE \"MixedCase\" (v TEXT)", [])
+            .unwrap();
+
+        let schemas = schema(&conn).unwrap();
+        let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["MixedCase", "odd table", "order"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_on_empty_database_returns_empty_vec() {
+        let dir = temp_dir("schema-empty");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(schema(&conn).unwrap(), vec![]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_omits_table_dropped_between_calls() {
+        let dir = temp_dir("schema-dropped");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE keep (v TEXT)", []).unwrap();
+        conn.execute("CREATE TABLE drop_me (v TEXT)", [])
+            .unwrap();
+
+        let first = schema(&conn).unwrap();
+        assert_eq!(first.len(), 2);
+
+        conn.execute("DROP TABLE drop_me", []).unwrap();
+        let second = schema(&conn).unwrap();
+        let names: Vec<&str> = second.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["keep"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn table_columns_on_dropped_table_returns_not_found() {
+        let dir = temp_dir("schema-notfound");
+        let path = dir.join("app.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE gone (v TEXT)", []).unwrap();
+        conn.execute("DROP TABLE gone", []).unwrap();
+        let err = table_columns(&conn, "gone").unwrap_err();
+        assert!(matches!(err, DbError::NotFound(_)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

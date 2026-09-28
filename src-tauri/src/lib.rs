@@ -129,6 +129,7 @@ pub fn run() {
             commands::list_app_databases,
             commands::pull_database_snapshot,
             commands::database_tables,
+            commands::database_schema,
             commands::database_table_rows,
             commands::run_db_query,
             commands::reveal_snapshot,

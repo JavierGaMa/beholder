@@ -27,6 +27,13 @@ pub struct TableColumn {
     pub decl_type: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableSchema {
+    pub name: String,
+    pub row_count: i64,
+    pub columns: Vec<TableColumn>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderDir {
@@ -124,6 +131,32 @@ mod tests {
         })
         .unwrap();
         assert_eq!(column["decl_type"], serde_json::Value::Null);
+
+        let schema = serde_json::to_value(TableSchema {
+            name: "users".into(),
+            row_count: 3,
+            columns: vec![
+                TableColumn {
+                    name: "id".into(),
+                    decl_type: Some("INTEGER".into()),
+                },
+                TableColumn {
+                    name: "blob_free".into(),
+                    decl_type: None,
+                },
+            ],
+        })
+        .unwrap();
+        let object = schema.as_object().unwrap();
+        assert_eq!(object.len(), 3);
+        assert!(object.contains_key("name"));
+        assert!(object.contains_key("row_count"));
+        assert!(object.contains_key("columns"));
+        assert_eq!(schema["name"], "users");
+        assert_eq!(schema["row_count"], 3);
+        assert_eq!(schema["columns"][0]["name"], "id");
+        assert_eq!(schema["columns"][0]["decl_type"], "INTEGER");
+        assert_eq!(schema["columns"][1]["decl_type"], serde_json::Value::Null);
 
         let page = serde_json::to_value(TablePage {
             columns: vec![TableColumn {

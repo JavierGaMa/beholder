@@ -643,6 +643,22 @@ pub async fn database_tables(
 }
 
 #[tauri::command]
+pub async fn database_schema(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<Vec<bh_db::TableSchema>, String> {
+    let path = existing_snapshot_path(&app, &serial, &package, &db_name)?;
+    tokio::task::spawn_blocking(move || -> Result<Vec<bh_db::TableSchema>, String> {
+        let conn = bh_db::open_snapshot(&path).map_err(|e| e.to_string())?;
+        bh_db::schema(&conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn database_table_rows(
     app: tauri::AppHandle,
     serial: String,
