@@ -4,11 +4,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Database,
   FileDown,
   FolderOpen,
   GripHorizontal,
   Loader2,
-  Play,
   RefreshCw,
   SquareTerminal,
 } from "lucide-react";
@@ -79,20 +79,20 @@ export function DatabasesView() {
   }, [layout]);
 
   const dbsResize = usePaneResize({
-    axis: "x",
+    grow: "right",
     getSize: () => layout.dbsWidth,
     clamp: (w) => clampPaneWidth(w, DBS_WIDTH_BOUNDS),
     onResized: (w) => setLayout((l) => ({ ...l, dbsWidth: w })),
   });
   const tablesResize = usePaneResize({
-    axis: "x",
+    grow: "right",
     getSize: () => layout.tablesWidth,
     clamp: (w) => clampPaneWidth(w, TABLES_WIDTH_BOUNDS),
     onResized: (w) => setLayout((l) => ({ ...l, tablesWidth: w })),
   });
   const containerHeight = () => columnRef.current?.clientHeight ?? 600;
   const dockResize = usePaneResize({
-    axis: "y",
+    grow: "down",
     getSize: () => layout.sqlDockHeight ?? defaultDockHeight(containerHeight()),
     clamp: (h) => clampDockHeight(h, containerHeight()),
     onResized: (h) => setLayout((l) => ({ ...l, sqlDockHeight: h })),
@@ -264,6 +264,13 @@ export function DatabasesView() {
 
   const refreshing =
     (packagesQ.isFetching && !packagesQ.isPending) || (dbsQ.isFetching && !dbsQ.isPending);
+
+  const summaryText =
+    run.isPending
+      ? "running…"
+      : result != null && queryError == null
+        ? resultSummary(result)
+        : "no result";
 
   return (
     <div className="flex h-full flex-col">
@@ -506,60 +513,68 @@ export function DatabasesView() {
                   />
                 )}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  {result != null && queryError == null && !run.isPending && (
-                    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
-                      <span className="font-mono text-[11px] text-muted">
-                        {resultSummary(result)}
-                      </span>
-                      {result.truncated && (
-                        <span
-                          title="The result was capped at 500 rows — narrow it with WHERE or LIMIT"
-                          className="rounded-sm border border-warn/40 bg-warn/10 px-1.5 py-px text-[10px] font-medium text-warn"
-                        >
-                          truncated
-                        </span>
-                      )}
-                      <span className="ml-auto flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void onCopyResult()}
-                          disabled={result.rows.length === 0}
-                          title="Copy the result as TSV to the clipboard"
-                          className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
-                        >
-                          <Copy size={11} /> Copy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onExportCsv()}
-                          disabled={exportingCsv}
-                          title="Export the result as a CSV file"
-                          className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
-                        >
-                          {exportingCsv ? (
-                            <Loader2 size={11} className="animate-spin" />
-                          ) : (
-                            <FileDown size={11} />
-                          )}{" "}
-                          Export CSV
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void runSql()}
-                          disabled={run.isPending || sqlText.trim() === ""}
-                          title="Run the query in the console below (Cmd/Ctrl+Enter)"
-                          className="flex h-6 items-center gap-1 rounded-md border border-line bg-bg px-2 text-[11px] font-medium text-txt hover:bg-surface-2 disabled:opacity-40"
-                        >
-                          {run.isPending ? (
-                            <Loader2 size={11} className="animate-spin text-accent" />
-                          ) : (
-                            <Play size={11} />
-                          )}{" "}
-                          Run ⌘↵
-                        </button>
-                      </span>
-                    </div>
+                  {sqlOpen && (
+                    <section
+                      className="flex shrink-0 flex-col border-b border-line bg-surface"
+                      style={{ height: dockHeight }}
+                    >
+                      <SqlConsole
+                        serial={serial}
+                        pkg={pkg ?? ""}
+                        dbName={selectedDb ?? ""}
+                        text={sqlText}
+                        onTextChange={setSqlText}
+                        history={sqlHistory}
+                        running={run.isPending}
+                        onRun={() => void runSql()}
+                        onClose={() => setSqlOpen(false)}
+                      />
+                      <div
+                        {...dockResize}
+                        onDoubleClick={() => setLayout((l) => ({ ...l, sqlDockHeight: null }))}
+                        title="Drag to resize, double-click to reset"
+                        className="flex h-1.5 shrink-0 cursor-row-resize touch-none select-none items-center justify-center hover:bg-surface-2"
+                      >
+                        <GripHorizontal size={11} className="text-muted/70" />
+                      </div>
+                    </section>
                   )}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
+                    <span className="font-mono text-[11px] text-muted">{summaryText}</span>
+                    {!run.isPending && queryError == null && result?.truncated && (
+                      <span
+                        title="The result was capped at 500 rows — narrow it with WHERE or LIMIT"
+                        className="rounded-sm border border-warn/40 bg-warn/10 px-1.5 py-px text-[10px] font-medium text-warn"
+                      >
+                        truncated
+                      </span>
+                    )}
+                    <span className="ml-auto flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void onCopyResult()}
+                        disabled={run.isPending || result == null || result.rows.length === 0}
+                        title="Copy the result as TSV to the clipboard"
+                        className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                      >
+                        <Copy size={11} /> Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void onExportCsv()}
+                        disabled={run.isPending || exportingCsv || result == null}
+                        title="Export the result as a CSV file"
+                        className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                      >
+                        {exportingCsv ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <FileDown size={11} />
+                        )}{" "}
+                        Export
+                      </button>
+                    </span>
+                  </div>
                   <div className="min-h-0 flex-1">
                     {queryError != null ? (
                       <div className="p-3">
@@ -571,8 +586,9 @@ export function DatabasesView() {
                       </div>
                     ) : result == null ? (
                       <EmptyState
-                        title="Run a query or click a table to get started"
-                        hint={`${selectedDb} · read-only SELECTs against the local snapshot`}
+                        icon={<Database size={20} />}
+                        title="Run a query to see results"
+                        hint={`Type SQL above or click a table in the sidebar · ${selectedDb}`}
                       />
                     ) : result.rows.length === 0 ? (
                       <EmptyState
@@ -584,7 +600,7 @@ export function DatabasesView() {
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
-                    <span className="ml-auto flex items-center gap-1.5">
+                    <span className="ml-auto flex items-center gap-2">
                       {activeSnapshot != null && (
                         <span
                           className="font-mono text-[10px] text-muted/70"
@@ -598,7 +614,7 @@ export function DatabasesView() {
                         onClick={() => selectedDb != null && void openDb(selectedDb)}
                         disabled={pull.isPending}
                         title="Pull a fresh snapshot and reload"
-                        className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
                         <RefreshCw size={11} className={pull.isPending ? "animate-spin" : ""} />{" "}
                         Refresh
@@ -612,7 +628,7 @@ export function DatabasesView() {
                             : "Open a read-only SQL console on this snapshot"
                         }
                         className={clsx(
-                          "flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] hover:text-txt",
+                          "flex h-7 items-center gap-1 rounded-md border px-1.5 text-[11px] hover:text-txt",
                           sqlOpen
                             ? "border-accent/40 bg-accent/10 text-accent"
                             : "border-line text-muted",
@@ -624,7 +640,7 @@ export function DatabasesView() {
                         type="button"
                         onClick={() => void onReveal()}
                         title="Reveal the snapshot file in Finder"
-                        className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt"
+                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt"
                       >
                         <FolderOpen size={11} /> Reveal
                       </button>
@@ -633,7 +649,7 @@ export function DatabasesView() {
                         onClick={() => void onExport()}
                         disabled={exporting}
                         title="Copy the snapshot to a folder you pick"
-                        className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
                         {exporting ? (
                           <Loader2 size={11} className="animate-spin" />
@@ -646,29 +662,6 @@ export function DatabasesView() {
                   </div>
                 </div>
               </div>
-              {sqlOpen && (
-                <div className="flex shrink-0 flex-col" style={{ height: dockHeight }}>
-                  <div
-                    {...dockResize}
-                    onDoubleClick={() => setLayout((l) => ({ ...l, sqlDockHeight: null }))}
-                    title="Drag to resize, double-click to reset"
-                    className="flex h-1.5 shrink-0 cursor-row-resize touch-none select-none items-center justify-center border-t border-line bg-surface"
-                  >
-                    <GripHorizontal size={11} className="text-muted/70" />
-                  </div>
-                  <SqlConsole
-                    serial={serial}
-                    pkg={pkg ?? ""}
-                    dbName={selectedDb ?? ""}
-                    text={sqlText}
-                    onTextChange={setSqlText}
-                    history={sqlHistory}
-                    running={run.isPending}
-                    onRun={() => void runSql()}
-                    onClose={() => setSqlOpen(false)}
-                  />
-                </div>
-              )}
             </div>
           ) : null}
         </main>

@@ -4,7 +4,7 @@ import { tags } from "@lezer/highlight";
 
 export const sqlEditorTheme = EditorView.theme({
   "&": {
-    backgroundColor: "var(--bg)",
+    backgroundColor: "var(--surface)",
     color: "var(--txt)",
     height: "100%",
     fontSize: "var(--mono-size)",

@@ -64,9 +64,18 @@ export function IconButton({
   );
 }
 
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+export function EmptyState({
+  icon,
+  title,
+  hint,
+}: {
+  icon?: ReactNode;
+  title: string;
+  hint?: string;
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
+      {icon && <span className="mb-1 text-muted/40">{icon}</span>}
       <p className="text-sm text-muted">{title}</p>
       {hint && <p className="text-xs text-muted/70">{hint}</p>}
     </div>

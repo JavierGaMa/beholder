@@ -44,12 +44,12 @@ export function SqlConsole({
   }, [historyOpen]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col border-line bg-bg">
-      <header className="flex shrink-0 items-center gap-2 border-b border-line/50 bg-surface px-3 py-1">
+    <section className="flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 items-center gap-2 border-b border-line/50 px-3 py-1">
         <span className="text-[10px] uppercase tracking-wider text-muted/70">
           sql · <span className="font-mono lowercase">{dbName}</span>
         </span>
-        <span className="ml-auto flex items-center gap-1.5">
+        <span className="ml-auto flex items-center gap-2">
           <div ref={wrapRef} className="relative">
             <button
               ref={anchorRef}
@@ -57,7 +57,7 @@ export function SqlConsole({
               onClick={() => setHistoryOpen((o) => !o)}
               disabled={history.length === 0}
               title="Recent successful queries"
-              className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+              className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
             >
               <History size={11} /> History
             </button>
@@ -89,20 +89,20 @@ export function SqlConsole({
             onClick={onRun}
             disabled={running || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
-            className="flex h-6 items-center gap-1 rounded-md border border-line bg-bg px-2 text-[11px] font-medium text-txt hover:bg-surface-2 disabled:opacity-40"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[11px] font-medium text-accent-fg disabled:opacity-40"
           >
             {running ? (
-              <Loader2 size={11} className="animate-spin text-accent" />
+              <Loader2 size={11} className="animate-spin" />
             ) : (
               <Play size={11} />
             )}{" "}
-            Run
+            Run ⌘↵
           </button>
           <button
             type="button"
             onClick={onClose}
             title="Close the SQL console"
-            className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
           >
             <X size={11} />
           </button>
