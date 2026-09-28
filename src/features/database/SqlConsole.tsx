@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { History, Loader2, Play, X } from "lucide-react";
 import { qError } from "../../lib/query";
 import { EmptyState } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useDropdownPosition } from "../../components/ui/popover";
-import { useRunDbQuery, type QueryResult } from "../../queries/databases";
+import { useDatabaseSchemaQuery, useRunDbQuery, type QueryResult } from "../../queries/databases";
 import { TableGrid } from "./TableGrid";
 import { formatRowCount, queryResultToPage } from "./dbdisplay";
-import { isRunShortcut } from "./layout";
+
+const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
 
 export function SqlConsole({
   serial,
@@ -31,6 +32,7 @@ export function SqlConsole({
   onClose: () => void;
 }) {
   const run = useRunDbQuery();
+  const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const { anchorRef, menuRef, style } = useDropdownPosition(historyOpen, {
@@ -136,22 +138,23 @@ export function SqlConsole({
           </button>
         </span>
       </header>
-      <textarea
-        value={text}
-        onChange={(e) => onTextChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (isRunShortcut(e)) {
-            e.preventDefault();
-            void onRun();
-          } else if (e.key === "Escape") {
-            e.currentTarget.blur();
+      <div className="h-[75px] shrink-0 border-b border-line bg-bg">
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <Loader2 size={14} className="animate-spin text-accent" />
+            </div>
           }
-        }}
-        rows={3}
-        spellCheck={false}
-        placeholder='SELECT * FROM "table" LIMIT 50'
-        className="shrink-0 resize-none border-b border-line bg-bg px-3 py-2 font-mono text-[12px] leading-relaxed text-txt placeholder:text-muted/50 focus:outline-none"
-      />
+        >
+          <SqlCodeEditor
+            value={text}
+            onChange={onTextChange}
+            onRun={() => void onRun()}
+            schema={schemaQuery.data ?? []}
+            placeholder='SELECT * FROM "table" LIMIT 50'
+          />
+        </Suspense>
+      </div>
       <div className="min-h-0 flex-1">
         {error != null ? (
           <div className="p-3">
