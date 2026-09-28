@@ -56,7 +56,17 @@ import {
   snapshotKey,
   sortDatabases,
 } from "./dbdisplay";
-import { exportBaseName, formatCsv, formatMarkdownTable, resultSummary } from "./queryResults";
+import {
+  exportBaseName,
+  formatCsv,
+  formatMarkdownTable,
+  isPageableQuery,
+  pageLabel,
+  QUERY_PAGE_SIZE,
+  resultSummary,
+  wrapCountQuery,
+  wrapPageQuery,
+} from "./queryResults";
 
 function execCopyCommand(): boolean {
   try {
@@ -93,6 +103,10 @@ export function DatabasesView() {
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [lastRunSql, setLastRunSql] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const lastRunSqlRef = useRef<string | null>(null);
   const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
   const columnRef = useRef<HTMLDivElement>(null);
 
@@ -163,6 +177,10 @@ export function DatabasesView() {
     setSqlOpen(false);
     setResult(null);
     setQueryError(null);
+    setLastRunSql(null);
+    setPage(0);
+    setTotal(null);
+    lastRunSqlRef.current = null;
   }, [selectedDb]);
 
   useEffect(() => {
@@ -193,14 +211,63 @@ export function DatabasesView() {
   async function runSql(sqlArg?: string) {
     const sql = (sqlArg ?? sqlText).trim();
     if (sql === "" || run.isPending || !viewerReady) return;
+    lastRunSqlRef.current = sql;
+    setLastRunSql(sql);
+    setPage(0);
+    setTotal(null);
     try {
       const res = await run.mutateAsync({ serial, pkg: pkg ?? "", dbName: selectedDb ?? "", sql });
       setResult(res);
       setQueryError(null);
       setSqlHistory((h) => pushHistory(h, sql));
+      if (!res.truncated) {
+        setTotal(res.row_count);
+      } else {
+        void resolveTotal(sql);
+      }
     } catch (e) {
       setResult(null);
       setQueryError(qError(e) ?? String(e));
+    }
+  }
+
+  async function runPage(nextPage: number) {
+    if (lastRunSql == null || run.isPending || !viewerReady || nextPage < 0) return;
+    const offset = nextPage * QUERY_PAGE_SIZE;
+    try {
+      const res = await run.mutateAsync({
+        serial,
+        pkg: pkg ?? "",
+        dbName: selectedDb ?? "",
+        sql: wrapPageQuery(lastRunSql, QUERY_PAGE_SIZE, offset),
+      });
+      setResult(res);
+      setQueryError(null);
+      setPage(nextPage);
+      if (!res.truncated) {
+        setTotal(offset + res.row_count);
+      } else if (total == null) {
+        void resolveTotal(lastRunSql);
+      }
+    } catch (e) {
+      setResult(null);
+      setQueryError(qError(e) ?? String(e));
+    }
+  }
+
+  async function resolveTotal(sourceSql: string) {
+    try {
+      const res = await invoke<QueryResult>("run_db_query", {
+        serial,
+        package: pkg ?? "",
+        dbName: selectedDb ?? "",
+        sql: wrapCountQuery(sourceSql),
+      });
+      if (lastRunSqlRef.current !== sourceSql) return;
+      const count = res.rows[0]?.[0];
+      if (typeof count === "number") setTotal(count);
+    } catch {
+      return;
     }
   }
 
@@ -302,6 +369,13 @@ export function DatabasesView() {
       : result != null && queryError == null
         ? resultSummary(result)
         : "no result";
+
+  const pagerVisible =
+    result != null && queryError == null && lastRunSql != null && isPageableQuery(lastRunSql);
+  const pagerFrom = result != null && result.rows.length > 0 ? page * QUERY_PAGE_SIZE + 1 : 0;
+  const pagerTo = result != null ? page * QUERY_PAGE_SIZE + result.rows.length : 0;
+  const pagerOnLastPage =
+    total != null ? (page + 1) * QUERY_PAGE_SIZE >= total : result == null || !result.truncated;
 
   return (
     <div className="flex h-full flex-col">
@@ -627,9 +701,37 @@ export function DatabasesView() {
                         hint="The query ran successfully and returned nothing"
                       />
                     ) : (
-                      <TableGrid page={queryResultToPage(result)} offsetBase={0} />
+                      <TableGrid
+                        page={queryResultToPage(result)}
+                        offsetBase={page * QUERY_PAGE_SIZE}
+                      />
                     )}
                   </div>
+                  {pagerVisible && (
+                    <div className="flex h-8 shrink-0 items-center justify-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
+                      <button
+                        type="button"
+                        onClick={() => void runPage(page - 1)}
+                        disabled={page === 0 || run.isPending}
+                        title="Previous page"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt disabled:opacity-40"
+                      >
+                        <ChevronLeft size={11} />
+                      </button>
+                      <span className="font-mono tabular-nums">
+                        {pageLabel(pagerFrom, pagerTo, total)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void runPage(page + 1)}
+                        disabled={pagerOnLastPage || run.isPending}
+                        title="Next page"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt disabled:opacity-40"
+                      >
+                        <ChevronRight size={11} />
+                      </button>
+                    </div>
+                  )}
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
                     <span className="ml-auto flex items-center gap-2">
                       {activeSnapshot != null && (

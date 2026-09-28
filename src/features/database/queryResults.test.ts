@@ -4,7 +4,12 @@ import {
   exportBaseName,
   formatCsv,
   formatMarkdownTable,
+  isPageableQuery,
+  pageLabel,
+  QUERY_PAGE_SIZE,
   resultSummary,
+  wrapCountQuery,
+  wrapPageQuery,
 } from "./queryResults";
 import type { QueryResult } from "../../queries/databases";
 
@@ -109,6 +114,88 @@ describe("resultSummary", () => {
 
   it("handles zero rows and sub-millisecond queries", () => {
     expect(resultSummary(qr({ row_count: 0, elapsed_ms: 0 }))).toBe("0 rows · 0 ms");
+  });
+});
+
+describe("QUERY_PAGE_SIZE", () => {
+  it("mirrors the rust QUERY_ROW_CAP of 500", () => {
+    expect(QUERY_PAGE_SIZE).toBe(500);
+  });
+});
+
+describe("isPageableQuery", () => {
+  it.each<[string, boolean]>([
+    ["SELECT * FROM t", true],
+    ["select id from t where x = 1", true],
+    ["  \n\tSELECT 1", true],
+    ["WITH c AS (SELECT 1) SELECT * FROM c", true],
+    ["with recursive n(x) AS (VALUES (1)) SELECT x FROM n", true],
+    ["SELECT 1;", true],
+    ["select*from t", true],
+    ["SeLeCt 1", true],
+    ["pragma table_info(t)", false],
+    ["PRAGMA table_info(t)", false],
+    ["EXPLAIN QUERY PLAN SELECT * FROM t", false],
+    ["insert into t values (1)", false],
+    ["values (1)", false],
+    ["selected", false],
+    ["withdraw", false],
+    ["", false],
+    ["   ", false],
+    [";", false],
+  ])("classifies %j as %s", (sql, expected) => {
+    expect(isPageableQuery(sql)).toBe(expected);
+  });
+
+  it("treats a leading line comment as not pageable: first-keyword detection limit", () => {
+    expect(isPageableQuery("-- note\nSELECT * FROM t")).toBe(false);
+  });
+});
+
+describe("wrapCountQuery", () => {
+  it("wraps the trimmed query without its trailing semicolon", () => {
+    expect(wrapCountQuery("  SELECT * FROM t;  ")).toBe("SELECT COUNT(*) FROM (SELECT * FROM t)");
+  });
+
+  it("strips exactly one trailing semicolon", () => {
+    expect(wrapCountQuery("SELECT 1;;")).toBe("SELECT COUNT(*) FROM (SELECT 1;)");
+  });
+});
+
+describe("wrapPageQuery", () => {
+  it("wraps with limit and offset, emitting OFFSET 0 on the first page", () => {
+    expect(wrapPageQuery("SELECT * FROM t", 500, 0)).toBe(
+      "SELECT * FROM (SELECT * FROM t) LIMIT 500 OFFSET 0",
+    );
+  });
+
+  it("keeps an inner LIMIT while paging the wrapped result", () => {
+    expect(wrapPageQuery("select * from t limit 50;", 500, 500)).toBe(
+      "SELECT * FROM (select * from t limit 50) LIMIT 500 OFFSET 500",
+    );
+  });
+});
+
+describe("pageLabel", () => {
+  it("formats a mid-result page with an en dash and grouped total", () => {
+    expect(pageLabel(501, 1000, 12345)).toBe("501\u20131,000 of 12,345");
+  });
+
+  it("formats a single-page result", () => {
+    expect(pageLabel(1, 500, 500)).toBe("1\u2013500 of 500");
+    expect(pageLabel(1, 12, 12)).toBe("1\u201312 of 12");
+  });
+
+  it("groups from and to with en-US separators", () => {
+    expect(pageLabel(1501, 2000, 12345)).toBe("1,501\u20132,000 of 12,345");
+  });
+
+  it("handles zero rows", () => {
+    expect(pageLabel(0, 0, 0)).toBe("0\u20130 of 0");
+  });
+
+  it("degrades to an open-ended label while the total is unknown", () => {
+    expect(pageLabel(1, 500, null)).toBe("showing 1\u2013500+");
   });
 });
 
