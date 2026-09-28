@@ -1,7 +1,7 @@
 import type { QueryResult } from "../../queries/databases";
 import { formatRowCount } from "./dbdisplay";
 
-function cellText(value: unknown): string {
+export function cellText(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -68,6 +68,35 @@ export function resultSummary(result: QueryResult): string {
 
 export function isEditableResult(result: QueryResult | null): boolean {
   return result != null && result.columns[0] === "rowid";
+}
+
+export type CellMenuAction = "edit" | "set-null" | "delete-row" | "copy-value" | "copy-row";
+
+export interface CellMenuItem {
+  id: CellMenuAction;
+  label: string;
+  danger: boolean;
+  enabled: boolean;
+}
+
+export function cellMenuItems({
+  editable,
+  isRowid,
+}: {
+  editable: boolean;
+  isRowid: boolean;
+}): CellMenuItem[] {
+  const copyItems: CellMenuItem[] = [
+    { id: "copy-value", label: "Copy value", danger: false, enabled: true },
+    { id: "copy-row", label: "Copy row", danger: false, enabled: true },
+  ];
+  if (!editable || isRowid) return copyItems;
+  return [
+    { id: "edit", label: "Edit cell", danger: false, enabled: true },
+    { id: "set-null", label: "Set NULL", danger: false, enabled: true },
+    { id: "delete-row", label: "Delete row", danger: true, enabled: true },
+    ...copyItems,
+  ];
 }
 
 function markdownCell(value: unknown): string {

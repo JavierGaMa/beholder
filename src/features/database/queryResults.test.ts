@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  cellMenuItems,
+  cellText,
   csvEscapeField,
   deriveTotal,
   exportBaseName,
@@ -12,6 +14,7 @@ import {
   resultSummary,
   wrapCountQuery,
   wrapPageQuery,
+  type CellMenuItem,
 } from "./queryResults";
 import type { QueryResult } from "../../queries/databases";
 
@@ -252,6 +255,57 @@ describe("pageLabel", () => {
 
   it("degrades to an open-ended label while the total is unknown", () => {
     expect(pageLabel(1, 500, null)).toBe("showing 1\u2013500+");
+  });
+});
+
+describe("cellText", () => {
+  it("renders null and undefined as empty strings", () => {
+    expect(cellText(null)).toBe("");
+    expect(cellText(undefined)).toBe("");
+  });
+
+  it("stringifies scalars and json-serializes structured values", () => {
+    expect(cellText("ada")).toBe("ada");
+    expect(cellText(42)).toBe("42");
+    expect(cellText(2.5)).toBe("2.5");
+    expect(cellText(true)).toBe("true");
+    expect(cellText({ a: 1 })).toBe('{"a":1}');
+    expect(cellText([1, 2])).toBe("[1,2]");
+  });
+});
+
+describe("cellMenuItems", () => {
+  const copyItems: CellMenuItem[] = [
+    { id: "copy-value", label: "Copy value", danger: false, enabled: true },
+    { id: "copy-row", label: "Copy row", danger: false, enabled: true },
+  ];
+
+  it("lists write actions before copy actions on an editable cell", () => {
+    expect(cellMenuItems({ editable: true, isRowid: false })).toEqual([
+      { id: "edit", label: "Edit cell", danger: false, enabled: true },
+      { id: "set-null", label: "Set NULL", danger: false, enabled: true },
+      { id: "delete-row", label: "Delete row", danger: true, enabled: true },
+      ...copyItems,
+    ]);
+  });
+
+  it("drops write actions on rowid cells even when the grid is editable", () => {
+    expect(cellMenuItems({ editable: true, isRowid: true })).toEqual(copyItems);
+  });
+
+  it("shows copy actions only on non-editable cells", () => {
+    expect(cellMenuItems({ editable: false, isRowid: false })).toEqual(copyItems);
+  });
+
+  it("shows copy actions only on the row gutter of a non-editable grid", () => {
+    expect(cellMenuItems({ editable: false, isRowid: true })).toEqual(copyItems);
+  });
+
+  it("returns fresh descriptors so callers cannot mutate shared items", () => {
+    const a = cellMenuItems({ editable: false, isRowid: false });
+    const b = cellMenuItems({ editable: false, isRowid: false });
+    expect(a).not.toBe(b);
+    expect(a[0]).not.toBe(b[0]);
   });
 });
 

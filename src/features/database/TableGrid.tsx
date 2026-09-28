@@ -1,9 +1,100 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, ChevronsUpDown, Trash2 } from "lucide-react";
+import { Ban, ChevronDown, ChevronUp, ChevronsUpDown, Copy, Pencil, Table, Trash2, type LucideIcon } from "lucide-react";
 import type { TableOrder, TablePage } from "../../queries/databases";
+import { toast } from "../../components/ui/toast";
 import { classifyCell, columnTitle } from "./dbdisplay";
+import {
+  cellMenuItems,
+  cellText,
+  formatMarkdownTable,
+  type CellMenuAction,
+  type CellMenuItem,
+} from "./queryResults";
 import { cellValueFromInput } from "./writes";
+
+const MENU_ICONS: Record<CellMenuAction, LucideIcon> = {
+  edit: Pencil,
+  "set-null": Ban,
+  "delete-row": Trash2,
+  "copy-value": Copy,
+  "copy-row": Table,
+};
+
+function ContextMenu({
+  x,
+  y,
+  items,
+  onPick,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  items: CellMenuItem[];
+  onPick: (id: CellMenuAction) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el == null) return;
+    const left = Math.max(4, Math.min(x, window.innerWidth - el.offsetWidth - 4));
+    const top = Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 4));
+    setPos({ left, top });
+  }, [x, y]);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (ref.current != null && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("mousedown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      style={{ left: pos.left, top: pos.top }}
+      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-50 min-w-[160px] rounded-md border border-line bg-surface p-1 text-[12px] shadow-lg"
+    >
+      {items.map((item, i) => {
+        const Icon = MENU_ICONS[item.id];
+        return (
+          <Fragment key={item.id}>
+            {item.id === "copy-value" && i > 0 && <div className="my-1 border-t border-line" />}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onPick(item.id)}
+              className={clsx(
+                "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left",
+                item.danger ? "text-danger hover:bg-danger/10" : "text-txt hover:bg-surface-2",
+              )}
+            >
+              <Icon size={11} className="shrink-0" />
+              {item.label}
+            </button>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 function Cell({ value, onEdit }: { value: unknown; onEdit?: () => void }) {
   const cell = classifyCell(value);
@@ -54,9 +145,11 @@ function Cell({ value, onEdit }: { value: unknown; onEdit?: () => void }) {
 function EditableCell({
   value,
   onCommit,
+  editSignal = 0,
 }: {
   value: unknown;
   onCommit: (next: number | string | null) => void;
+  editSignal?: number;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const settled = useRef(false);
@@ -65,6 +158,13 @@ function EditableCell({
   useEffect(() => {
     if (draft != null) inputRef.current?.focus();
   }, [draft]);
+
+  useEffect(() => {
+    if (editSignal === 0) return;
+    settled.current = false;
+    const display = classifyCell(value);
+    setDraft(display.kind === "null" ? "" : display.text);
+  }, [editSignal]);
 
   if (draft == null) {
     return (
@@ -107,6 +207,16 @@ function EditableCell({
   );
 }
 
+interface CellMenuTarget {
+  x: number;
+  y: number;
+  col: string | null;
+  value: unknown;
+  row: Record<string, unknown>;
+  rowKey: number;
+  rowid: number | null;
+}
+
 export function TableGrid({
   page,
   offsetBase,
@@ -115,6 +225,7 @@ export function TableGrid({
   editing = false,
   onCommitCell,
   onDeleteRow,
+  copyText,
 }: {
   page: TablePage;
   offsetBase: number;
@@ -123,8 +234,53 @@ export function TableGrid({
   editing?: boolean;
   onCommitCell?: (col: string, value: number | string | null, rowid: number) => void;
   onDeleteRow?: (rowid: number) => void;
+  copyText?: (text: string) => Promise<boolean>;
 }) {
   const canEdit = editing && onCommitCell != null && page.columns[0]?.name === "rowid";
+  const [menu, setMenu] = useState<CellMenuTarget | null>(null);
+  const [editReq, setEditReq] = useState<{ row: number; col: string; seq: number } | null>(null);
+
+  const closeMenu = () => setMenu(null);
+
+  const openCellMenu = (
+    e: ReactMouseEvent,
+    target: Omit<CellMenuTarget, "x" | "y">,
+  ) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, ...target });
+  };
+
+  async function runCopy(text: string, okMessage: string) {
+    if (copyText == null) return;
+    const ok = await copyText(text);
+    if (ok) toast(okMessage);
+    else toast("Copy failed: clipboard unavailable", "danger");
+  }
+
+  function onMenuPick(id: CellMenuAction) {
+    const target = menu;
+    closeMenu();
+    if (target == null) return;
+    const col = target.col;
+    if (id === "edit") {
+      if (col != null) {
+        setEditReq((cur) => ({ row: target.rowKey, col, seq: (cur?.seq ?? 0) + 1 }));
+      }
+    } else if (id === "set-null") {
+      if (col != null && target.rowid != null) onCommitCell?.(col, null, target.rowid);
+    } else if (id === "delete-row") {
+      if (target.rowid != null) onDeleteRow?.(target.rowid);
+    } else if (id === "copy-value") {
+      void runCopy(cellText(target.value), "Copied value");
+    } else if (id === "copy-row") {
+      const cols = page.columns.map((c) => c.name);
+      void runCopy(
+        formatMarkdownTable(cols, [page.columns.map((c) => target.row[c.name])]),
+        "Copied row as Markdown",
+      );
+    }
+  }
+
   return (
     <div className="h-full overflow-auto">
       <table className="w-full min-w-max border-collapse text-left">
@@ -182,7 +338,18 @@ export function TableGrid({
                 key={offsetBase + i}
                 className="border-b border-line/40 transition-colors hover:bg-surface-2/60"
               >
-                <td className="px-3 py-1.5 text-right font-mono text-[11px] tabular-nums text-muted/50">
+                <td
+                  onContextMenu={(e) =>
+                    openCellMenu(e, {
+                      col: null,
+                      value: offsetBase + i + 1,
+                      row,
+                      rowKey: offsetBase + i,
+                      rowid,
+                    })
+                  }
+                  className="px-3 py-1.5 text-right font-mono text-[11px] tabular-nums text-muted/50"
+                >
                   {offsetBase + i + 1}
                 </td>
                 {page.columns.map((col) => {
@@ -190,6 +357,15 @@ export function TableGrid({
                   return (
                     <td
                       key={col.name}
+                      onContextMenu={(e) =>
+                        openCellMenu(e, {
+                          col: col.name,
+                          value: row[col.name],
+                          row,
+                          rowKey: offsetBase + i,
+                          rowid,
+                        })
+                      }
                       className={clsx(
                         "max-w-[320px] px-3 py-1.5 align-top text-[12px]",
                         editable && "cursor-text hover:bg-surface-2",
@@ -199,6 +375,11 @@ export function TableGrid({
                         <EditableCell
                           value={row[col.name]}
                           onCommit={(v) => rowid != null && onCommitCell?.(col.name, v, rowid)}
+                          editSignal={
+                            editReq != null && editReq.row === offsetBase + i && editReq.col === col.name
+                              ? editReq.seq
+                              : 0
+                          }
                         />
                       ) : (
                         <Cell value={row[col.name]} />
@@ -225,6 +406,18 @@ export function TableGrid({
           })}
         </tbody>
       </table>
+      {menu != null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={cellMenuItems({
+            editable: canEdit && menu.col != null && menu.col !== "rowid" && menu.rowid != null,
+            isRowid: menu.col === "rowid" || menu.col == null,
+          })}
+          onPick={onMenuPick}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   );
 }

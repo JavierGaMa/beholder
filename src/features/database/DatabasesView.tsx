@@ -37,6 +37,7 @@ import {
   type SnapshotInfo,
 } from "../../queries/databases";
 import { DbList } from "./DbList";
+import { copyText } from "./clipboard";
 import { PackagePicker } from "./PackagePicker";
 import { SqlConsole } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
@@ -86,28 +87,6 @@ import {
 } from "./writes";
 
 type WritePanel = "none" | "history" | "apply";
-
-function execCopyCommand(): boolean {
-  try {
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  }
-}
-
-function copyViaHiddenTextarea(text: string): boolean {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  const ok = execCopyCommand();
-  ta.remove();
-  return ok;
-}
 
 export function DatabasesView() {
   const [serial, setSerial] = useState("");
@@ -415,14 +394,7 @@ export function DatabasesView() {
   async function onCopyResult() {
     if (result == null) return;
     const markdown = formatMarkdownTable(result.columns, result.rows);
-    let copied: boolean;
-    try {
-      await navigator.clipboard.writeText(markdown);
-      copied = true;
-    } catch {
-      copied = copyViaHiddenTextarea(markdown);
-    }
-    if (copied) {
+    if (await copyText(markdown)) {
       toast(`Copied ${formatRowCount(result.rows.length)} rows as Markdown`);
     } else {
       toast("Copy failed: clipboard unavailable", "danger");
@@ -800,7 +772,9 @@ export function DatabasesView() {
                       </span>
                     )}
                     {!run.isPending && editMode && gridEditable && (
-                      <span className="text-[10px] text-muted">Double-click a cell to edit</span>
+                      <span className="text-[10px] text-muted">
+                        Double-click or right-click a cell to edit
+                      </span>
                     )}
                     {!run.isPending && editMode && !gridEditable && result != null && (
                       <span className="text-[10px] text-muted">
@@ -1022,6 +996,7 @@ export function DatabasesView() {
                         editing={editMode && activeTable != null}
                         onCommitCell={(col, value, rowid) => void commitCellEdit(col, value, rowid)}
                         onDeleteRow={(rowid) => void onDeleteRow(rowid)}
+                        copyText={copyText}
                       />
                     )}
                   </div>
