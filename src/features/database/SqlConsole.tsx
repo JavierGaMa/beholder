@@ -7,6 +7,7 @@ import { useDropdownPosition } from "../../components/ui/popover";
 import { useRunDbQuery, type QueryResult } from "../../queries/databases";
 import { TableGrid } from "./TableGrid";
 import { formatRowCount, queryResultToPage } from "./dbdisplay";
+import { isRunShortcut } from "./layout";
 
 export function SqlConsole({
   serial,
@@ -65,7 +66,7 @@ export function SqlConsole({
   }
 
   return (
-    <section className="flex h-[40%] min-h-52 shrink-0 flex-col border-b border-line bg-bg">
+    <section className="flex h-full min-h-0 flex-col border-line bg-bg">
       <header className="flex shrink-0 items-center gap-2 border-b border-line/50 bg-surface px-3 py-1">
         <span className="text-[10px] uppercase tracking-wider text-muted/70">
           sql · <span className="font-mono lowercase">{dbName}</span>
@@ -139,7 +140,7 @@ export function SqlConsole({
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (isRunShortcut(e)) {
             e.preventDefault();
             void onRun();
           } else if (e.key === "Escape") {

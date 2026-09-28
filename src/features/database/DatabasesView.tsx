@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ChevronLeft,
   ChevronRight,
   FileDown,
   FolderOpen,
+  GripHorizontal,
   Loader2,
   RefreshCw,
   Search,
@@ -38,7 +39,9 @@ import {
   DEFAULT_DBS_WIDTH,
   DEFAULT_TABLES_WIDTH,
   TABLES_WIDTH_BOUNDS,
+  clampDockHeight,
   clampPaneWidth,
+  defaultDockHeight,
   resolvePaneWidth,
   type DbLayout,
 } from "./layout";
@@ -75,6 +78,7 @@ export function DatabasesView() {
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
   const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
+  const columnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     saveDbLayout(layout);
@@ -92,6 +96,17 @@ export function DatabasesView() {
     clamp: (w) => clampPaneWidth(w, TABLES_WIDTH_BOUNDS),
     onResized: (w) => setLayout((l) => ({ ...l, tablesWidth: w })),
   });
+  const containerHeight = () => columnRef.current?.clientHeight ?? 600;
+  const dockResize = usePaneResize({
+    axis: "y",
+    getSize: () => layout.sqlDockHeight ?? defaultDockHeight(containerHeight()),
+    clamp: (h) => clampDockHeight(h, containerHeight()),
+    onResized: (h) => setLayout((l) => ({ ...l, sqlDockHeight: h })),
+  });
+  const dockHeight = clampDockHeight(
+    layout.sqlDockHeight ?? defaultDockHeight(containerHeight()),
+    containerHeight(),
+  );
 
   const packagesQ = useAppPackagesQuery(serial, isTauri && serial !== "");
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
@@ -181,6 +196,14 @@ export function DatabasesView() {
     const clamped = clampPage(page, tablePage.total_rows, PAGE_SIZE);
     if (clamped !== page) setPage(clamped);
   }, [tablePage, page]);
+
+  useLayoutEffect(() => {
+    if (columnRef.current == null || layout.sqlDockHeight == null) return;
+    const clamped = clampDockHeight(layout.sqlDockHeight, containerHeight());
+    if (clamped !== layout.sqlDockHeight) {
+      setLayout((l) => ({ ...l, sqlDockHeight: clamped }));
+    }
+  }, [layout.sqlDockHeight, viewerReady]);
 
   async function openDb(name: string) {
     if (serial === "" || pkg == null || pull.isPending) return;
@@ -398,20 +421,7 @@ export function DatabasesView() {
               </button>
             </div>
           ) : viewerReady ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              {sqlOpen && (
-                <SqlConsole
-                  serial={serial}
-                  pkg={pkg ?? ""}
-                  dbName={selectedDb ?? ""}
-                  table={table}
-                  text={sqlText}
-                  onTextChange={setSqlText}
-                  history={sqlHistory}
-                  onRan={(sql) => setSqlHistory((h) => pushHistory(h, sql))}
-                  onClose={() => setSqlOpen(false)}
-                />
-              )}
+            <div ref={columnRef} className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1">
                 <aside
                   className="flex shrink-0 flex-col border-r border-line"
@@ -659,6 +669,29 @@ export function DatabasesView() {
                   </div>
                 </div>
               </div>
+              {sqlOpen && (
+                <div className="flex shrink-0 flex-col" style={{ height: dockHeight }}>
+                  <div
+                    {...dockResize}
+                    onDoubleClick={() => setLayout((l) => ({ ...l, sqlDockHeight: null }))}
+                    title="Drag to resize, double-click to reset"
+                    className="flex h-1.5 shrink-0 cursor-row-resize touch-none select-none items-center justify-center border-t border-line bg-surface"
+                  >
+                    <GripHorizontal size={11} className="text-muted/70" />
+                  </div>
+                  <SqlConsole
+                    serial={serial}
+                    pkg={pkg ?? ""}
+                    dbName={selectedDb ?? ""}
+                    table={table}
+                    text={sqlText}
+                    onTextChange={setSqlText}
+                    history={sqlHistory}
+                    onRan={(sql) => setSqlHistory((h) => pushHistory(h, sql))}
+                    onClose={() => setSqlOpen(false)}
+                  />
+                </div>
+              )}
             </div>
           ) : null}
         </main>
