@@ -24,6 +24,12 @@ export interface TableColumn {
   decl_type: string | null;
 }
 
+export interface TableSchema {
+  name: string;
+  row_count: number;
+  columns: TableColumn[];
+}
+
 export interface TablePage {
   columns: TableColumn[];
   rows: Record<string, unknown>[];
@@ -78,6 +84,20 @@ export function useDatabaseTablesQuery(
     queryFn: () => invoke<TableSummary[]>("database_tables", { serial, package: pkg, dbName }),
     enabled,
     staleTime: DATABASES_STALE_MS,
+  });
+}
+
+export function useDatabaseSchemaQuery(
+  serial: string,
+  pkg: string,
+  dbName: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["db-schema", serial, pkg, dbName],
+    queryFn: () => invoke<TableSchema[]>("database_schema", { serial, package: pkg, dbName }),
+    enabled,
+    staleTime: Infinity,
   });
 }
 
@@ -136,6 +156,9 @@ export function usePullSnapshot() {
       });
       void queryClient.invalidateQueries({
         queryKey: ["db-tables", vars.serial, vars.pkg, vars.dbName],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["db-schema", vars.serial, vars.pkg, vars.dbName],
       });
       void queryClient.invalidateQueries({
         queryKey: ["db-rows", vars.serial, vars.pkg, vars.dbName],
