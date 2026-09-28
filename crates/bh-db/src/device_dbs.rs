@@ -61,6 +61,17 @@ fn parse_ls_line(line: &str) -> Option<(String, u64)> {
     Some((name, size))
 }
 
+fn parse_stat_owner(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let (uid, gid) = trimmed.split_once(':')?;
+    let numeric = |v: &str| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit());
+    if numeric(uid) && numeric(gid) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
 fn group_databases(entries: Vec<(String, u64)>) -> Vec<DbFile> {
     let mut files: BTreeMap<String, DbFile> = BTreeMap::new();
     let mut wal_bases: Vec<String> = Vec::new();
@@ -226,7 +237,7 @@ pub fn pull_snapshot(
     })
 }
 
-fn run_shell_ok(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<(), DeviceError> {
+fn run_shell(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<String, DeviceError> {
     let out = runner.run(&["-s", serial, "shell", cmd])?;
     if !out.success {
         return Err(DeviceError::Other(format!(
@@ -235,7 +246,11 @@ fn run_shell_ok(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<(
             out.stderr.trim()
         )));
     }
-    Ok(())
+    Ok(out.stdout.trim().to_string())
+}
+
+fn run_shell_ok(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<(), DeviceError> {
+    run_shell(runner, serial, cmd).map(|_| ())
 }
 
 pub fn apply_to_device(
@@ -272,6 +287,18 @@ pub fn apply_to_device(
             stderr: format!("{}{}", out.stdout, out.stderr),
         });
     }
+
+    let databases_dir = format!("/data/data/{package}/databases");
+    let stat_cmd = format!("stat -c '%u:%g' {databases_dir}");
+    let owner = run_shell(runner, serial, &stat_cmd).and_then(|raw| {
+        parse_stat_owner(&raw).ok_or_else(|| {
+            DeviceError::Other(format!(
+                "cannot determine owner of {databases_dir}: unexpected stat output: {raw:?}"
+            ))
+        })
+    })?;
+    run_shell_ok(runner, serial, &format!("chown {owner} {remote}"))?;
+    run_shell_ok(runner, serial, &format!("chmod 660 {remote}"))?;
 
     for suffix in ["-wal", "-shm"] {
         run_shell_ok(
@@ -621,6 +648,9 @@ mod tests {
         let runner = FakeRunner::new();
         runner.enqueue_ok("");
         runner.enqueue_ok("app.db: 1 file pushed, 12 bytes/s");
+        runner.enqueue_ok("10085:10085");
+        runner.enqueue_ok("");
+        runner.enqueue_ok("");
         runner.enqueue_ok("");
         runner.enqueue_ok("");
 
@@ -632,7 +662,7 @@ mod tests {
         );
         let local = path.to_string_lossy().to_string();
         let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls.len(), 4);
+        assert_eq!(calls.len(), 7);
         assert_eq!(calls[0], vec!["-s", "emu", "shell", "am force-stop com.x"]);
         assert_eq!(calls[1], vec!["-s", "emu", "push", &local, "/data/data/com.x/databases/app.db"]);
         assert_eq!(
@@ -641,7 +671,7 @@ mod tests {
                 "-s",
                 "emu",
                 "shell",
-                "rm -f /data/data/com.x/databases/app.db-wal"
+                "stat -c '%u:%g' /data/data/com.x/databases"
             ]
         );
         assert_eq!(
@@ -650,9 +680,75 @@ mod tests {
                 "-s",
                 "emu",
                 "shell",
+                "chown 10085:10085 /data/data/com.x/databases/app.db"
+            ]
+        );
+        assert_eq!(
+            calls[4],
+            vec![
+                "-s",
+                "emu",
+                "shell",
+                "chmod 660 /data/data/com.x/databases/app.db"
+            ]
+        );
+        assert_eq!(
+            calls[5],
+            vec![
+                "-s",
+                "emu",
+                "shell",
+                "rm -f /data/data/com.x/databases/app.db-wal"
+            ]
+        );
+        assert_eq!(
+            calls[6],
+            vec![
+                "-s",
+                "emu",
+                "shell",
                 "rm -f /data/data/com.x/databases/app.db-shm"
             ]
         );
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_to_device_unparseable_stat_owner_fails_with_raw_output() {
+        let (path, conn) = snapshot_with_wal("stat-garbage");
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("");
+        runner.enqueue_ok("app.db: 1 file pushed");
+        runner.enqueue_ok("uid=1027(owner) gid=1027(owner)");
+
+        let err = apply_to_device(&runner, "emu", "com.x", "app.db", &path).unwrap_err();
+        assert!(
+            matches!(err, DeviceError::Other(ref m) if m.contains("uid=1027(owner) gid=1027(owner)")
+                && m.contains("/data/data/com.x/databases")),
+            "unexpected error: {err}"
+        );
+        assert_eq!(runner.calls.lock().unwrap().len(), 3);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_to_device_chown_failure_propagates_and_skips_cleanup() {
+        let (path, conn) = snapshot_with_wal("chown-fail");
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("");
+        runner.enqueue_ok("app.db: 1 file pushed");
+        runner.enqueue_ok("10085:10085");
+        runner.enqueue_fail("chown: /data/data/com.x/databases/app.db: Read-only file system");
+
+        let err = apply_to_device(&runner, "emu", "com.x", "app.db", &path).unwrap_err();
+        assert!(
+            matches!(err, DeviceError::Other(ref m) if m.contains("chown 10085:10085")
+                && m.contains("Read-only file system")),
+            "unexpected error: {err}"
+        );
+        assert_eq!(runner.calls.lock().unwrap().len(), 4);
         drop(conn);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
