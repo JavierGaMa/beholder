@@ -57,6 +57,7 @@ import {
   sortDatabases,
 } from "./dbdisplay";
 import {
+  deriveTotal,
   exportBaseName,
   formatCsv,
   formatMarkdownTable,
@@ -220,10 +221,10 @@ export function DatabasesView() {
       setResult(res);
       setQueryError(null);
       setSqlHistory((h) => pushHistory(h, sql));
-      if (!res.truncated) {
-        setTotal(res.row_count);
-      } else {
+      if (res.truncated) {
         void resolveTotal(sql);
+      } else {
+        setTotal(deriveTotal(false, 0, res.row_count, QUERY_PAGE_SIZE));
       }
     } catch (e) {
       setResult(null);
@@ -244,9 +245,11 @@ export function DatabasesView() {
       setResult(res);
       setQueryError(null);
       setPage(nextPage);
-      if (!res.truncated) {
-        setTotal(offset + res.row_count);
-      } else if (total == null) {
+      const derived = deriveTotal(true, offset, res.row_count, QUERY_PAGE_SIZE);
+      if (derived != null && total == null) {
+        setTotal(derived);
+      }
+      if (total == null && (res.truncated || res.row_count >= QUERY_PAGE_SIZE)) {
         void resolveTotal(lastRunSql);
       }
     } catch (e) {

@@ -45,6 +45,17 @@ export function wrapPageQuery(sql: string, limit: number, offset: number): strin
   return `SELECT * FROM (${innerQuery(sql)}) LIMIT ${limit} OFFSET ${offset}`;
 }
 
+export function deriveTotal(
+  wrapped: boolean,
+  offset: number,
+  rowCount: number,
+  pageSize: number,
+): number | null {
+  if (!wrapped) return rowCount;
+  if (rowCount >= pageSize) return null;
+  return offset + rowCount;
+}
+
 export function pageLabel(showingFrom: number, showingTo: number, total: number | null): string {
   const range = `${formatRowCount(showingFrom)}\u2013${formatRowCount(showingTo)}`;
   if (total == null) return `showing ${range}+`;

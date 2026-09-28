@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   csvEscapeField,
+  deriveTotal,
   exportBaseName,
   formatCsv,
   formatMarkdownTable,
@@ -173,6 +174,46 @@ describe("wrapPageQuery", () => {
     expect(wrapPageQuery("select * from t limit 50;", 500, 500)).toBe(
       "SELECT * FROM (select * from t limit 50) LIMIT 500 OFFSET 500",
     );
+  });
+});
+
+describe("deriveTotal", () => {
+  it("derives the row count of a non-truncated raw run", () => {
+    expect(deriveTotal(false, 0, 50, QUERY_PAGE_SIZE)).toBe(50);
+  });
+
+  it("treats an exactly-full raw run as the whole result", () => {
+    expect(deriveTotal(false, 0, QUERY_PAGE_SIZE, QUERY_PAGE_SIZE)).toBe(QUERY_PAGE_SIZE);
+  });
+
+  it("cannot derive from a full wrapped page at any offset", () => {
+    expect(deriveTotal(true, 0, QUERY_PAGE_SIZE, QUERY_PAGE_SIZE)).toBeNull();
+    expect(deriveTotal(true, QUERY_PAGE_SIZE, QUERY_PAGE_SIZE, QUERY_PAGE_SIZE)).toBeNull();
+    expect(deriveTotal(true, 9 * QUERY_PAGE_SIZE, QUERY_PAGE_SIZE, QUERY_PAGE_SIZE)).toBeNull();
+  });
+
+  it("derives offset plus rows for a short final wrapped page", () => {
+    expect(deriveTotal(true, 4500, 234, QUERY_PAGE_SIZE)).toBe(4734);
+    expect(deriveTotal(true, 5000, 0, QUERY_PAGE_SIZE)).toBe(5000);
+  });
+
+  it("defensively returns null when a wrapped page exceeds the page size", () => {
+    expect(deriveTotal(true, 0, QUERY_PAGE_SIZE + 1, QUERY_PAGE_SIZE)).toBeNull();
+  });
+
+  it("walks a 5000-row table: full wrapped pages never clobber the count-derived total", () => {
+    const pageSize = QUERY_PAGE_SIZE;
+    let total: number | null = 5000;
+
+    for (let page = 1; page < 10; page += 1) {
+      const derived = deriveTotal(true, page * pageSize, 500, pageSize);
+      if (derived != null && total == null) {
+        total = derived;
+      }
+    }
+
+    expect(total).toBe(5000);
+    expect(deriveTotal(true, 10 * pageSize, 0, pageSize)).toBe(5000);
   });
 });
 
