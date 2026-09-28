@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
+import { loadDbLayout, saveDbLayout } from "../../lib/prefs";
 import { EmptyState } from "../../components/ui/primitives";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
@@ -31,6 +32,16 @@ import { DbList } from "./DbList";
 import { PackagePicker } from "./PackagePicker";
 import { SqlConsole } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
+import { usePaneResize } from "./usePaneResize";
+import {
+  DBS_WIDTH_BOUNDS,
+  DEFAULT_DBS_WIDTH,
+  DEFAULT_TABLES_WIDTH,
+  TABLES_WIDTH_BOUNDS,
+  clampPaneWidth,
+  resolvePaneWidth,
+  type DbLayout,
+} from "./layout";
 import {
   clampPage,
   formatPulledAt,
@@ -63,6 +74,24 @@ export function DatabasesView() {
   const [sqlOpen, setSqlOpen] = useState(false);
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
+  const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
+
+  useEffect(() => {
+    saveDbLayout(layout);
+  }, [layout]);
+
+  const dbsResize = usePaneResize({
+    axis: "x",
+    getSize: () => layout.dbsWidth,
+    clamp: (w) => clampPaneWidth(w, DBS_WIDTH_BOUNDS),
+    onResized: (w) => setLayout((l) => ({ ...l, dbsWidth: w })),
+  });
+  const tablesResize = usePaneResize({
+    axis: "x",
+    getSize: () => layout.tablesWidth,
+    clamp: (w) => clampPaneWidth(w, TABLES_WIDTH_BOUNDS),
+    onResized: (w) => setLayout((l) => ({ ...l, tablesWidth: w })),
+  });
 
   const packagesQ = useAppPackagesQuery(serial, isTauri && serial !== "");
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
@@ -244,54 +273,99 @@ export function DatabasesView() {
 
       <div className="flex min-h-0 flex-1">
         {pkg != null && (
-          <aside className="flex w-72 shrink-0 flex-col border-r border-line">
-            <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-              <span className="truncate" title={pkg}>
-                {shortPackage(pkg)}
-              </span>
-              {dbsQ.isFetching && !dbsQ.isPending && (
-                <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
-              )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-              {dbsError != null && (
-                <div className="flex flex-col gap-2">
-                  <ErrorBox message={dbsError} compact />
-                  <button
-                    type="button"
-                    onClick={() => void dbsQ.refetch()}
-                    className="h-7 rounded-md border border-line text-[11px] font-medium text-muted hover:text-txt"
-                  >
-                    Retry
-                  </button>
+          <aside
+            className="flex shrink-0 flex-col border-r border-line"
+            style={{
+              width: resolvePaneWidth({
+                collapsed: layout.dbsCollapsed,
+                width: layout.dbsWidth,
+                bounds: DBS_WIDTH_BOUNDS,
+              }),
+            }}
+          >
+            {layout.dbsCollapsed ? (
+              <div className="flex flex-1 flex-col items-center gap-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => setLayout((l) => ({ ...l, dbsCollapsed: false }))}
+                  title="Expand the databases sidebar"
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                >
+                  <ChevronRight size={11} />
+                </button>
+                <span className="font-mono text-[10px] tabular-nums text-muted/70">
+                  {dbs.length}
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
+                  <span className="truncate" title={pkg}>
+                    {shortPackage(pkg)}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {dbsQ.isFetching && !dbsQ.isPending && (
+                      <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setLayout((l) => ({ ...l, dbsCollapsed: true }))}
+                      title="Collapse the databases sidebar"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                    >
+                      <ChevronLeft size={11} />
+                    </button>
+                  </span>
                 </div>
-              )}
-              {dbsError == null && dbsLoading && (
-                <div className="flex flex-col gap-1.5 p-1">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-12 animate-pulse rounded-md bg-surface-2/60" />
-                  ))}
+                <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                  {dbsError != null && (
+                    <div className="flex flex-col gap-2">
+                      <ErrorBox message={dbsError} compact />
+                      <button
+                        type="button"
+                        onClick={() => void dbsQ.refetch()}
+                        className="h-7 rounded-md border border-line text-[11px] font-medium text-muted hover:text-txt"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {dbsError == null && dbsLoading && (
+                    <div className="flex flex-col gap-1.5 p-1">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="h-12 animate-pulse rounded-md bg-surface-2/60" />
+                      ))}
+                    </div>
+                  )}
+                  {dbsError == null && !dbsLoading && dbs.length === 0 && (
+                    <EmptyState
+                      title="No database files found"
+                      hint={`Nothing readable under /data/data/${pkg}/databases`}
+                    />
+                  )}
+                  {dbs.length > 0 && (
+                    <DbList
+                      dbs={dbs}
+                      serial={serial}
+                      pkg={pkg}
+                      selected={selectedDb}
+                      pulling={pull.isPending}
+                      snapshots={snapshots}
+                      onSelect={(name) => void openDb(name)}
+                    />
+                  )}
                 </div>
-              )}
-              {dbsError == null && !dbsLoading && dbs.length === 0 && (
-                <EmptyState
-                  title="No database files found"
-                  hint={`Nothing readable under /data/data/${pkg}/databases`}
-                />
-              )}
-              {dbs.length > 0 && (
-                <DbList
-                  dbs={dbs}
-                  serial={serial}
-                  pkg={pkg}
-                  selected={selectedDb}
-                  pulling={pull.isPending}
-                  snapshots={snapshots}
-                  onSelect={(name) => void openDb(name)}
-                />
-              )}
-            </div>
+              </>
+            )}
           </aside>
+        )}
+        {pkg != null && !layout.dbsCollapsed && (
+          <div
+            {...dbsResize}
+            onDoubleClick={() => setLayout((l) => ({ ...l, dbsWidth: DEFAULT_DBS_WIDTH }))}
+            title="Drag to resize, double-click to reset"
+            className="w-1.5 shrink-0 cursor-col-resize touch-none select-none hover:bg-surface-2"
+          />
         )}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -339,46 +413,91 @@ export function DatabasesView() {
                 />
               )}
               <div className="flex min-h-0 flex-1">
-                <aside className="flex w-56 shrink-0 flex-col border-r border-line">
-                  <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-                    <span>tables · {formatRowCount(tables.length)}</span>
-                    {tablesQ.isFetching && !tablesQ.isPending && (
-                      <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
-                    )}
-                  </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-                    {tablesError != null && <ErrorBox message={tablesError} compact />}
-                    {tablesError == null && tablesQ.isPending && (
-                      <p className="flex items-center gap-2 px-2 py-2 text-[11px] text-muted">
-                        <Loader2 size={12} className="animate-spin" /> Loading tables…
-                      </p>
-                    )}
-                    {tablesError == null && !tablesQ.isPending && tables.length === 0 && (
-                      <p className="px-2 py-2 text-[11px] text-muted">
-                        No tables in this database.
-                      </p>
-                    )}
-                    <div className="flex flex-col gap-0.5">
-                      {tables.map((t) => (
-                        <button
-                          key={t.name}
-                          type="button"
-                          onClick={() => setTable(t.name)}
-                          title={t.name}
-                          className={clsx(
-                            "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-surface-2",
-                            table === t.name ? "bg-accent/10 text-accent" : "text-txt/90",
-                          )}
-                        >
-                          <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                          <span className="shrink-0 text-[10px] tabular-nums text-muted/70">
-                            {formatRowCount(t.row_count)}
-                          </span>
-                        </button>
-                      ))}
+                <aside
+                  className="flex shrink-0 flex-col border-r border-line"
+                  style={{
+                    width: resolvePaneWidth({
+                      collapsed: layout.tablesCollapsed,
+                      width: layout.tablesWidth,
+                      bounds: TABLES_WIDTH_BOUNDS,
+                    }),
+                  }}
+                >
+                  {layout.tablesCollapsed ? (
+                    <div className="flex flex-1 flex-col items-center gap-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setLayout((l) => ({ ...l, tablesCollapsed: false }))}
+                        title="Expand the tables sidebar"
+                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                      >
+                        <ChevronRight size={11} />
+                      </button>
+                      <span className="font-mono text-[10px] tabular-nums text-muted/70">
+                        {tables.length}
+                      </span>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
+                        <span>tables · {formatRowCount(tables.length)}</span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {tablesQ.isFetching && !tablesQ.isPending && (
+                            <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setLayout((l) => ({ ...l, tablesCollapsed: true }))}
+                            title="Collapse the tables sidebar"
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                          >
+                            <ChevronLeft size={11} />
+                          </button>
+                        </span>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                        {tablesError != null && <ErrorBox message={tablesError} compact />}
+                        {tablesError == null && tablesQ.isPending && (
+                          <p className="flex items-center gap-2 px-2 py-2 text-[11px] text-muted">
+                            <Loader2 size={12} className="animate-spin" /> Loading tables…
+                          </p>
+                        )}
+                        {tablesError == null && !tablesQ.isPending && tables.length === 0 && (
+                          <p className="px-2 py-2 text-[11px] text-muted">
+                            No tables in this database.
+                          </p>
+                        )}
+                        <div className="flex flex-col gap-0.5">
+                          {tables.map((t) => (
+                            <button
+                              key={t.name}
+                              type="button"
+                              onClick={() => setTable(t.name)}
+                              title={t.name}
+                              className={clsx(
+                                "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-surface-2",
+                                table === t.name ? "bg-accent/10 text-accent" : "text-txt/90",
+                              )}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                              <span className="shrink-0 text-[10px] tabular-nums text-muted/70">
+                                {formatRowCount(t.row_count)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </aside>
+                {!layout.tablesCollapsed && (
+                  <div
+                    {...tablesResize}
+                    onDoubleClick={() => setLayout((l) => ({ ...l, tablesWidth: DEFAULT_TABLES_WIDTH }))}
+                    title="Drag to resize, double-click to reset"
+                    className="w-1.5 shrink-0 cursor-col-resize touch-none select-none hover:bg-surface-2"
+                  />
+                )}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1">
                     <div className="relative w-64">
