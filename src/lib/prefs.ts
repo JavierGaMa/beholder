@@ -1,4 +1,10 @@
 import type { Filters } from "../features/requests/filters";
+import {
+  DEFAULT_DB_LAYOUT,
+  parseDbLayout,
+  serializeDbLayout,
+} from "../features/database/layout";
+import type { DbLayout } from "../features/database/layout";
 
 export const DEFAULT_FILTERS: Filters = {
   text: "",
@@ -59,4 +65,19 @@ export function loadSidebarCollapsed(): boolean {
 
 export function saveSidebarCollapsed(v: boolean) {
   localStorage.setItem("beholder.sidebarCollapsed", String(v));
+}
+
+export function loadDbLayout(): DbLayout {
+  try {
+    const raw = localStorage.getItem("beholder.dbLayout");
+    if (!raw) return { ...DEFAULT_DB_LAYOUT };
+    const parsed = parseDbLayout(raw);
+    return parsed == null ? { ...DEFAULT_DB_LAYOUT } : { ...DEFAULT_DB_LAYOUT, ...parsed };
+  } catch {
+    return { ...DEFAULT_DB_LAYOUT };
+  }
+}
+
+export function saveDbLayout(l: DbLayout) {
+  localStorage.setItem("beholder.dbLayout", serializeDbLayout(l));
 }
