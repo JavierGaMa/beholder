@@ -68,6 +68,7 @@ import {
   exportBaseName,
   formatCsv,
   formatMarkdownTable,
+  isEditableResult,
   isPageableQuery,
   pageLabel,
   QUERY_PAGE_SIZE,
@@ -396,12 +397,19 @@ export function DatabasesView() {
     }
   }
 
-  function onTableClick(name: string) {
+  function onTableClick(name: string, includeRowid = editMode) {
     setActiveTable(name);
-    const sql = prefillQuery(name, editMode);
+    const sql = prefillQuery(name, includeRowid);
     setSqlText(sql);
     setSqlOpen(true);
     void runSql(sql);
+  }
+
+  function onToggleEditMode() {
+    const next = !editMode;
+    setEditMode(next);
+    if (!next || activeTable == null || isEditableResult(result)) return;
+    onTableClick(activeTable, true);
   }
 
   async function onCopyResult() {
@@ -495,6 +503,8 @@ export function DatabasesView() {
       : result != null && queryError == null
         ? resultSummary(result)
         : "no result";
+
+  const gridEditable = editMode && activeTable != null && isEditableResult(result);
 
   const pagerVisible =
     result != null && queryError == null && lastRunSql != null && isPageableQuery(lastRunSql);
@@ -789,6 +799,15 @@ export function DatabasesView() {
                         truncated
                       </span>
                     )}
+                    {!run.isPending && editMode && gridEditable && (
+                      <span className="text-[10px] text-muted">Double-click a cell to edit</span>
+                    )}
+                    {!run.isPending && editMode && !gridEditable && result != null && (
+                      <span className="text-[10px] text-muted">
+                        Results of custom queries are read-only — click a table in the sidebar to
+                        edit its rows
+                      </span>
+                    )}
                     <span className="ml-auto flex items-center gap-2">
                       {editMode && pendingWrites.length > 0 && (
                         <button
@@ -804,7 +823,7 @@ export function DatabasesView() {
                       )}
                       <button
                         type="button"
-                        onClick={() => setEditMode((m) => !m)}
+                        onClick={onToggleEditMode}
                         title="Edit mode: writes apply to the local snapshot, then Apply to device pushes them"
                         className={clsx(
                           "flex h-7 items-center gap-1 rounded-md border px-2 text-[11px]",

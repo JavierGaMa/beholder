@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import { ChevronDown, ChevronUp, ChevronsUpDown, Trash2 } from "lucide-react";
 import type { TableOrder, TablePage } from "../../queries/databases";
 import { classifyCell, columnTitle } from "./dbdisplay";
@@ -184,18 +185,27 @@ export function TableGrid({
                 <td className="px-3 py-1.5 text-right font-mono text-[11px] tabular-nums text-muted/50">
                   {offsetBase + i + 1}
                 </td>
-                {page.columns.map((col) => (
-                  <td key={col.name} className="max-w-[320px] px-3 py-1.5 align-top text-[12px]">
-                    {rowEditable && col.name !== "rowid" ? (
-                      <EditableCell
-                        value={row[col.name]}
-                        onCommit={(v) => rowid != null && onCommitCell?.(col.name, v, rowid)}
-                      />
-                    ) : (
-                      <Cell value={row[col.name]} />
-                    )}
-                  </td>
-                ))}
+                {page.columns.map((col) => {
+                  const editable = rowEditable && col.name !== "rowid";
+                  return (
+                    <td
+                      key={col.name}
+                      className={clsx(
+                        "max-w-[320px] px-3 py-1.5 align-top text-[12px]",
+                        editable && "cursor-text hover:bg-surface-2",
+                      )}
+                    >
+                      {editable ? (
+                        <EditableCell
+                          value={row[col.name]}
+                          onCommit={(v) => rowid != null && onCommitCell?.(col.name, v, rowid)}
+                        />
+                      ) : (
+                        <Cell value={row[col.name]} />
+                      )}
+                    </td>
+                  );
+                })}
                 {canEdit && (
                   <td className="px-1 py-1.5 text-center align-top">
                     {rowEditable && (

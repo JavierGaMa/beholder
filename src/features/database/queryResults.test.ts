@@ -5,6 +5,7 @@ import {
   exportBaseName,
   formatCsv,
   formatMarkdownTable,
+  isEditableResult,
   isPageableQuery,
   pageLabel,
   QUERY_PAGE_SIZE,
@@ -115,6 +116,20 @@ describe("resultSummary", () => {
 
   it("handles zero rows and sub-millisecond queries", () => {
     expect(resultSummary(qr({ row_count: 0, elapsed_ms: 0 }))).toBe("0 rows · 0 ms");
+  });
+});
+
+describe("isEditableResult", () => {
+  it("rejects null results, empty columns and rowid outside the first column", () => {
+    expect(isEditableResult(null)).toBe(false);
+    expect(isEditableResult(qr({ columns: [] }))).toBe(false);
+    expect(isEditableResult(qr({ columns: ["id", "name"] }))).toBe(false);
+    expect(isEditableResult(qr({ columns: ["name", "rowid"] }))).toBe(false);
+  });
+
+  it("accepts results whose first column is rowid", () => {
+    expect(isEditableResult(qr({ columns: ["rowid"] }))).toBe(true);
+    expect(isEditableResult(qr({ columns: ["rowid", "name"] }))).toBe(true);
   });
 });
 

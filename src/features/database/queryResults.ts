@@ -66,6 +66,10 @@ export function resultSummary(result: QueryResult): string {
   return `${formatRowCount(result.row_count)} rows · ${result.elapsed_ms} ms`;
 }
 
+export function isEditableResult(result: QueryResult | null): boolean {
+  return result != null && result.columns[0] === "rowid";
+}
+
 function markdownCell(value: unknown): string {
   return cellText(value).replace(/\|/g, "\\|").replace(/\r\n|\n|\r/g, "<br>");
 }
