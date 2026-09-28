@@ -101,46 +101,6 @@ export function useDatabaseSchemaQuery(
   });
 }
 
-export function useTableRowsQuery(
-  serial: string,
-  pkg: string,
-  dbName: string,
-  table: string,
-  page: number,
-  pageSize: number,
-  search: string,
-  order: TableOrder | null,
-  enabled: boolean,
-) {
-  return useQuery({
-    queryKey: [
-      "db-rows",
-      serial,
-      pkg,
-      dbName,
-      table,
-      page,
-      search,
-      order?.col ?? null,
-      order?.dir ?? null,
-    ],
-    queryFn: () =>
-      invoke<TablePage>("database_table_rows", {
-        serial,
-        package: pkg,
-        dbName,
-        table,
-        page,
-        pageSize,
-        search: search === "" ? undefined : search,
-        orderBy: order?.col,
-        orderDir: order?.dir,
-      }),
-    enabled,
-    staleTime: DATABASES_STALE_MS,
-  });
-}
-
 export function usePullSnapshot() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -159,9 +119,6 @@ export function usePullSnapshot() {
       });
       void queryClient.invalidateQueries({
         queryKey: ["db-schema", vars.serial, vars.pkg, vars.dbName],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["db-rows", vars.serial, vars.pkg, vars.dbName],
       });
     },
   });

@@ -1,4 +1,4 @@
-import type { DbFile, QueryResult, TableColumn, TableOrder, TablePage } from "../../queries/databases";
+import type { DbFile, QueryResult, TableColumn, TablePage } from "../../queries/databases";
 
 const BLOB_MARKER_RE = /^<\d+ bytes>$/;
 
@@ -14,16 +14,6 @@ export function humanizeSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-export function pageCount(totalRows: number, pageSize: number): number {
-  if (pageSize <= 0) return 0;
-  return Math.ceil(totalRows / pageSize);
-}
-
-export function clampPage(page: number, totalRows: number, pageSize: number): number {
-  const last = Math.max(0, pageCount(totalRows, pageSize) - 1);
-  return Math.min(Math.max(0, page), last);
 }
 
 export function sortDatabases(dbs: DbFile[]): DbFile[] {
@@ -68,17 +58,6 @@ export function snapshotKey(serial: string, pkg: string, dbName: string): string
 export function joinExportPath(dir: string, fileName: string): string {
   const trimmed = dir.endsWith("/") || dir.endsWith("\\") ? dir.slice(0, -1) : dir;
   return `${trimmed}/${fileName}`;
-}
-
-export function nextOrderState(col: string, current: TableOrder | null): TableOrder | null {
-  if (current == null || current.col !== col) return { col, dir: "asc" };
-  if (current.dir === "asc") return { col, dir: "desc" };
-  return null;
-}
-
-export function normalizeSearch(input: string): string | null {
-  const trimmed = input.trim();
-  return trimmed === "" ? null : trimmed;
 }
 
 export function prefillQuery(tableName: string | null): string {

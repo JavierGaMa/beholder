@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyCell,
-  clampPage,
   columnTitle,
   formatPulledAt,
   formatRowCount,
   humanizeSize,
   joinExportPath,
-  nextOrderState,
-  normalizeSearch,
-  pageCount,
   prefillQuery,
   pushHistory,
   queryResultToPage,
@@ -43,49 +39,6 @@ describe("humanizeSize", () => {
 
   it("renders gigabytes with two decimals", () => {
     expect(humanizeSize(1536 * 1024 * 1024)).toBe("1.50 GB");
-  });
-});
-
-describe("pageCount", () => {
-  it("returns zero pages for an empty table", () => {
-    expect(pageCount(0, 50)).toBe(0);
-  });
-
-  it("returns one page when rows fit exactly in one page", () => {
-    expect(pageCount(1, 50)).toBe(1);
-    expect(pageCount(50, 50)).toBe(1);
-  });
-
-  it("spills the remainder into an extra page", () => {
-    expect(pageCount(51, 50)).toBe(2);
-    expect(pageCount(120, 50)).toBe(3);
-  });
-
-  it("guards against a non-positive page size", () => {
-    expect(pageCount(10, 0)).toBe(0);
-    expect(pageCount(10, -1)).toBe(0);
-  });
-});
-
-describe("clampPage", () => {
-  it("keeps valid pages unchanged", () => {
-    expect(clampPage(0, 120, 50)).toBe(0);
-    expect(clampPage(1, 120, 50)).toBe(1);
-    expect(clampPage(2, 120, 50)).toBe(2);
-  });
-
-  it("clamps pages past the last page", () => {
-    expect(clampPage(5, 120, 50)).toBe(2);
-    expect(clampPage(3, 51, 50)).toBe(1);
-  });
-
-  it("clamps negative pages to zero", () => {
-    expect(clampPage(-2, 120, 50)).toBe(0);
-  });
-
-  it("clamps to zero for an empty table", () => {
-    expect(clampPage(0, 0, 50)).toBe(0);
-    expect(clampPage(4, 0, 50)).toBe(0);
   });
 });
 
@@ -191,44 +144,6 @@ describe("joinExportPath", () => {
   it("does not double the separator when the dir ends with one", () => {
     expect(joinExportPath("/Users/x/Downloads/", "app.db")).toBe("/Users/x/Downloads/app.db");
     expect(joinExportPath("C:\\Users\\x", "app.db")).toBe("C:\\Users\\x/app.db");
-  });
-});
-
-describe("nextOrderState", () => {
-  it("starts ascending on first click", () => {
-    expect(nextOrderState("id", null)).toEqual({ col: "id", dir: "asc" });
-  });
-
-  it("starts ascending when a different column is active", () => {
-    expect(nextOrderState("name", { col: "id", dir: "desc" })).toEqual({
-      col: "name",
-      dir: "asc",
-    });
-  });
-
-  it("toggles ascending to descending on the same column", () => {
-    expect(nextOrderState("id", { col: "id", dir: "asc" })).toEqual({ col: "id", dir: "desc" });
-  });
-
-  it("clears ordering on the third click of the same column", () => {
-    expect(nextOrderState("id", { col: "id", dir: "desc" })).toBeNull();
-  });
-});
-
-describe("normalizeSearch", () => {
-  it("returns null for empty and whitespace-only input", () => {
-    expect(normalizeSearch("")).toBeNull();
-    expect(normalizeSearch("   ")).toBeNull();
-    expect(normalizeSearch("\t\n")).toBeNull();
-  });
-
-  it("trims surrounding whitespace", () => {
-    expect(normalizeSearch("  ada  ")).toBe("ada");
-  });
-
-  it("passes like wildcards and backslashes through unescaped", () => {
-    expect(normalizeSearch("a%b_c\\d")).toBe("a%b_c\\d");
-    expect(normalizeSearch("100%")).toBe("100%");
   });
 });
 

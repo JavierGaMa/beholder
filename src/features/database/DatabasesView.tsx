@@ -7,10 +7,9 @@ import {
   FolderOpen,
   GripHorizontal,
   Loader2,
+  Play,
   RefreshCw,
-  Search,
   SquareTerminal,
-  X,
 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
@@ -25,13 +24,13 @@ import {
   useDatabaseTablesQuery,
   useInvalidateDatabases,
   usePullSnapshot,
-  useTableRowsQuery,
+  useRunDbQuery,
+  type QueryResult,
   type SnapshotInfo,
-  type TableOrder,
 } from "../../queries/databases";
 import { DbList } from "./DbList";
 import { PackagePicker } from "./PackagePicker";
-import { SqlConsole, type SqlConsoleHandle } from "./SqlConsole";
+import { SqlConsole } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
 import { usePaneResize } from "./usePaneResize";
 import {
@@ -46,41 +45,31 @@ import {
   type DbLayout,
 } from "./layout";
 import {
-  clampPage,
   formatPulledAt,
   formatRowCount,
   joinExportPath,
-  nextOrderState,
-  normalizeSearch,
-  pageCount,
   prefillQuery,
   pushHistory,
+  queryResultToPage,
   shortPackage,
   snapshotKey,
   sortDatabases,
 } from "./dbdisplay";
 
-const PAGE_SIZE = 50;
-const SEARCH_DEBOUNCE_MS = 300;
-
 export function DatabasesView() {
   const [serial, setSerial] = useState("");
   const [pkg, setPkg] = useState<string | null>(null);
   const [selectedDb, setSelectedDb] = useState<string | null>(null);
-  const [table, setTable] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [search, setSearch] = useState("");
-  const [order, setOrder] = useState<TableOrder | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotInfo>>({});
   const [pullError, setPullError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
-  const [pendingRun, setPendingRun] = useState<{ sql: string } | null>(null);
+  const [result, setResult] = useState<QueryResult | null>(null);
+  const [queryError, setQueryError] = useState<string | null>(null);
   const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
   const columnRef = useRef<HTMLDivElement>(null);
-  const sqlRef = useRef<SqlConsoleHandle | null>(null);
 
   useEffect(() => {
     saveDbLayout(layout);
@@ -114,13 +103,7 @@ export function DatabasesView() {
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
   const pull = usePullSnapshot();
   const invalidateAll = useInvalidateDatabases(serial, pkg);
-
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [search]);
-  const querySearch = normalizeSearch(debouncedSearch) ?? "";
+  const run = useRunDbQuery();
 
   const apps = packagesQ.data ?? [];
   const dbs = useMemo(() => sortDatabases(dbsQ.data ?? []), [dbsQ.data]);
@@ -141,21 +124,6 @@ export function DatabasesView() {
   );
   const tablesError = qError(tablesQ.error);
 
-  const rowsQ = useTableRowsQuery(
-    serial,
-    pkg ?? "",
-    selectedDb ?? "",
-    table ?? "",
-    page,
-    PAGE_SIZE,
-    querySearch,
-    order,
-    viewerReady && table != null,
-  );
-  const tablePage = rowsQ.data;
-  const rowsError = qError(rowsQ.error);
-  const totalPages = tablePage != null ? pageCount(tablePage.total_rows, PAGE_SIZE) : 0;
-
   useEffect(() => {
     setPkg(null);
     setSnapshots({});
@@ -167,37 +135,15 @@ export function DatabasesView() {
   }, [pkg]);
 
   useEffect(() => {
-    setTable(null);
-    setPage(0);
-    setSearch("");
-    setOrder(null);
     setSqlOpen(false);
+    setResult(null);
+    setQueryError(null);
   }, [selectedDb]);
 
   useEffect(() => {
-    setPage(0);
-    setSearch("");
-    setOrder(null);
-  }, [table]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [querySearch, order]);
-
-  useEffect(() => {
     if (!viewerReady) return;
-    if (tables.length === 0) {
-      setTable(null);
-      return;
-    }
-    if (table == null || !tables.some((t) => t.name === table)) setTable(tables[0].name);
-  }, [tables, table, viewerReady]);
-
-  useEffect(() => {
-    if (tablePage == null) return;
-    const clamped = clampPage(page, tablePage.total_rows, PAGE_SIZE);
-    if (clamped !== page) setPage(clamped);
-  }, [tablePage, page]);
+    setSqlOpen(true);
+  }, [viewerReady]);
 
   useLayoutEffect(() => {
     if (columnRef.current == null || layout.sqlDockHeight == null) return;
@@ -219,20 +165,25 @@ export function DatabasesView() {
     }
   }
 
-  function toggleSql() {
-    if (!sqlOpen && sqlText.trim() === "") setSqlText(prefillQuery(table));
-    setSqlOpen(!sqlOpen);
+  async function runSql(sqlArg?: string) {
+    const sql = (sqlArg ?? sqlText).trim();
+    if (sql === "" || run.isPending || !viewerReady) return;
+    try {
+      const res = await run.mutateAsync({ serial, pkg: pkg ?? "", dbName: selectedDb ?? "", sql });
+      setResult(res);
+      setQueryError(null);
+      setSqlHistory((h) => pushHistory(h, sql));
+    } catch (e) {
+      setResult(null);
+      setQueryError(qError(e) ?? String(e));
+    }
   }
 
   function onTableClick(name: string) {
     const sql = prefillQuery(name);
-    setTable(name);
     setSqlText(sql);
-    if (sqlOpen) sqlRef.current?.run(sql);
-    else {
-      setPendingRun({ sql });
-      setSqlOpen(true);
-    }
+    setSqlOpen(true);
+    void runSql(sql);
   }
 
   async function onReveal() {
@@ -496,11 +447,8 @@ export function DatabasesView() {
                               key={t.name}
                               type="button"
                               onClick={() => onTableClick(t.name)}
-                              title={t.name}
-                              className={clsx(
-                                "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-surface-2",
-                                table === t.name ? "bg-accent/10 text-accent" : "text-txt/90",
-                              )}
+                              title={`SELECT * FROM "${t.name}" LIMIT 50`}
+                              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2"
                             >
                               <span className="min-w-0 flex-1 truncate">{t.name}</span>
                               <span className="shrink-0 text-[10px] tabular-nums text-muted/70">
@@ -522,104 +470,61 @@ export function DatabasesView() {
                   />
                 )}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1">
-                    <div className="relative w-64">
-                      <Search
-                        size={12}
-                        className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted/70"
-                      />
-                      <input
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") setSearch("");
-                        }}
-                        disabled={table == null}
-                        placeholder="search rows"
-                        title="Substring match across all columns (case-insensitive)"
-                        className="h-7 w-full rounded-md border border-line bg-bg pl-6 pr-6 font-mono text-[11px] text-txt placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-40"
-                      />
-                      {search !== "" && (
+                  {result != null && queryError == null && !run.isPending && (
+                    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
+                      <span className="font-mono text-[11px] text-muted">
+                        {formatRowCount(result.row_count)} rows · {result.elapsed_ms} ms
+                      </span>
+                      {result.truncated && (
+                        <span
+                          title="The result was capped at 500 rows — narrow it with WHERE or LIMIT"
+                          className="rounded-sm border border-warn/40 bg-warn/10 px-1.5 py-px text-[10px] font-medium text-warn"
+                        >
+                          truncated
+                        </span>
+                      )}
+                      <span className="ml-auto flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setSearch("")}
-                          title="Clear search"
-                          className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-muted/70 hover:text-txt"
+                          onClick={() => void runSql()}
+                          disabled={run.isPending || sqlText.trim() === ""}
+                          title="Run the query in the console below (Cmd/Ctrl+Enter)"
+                          className="flex h-6 items-center gap-1 rounded-md border border-line bg-bg px-2 text-[11px] font-medium text-txt hover:bg-surface-2 disabled:opacity-40"
                         >
-                          <X size={10} />
+                          {run.isPending ? (
+                            <Loader2 size={11} className="animate-spin text-accent" />
+                          ) : (
+                            <Play size={11} />
+                          )}{" "}
+                          Run ⌘↵
                         </button>
-                      )}
+                      </span>
                     </div>
-                    {querySearch !== "" && (
-                      <span className="font-mono text-[10px] text-muted/70">filter active</span>
-                    )}
-                  </div>
+                  )}
                   <div className="min-h-0 flex-1">
-                    {table != null && rowsError != null ? (
+                    {queryError != null ? (
                       <div className="p-3">
-                        <ErrorBox message={rowsError} />
+                        <ErrorBox message={queryError} />
                       </div>
-                    ) : table == null ? null : tablePage == null ? (
+                    ) : run.isPending ? (
                       <div className="flex h-full items-center justify-center">
                         <Loader2 size={16} className="animate-spin text-accent" />
                       </div>
-                    ) : tablePage.rows.length === 0 ? (
-                      querySearch !== "" ? (
-                        <EmptyState
-                          title="No matching rows"
-                          hint={`Nothing in ${table} contains “${querySearch}”`}
-                        />
-                      ) : (
-                        <EmptyState
-                          title="Table is empty"
-                          hint={`No rows in ${table} · press Refresh after the app writes data`}
-                        />
-                      )
-                    ) : (
-                      <TableGrid
-                        page={tablePage}
-                        offsetBase={tablePage.offset}
-                        order={order}
-                        onSort={(col) => setOrder((cur) => nextOrderState(col, cur))}
+                    ) : result == null ? (
+                      <EmptyState
+                        title="Run a query or click a table to get started"
+                        hint={`${selectedDb} · read-only SELECTs against the local snapshot`}
                       />
+                    ) : result.rows.length === 0 ? (
+                      <EmptyState
+                        title="No rows"
+                        hint="The query ran successfully and returned nothing"
+                      />
+                    ) : (
+                      <TableGrid page={queryResultToPage(result)} offsetBase={0} />
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
-                    <span className="font-mono">
-                      {tablePage != null ? `${formatRowCount(tablePage.total_rows)} rows` : "…"}
-                    </span>
-                    {tablePage != null && totalPages > 0 && (
-                      <>
-                        <span className="text-muted/50">·</span>
-                        <span className="font-mono">
-                          {tablePage.offset + 1}–{tablePage.offset + tablePage.rows.length}
-                        </span>
-                        <span className="text-muted/50">·</span>
-                        <span className="font-mono">
-                          page {page + 1} of {totalPages}
-                        </span>
-                        <span className="flex overflow-hidden rounded-md border border-line">
-                          <button
-                            type="button"
-                            onClick={() => setPage((p) => Math.max(0, p - 1))}
-                            disabled={page === 0}
-                            title="Previous page"
-                            className="flex h-6 w-6 items-center justify-center hover:bg-surface-2 hover:text-txt disabled:opacity-30"
-                          >
-                            <ChevronLeft size={11} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                            disabled={page >= totalPages - 1}
-                            title="Next page"
-                            className="flex h-6 w-6 items-center justify-center border-l border-line hover:bg-surface-2 hover:text-txt disabled:opacity-30"
-                          >
-                            <ChevronRight size={11} />
-                          </button>
-                        </span>
-                      </>
-                    )}
                     <span className="ml-auto flex items-center gap-1.5">
                       {activeSnapshot != null && (
                         <span
@@ -641,7 +546,7 @@ export function DatabasesView() {
                       </button>
                       <button
                         type="button"
-                        onClick={toggleSql}
+                        onClick={() => setSqlOpen(!sqlOpen)}
                         title={
                           sqlOpen
                             ? "Hide the SQL console"
@@ -693,18 +598,15 @@ export function DatabasesView() {
                     <GripHorizontal size={11} className="text-muted/70" />
                   </div>
                   <SqlConsole
-                    ref={sqlRef}
                     serial={serial}
                     pkg={pkg ?? ""}
                     dbName={selectedDb ?? ""}
-                    table={table}
                     text={sqlText}
                     onTextChange={setSqlText}
                     history={sqlHistory}
-                    onRan={(sql) => setSqlHistory((h) => pushHistory(h, sql))}
+                    running={run.isPending}
+                    onRun={() => void runSql()}
                     onClose={() => setSqlOpen(false)}
-                    pendingRun={pendingRun}
-                    onPendingRunDone={() => setPendingRun(null)}
                   />
                 </div>
               )}

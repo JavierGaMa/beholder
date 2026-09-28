@@ -1,69 +1,38 @@
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type Ref,
-} from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { History, Loader2, Play, X } from "lucide-react";
-import { qError } from "../../lib/query";
-import { EmptyState } from "../../components/ui/primitives";
-import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useDropdownPosition } from "../../components/ui/popover";
-import { useDatabaseSchemaQuery, useRunDbQuery, type QueryResult } from "../../queries/databases";
-import { TableGrid } from "./TableGrid";
-import { formatRowCount, queryResultToPage } from "./dbdisplay";
+import { useDatabaseSchemaQuery } from "../../queries/databases";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
-
-export interface SqlConsoleHandle {
-  run: (sql: string) => void;
-}
 
 export function SqlConsole({
   serial,
   pkg,
   dbName,
-  table,
   text,
   onTextChange,
   history,
-  onRan,
+  running,
+  onRun,
   onClose,
-  ref,
-  pendingRun,
-  onPendingRunDone,
 }: {
   serial: string;
   pkg: string;
   dbName: string;
-  table: string | null;
   text: string;
   onTextChange: (next: string) => void;
   history: string[];
-  onRan: (sql: string) => void;
+  running: boolean;
+  onRun: () => void;
   onClose: () => void;
-  ref?: Ref<SqlConsoleHandle>;
-  pendingRun: { sql: string } | null;
-  onPendingRunDone: () => void;
 }) {
-  const run = useRunDbQuery();
   const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
-  const [result, setResult] = useState<QueryResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const { anchorRef, menuRef, style } = useDropdownPosition(historyOpen, {
     width: 420,
     estHeight: 220,
   });
   const wrapRef = useRef<HTMLDivElement>(null);
-  const gridPage = useMemo(
-    () => (result == null ? null : queryResultToPage(result)),
-    [result],
-  );
-  const error = qError(run.error);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -74,37 +43,11 @@ export function SqlConsole({
     return () => window.removeEventListener("mousedown", onClickOutside);
   }, [historyOpen]);
 
-  async function runSql(sqlArg?: string) {
-    const sql = (sqlArg ?? text).trim();
-    if (sql === "" || run.isPending) return;
-    try {
-      const res = await run.mutateAsync({ serial, pkg, dbName, sql });
-      setResult(res);
-      onRan(sql);
-    } catch {
-      setResult(null);
-    }
-  }
-
-  useImperativeHandle(ref, () => ({ run: (sql) => void runSql(sql) }));
-
-  useEffect(() => {
-    if (pendingRun == null) return;
-    void runSql(pendingRun.sql);
-    onPendingRunDone();
-  }, [pendingRun]);
-
   return (
     <section className="flex h-full min-h-0 flex-col border-line bg-bg">
       <header className="flex shrink-0 items-center gap-2 border-b border-line/50 bg-surface px-3 py-1">
         <span className="text-[10px] uppercase tracking-wider text-muted/70">
           sql · <span className="font-mono lowercase">{dbName}</span>
-          {table != null && (
-            <>
-              {" "}
-              · <span className="font-mono lowercase">{table}</span>
-            </>
-          )}
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           <div ref={wrapRef} className="relative">
@@ -143,12 +86,12 @@ export function SqlConsole({
           </div>
           <button
             type="button"
-            onClick={() => void runSql()}
-            disabled={run.isPending || text.trim() === ""}
+            onClick={onRun}
+            disabled={running || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
             className="flex h-6 items-center gap-1 rounded-md border border-line bg-bg px-2 text-[11px] font-medium text-txt hover:bg-surface-2 disabled:opacity-40"
           >
-            {run.isPending ? (
+            {running ? (
               <Loader2 size={11} className="animate-spin text-accent" />
             ) : (
               <Play size={11} />
@@ -165,7 +108,7 @@ export function SqlConsole({
           </button>
         </span>
       </header>
-      <div className="h-[75px] shrink-0 border-b border-line bg-bg">
+      <div className="min-h-0 flex-1">
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center">
@@ -176,43 +119,12 @@ export function SqlConsole({
           <SqlCodeEditor
             value={text}
             onChange={onTextChange}
-            onRun={() => void runSql()}
+            onRun={onRun}
             schema={schemaQuery.data ?? []}
             placeholder='SELECT * FROM "table" LIMIT 50'
           />
         </Suspense>
       </div>
-      <div className="min-h-0 flex-1">
-        {error != null ? (
-          <div className="p-3">
-            <ErrorBox message={error} />
-          </div>
-        ) : run.isPending ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 size={16} className="animate-spin text-accent" />
-          </div>
-        ) : gridPage == null ? (
-          <EmptyState
-            title="Run a SELECT query"
-            hint="Read-only, against the local snapshot · Cmd/Ctrl+Enter runs"
-          />
-        ) : gridPage.rows.length === 0 ? (
-          <EmptyState title="No rows" hint="The query ran successfully and returned nothing" />
-        ) : (
-          <TableGrid page={gridPage} offsetBase={0} />
-        )}
-      </div>
-      {result != null && error == null && (
-        <footer className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
-          <span className="font-mono">{formatRowCount(result.row_count)} rows</span>
-          {result.truncated && (
-            <span className="text-warn/80">showing first 500 of more than 500 rows</span>
-          )}
-          <span className="ml-auto font-mono text-[10px] text-muted/70">
-            {result.elapsed_ms} ms
-          </span>
-        </footer>
-      )}
     </section>
   );
 }
