@@ -1,10 +1,9 @@
 import { useMemo, useRef } from "react";
-import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import CodeMirror, { keymap, Prec, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { autocompletion } from "@codemirror/autocomplete";
 import { syntaxHighlighting } from "@codemirror/language";
 import { schemaCompletionSource, sql } from "@codemirror/lang-sql";
 import type { TableSchema } from "../../../queries/databases";
-import { isRunShortcut } from "../layout";
 import { buildSqlSchema, keywordSnippetSource } from "./completion";
 import { sqlEditorTheme, sqlHighlightStyle } from "./sqlTheme";
 
@@ -24,9 +23,23 @@ export default function SqlCodeEditor({
   placeholder,
 }: SqlCodeEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
+  const onRunRef = useRef(onRun);
+  onRunRef.current = onRun;
   const sqlSchema = useMemo(() => buildSqlSchema(schema), [schema]);
   const extensions = useMemo(
     () => [
+      Prec.high(
+        keymap.of([
+          {
+            key: "Mod-Enter",
+            run: () => {
+              onRunRef.current();
+              return true;
+            },
+            preventDefault: true,
+          },
+        ]),
+      ),
       sqlEditorTheme,
       syntaxHighlighting(sqlHighlightStyle),
       sql({ schema: sqlSchema, upperCaseKeywords: true }),
@@ -41,10 +54,7 @@ export default function SqlCodeEditor({
     <div
       className="h-full min-h-0"
       onKeyDown={(e) => {
-        if (isRunShortcut(e)) {
-          e.preventDefault();
-          onRun();
-        } else if (e.key === "Escape") {
+        if (e.key === "Escape") {
           editorRef.current?.view?.contentDOM.blur();
         }
       }}

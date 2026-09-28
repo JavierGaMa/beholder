@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileDown,
   FolderOpen,
   GripHorizontal,
@@ -55,6 +56,7 @@ import {
   snapshotKey,
   sortDatabases,
 } from "./dbdisplay";
+import { csvFileName, formatTsv, resultSummary } from "./queryResults";
 
 export function DatabasesView() {
   const [serial, setSerial] = useState("");
@@ -63,6 +65,7 @@ export function DatabasesView() {
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotInfo>>({});
   const [pullError, setPullError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [sqlText, setSqlText] = useState("");
   const [sqlHistory, setSqlHistory] = useState<string[]>([]);
@@ -184,6 +187,39 @@ export function DatabasesView() {
     setSqlText(sql);
     setSqlOpen(true);
     void runSql(sql);
+  }
+
+  async function onCopyResult() {
+    if (result == null) return;
+    try {
+      await navigator.clipboard.writeText(formatTsv(result.columns, result.rows));
+      toast(`Copied ${formatRowCount(result.rows.length)} rows`);
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+    }
+  }
+
+  async function onExportCsv() {
+    if (result == null || exportingCsv) return;
+    setExportingCsv(true);
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const dest = await save({
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+        defaultPath: csvFileName(),
+      });
+      if (typeof dest !== "string") return;
+      await invoke("export_query_result", {
+        destPath: dest,
+        columns: result.columns,
+        rows: result.rows,
+      });
+      toast(`Exported to ${dest}`);
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+    } finally {
+      setExportingCsv(false);
+    }
   }
 
   async function onReveal() {
@@ -473,7 +509,7 @@ export function DatabasesView() {
                   {result != null && queryError == null && !run.isPending && (
                     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
                       <span className="font-mono text-[11px] text-muted">
-                        {formatRowCount(result.row_count)} rows · {result.elapsed_ms} ms
+                        {resultSummary(result)}
                       </span>
                       {result.truncated && (
                         <span
@@ -484,6 +520,29 @@ export function DatabasesView() {
                         </span>
                       )}
                       <span className="ml-auto flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void onCopyResult()}
+                          disabled={result.rows.length === 0}
+                          title="Copy the result as TSV to the clipboard"
+                          className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                        >
+                          <Copy size={11} /> Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onExportCsv()}
+                          disabled={exportingCsv}
+                          title="Export the result as a CSV file"
+                          className="flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
+                        >
+                          {exportingCsv ? (
+                            <Loader2 size={11} className="animate-spin" />
+                          ) : (
+                            <FileDown size={11} />
+                          )}{" "}
+                          Export CSV
+                        </button>
                         <button
                           type="button"
                           onClick={() => void runSql()}

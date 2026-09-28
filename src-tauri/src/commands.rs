@@ -744,6 +744,64 @@ pub async fn export_snapshot(
     .map_err(|e| e.to_string())?
 }
 
+fn csv_field(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn csv_escape(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
+fn write_query_csv(
+    dest_path: &str,
+    columns: &[String],
+    rows: &[Vec<serde_json::Value>],
+) -> Result<(), String> {
+    let path = std::path::Path::new(dest_path);
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.is_dir() {
+            return Err(format!(
+                "parent directory does not exist: {}",
+                parent.display()
+            ));
+        }
+    }
+    let mut out = String::new();
+    out.push_str(&columns.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
+    out.push('\n');
+    for row in rows {
+        out.push_str(
+            &row.iter()
+                .map(|v| csv_escape(&csv_field(v)))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        out.push('\n');
+    }
+    std::fs::write(path, out).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_query_result(
+    dest_path: String,
+    columns: Vec<String>,
+    rows: Vec<Vec<serde_json::Value>>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || write_query_csv(&dest_path, &columns, &rows))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn capture_start(
     state: State<'_, AppState>,
@@ -1504,8 +1562,98 @@ pub async fn preview_shell_env() -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::stream_process;
+    use super::{csv_escape, stream_process, write_query_csv};
     use std::sync::Mutex;
+
+    fn csv_temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("beholder-csv-{}-{}", std::process::id(), tag));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn csv_escape_quotes_commas_quotes_and_newlines_only() {
+        assert_eq!(csv_escape("plain"), "plain");
+        assert_eq!(csv_escape("a,b"), "\"a,b\"");
+        assert_eq!(csv_escape("say \"hi\""), "\"say \"\"hi\"\"\"");
+        assert_eq!(csv_escape("l1\nl2"), "\"l1\nl2\"");
+        assert_eq!(csv_escape("l1\r\nl2"), "\"l1\r\nl2\"");
+    }
+
+    #[test]
+    fn write_query_csv_escapes_values_and_header() {
+        let dir = csv_temp_dir("escaping");
+        let dest = dir.join("out.csv");
+        write_query_csv(
+            &dest.display().to_string(),
+            &["id".to_string(), "name, full".to_string()],
+            &[
+                vec![
+                    serde_json::json!(1),
+                    serde_json::json!("ada, lovelace"),
+                ],
+                vec![
+                    serde_json::json!(2),
+                    serde_json::json!("he said \"run\"\nthen left"),
+                ],
+            ],
+        )
+        .unwrap();
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(
+            written,
+            "id,\"name, full\"\n1,\"ada, lovelace\"\n2,\"he said \"\"run\"\"\nthen left\"\n"
+        );
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    #[test]
+    fn write_query_csv_maps_null_bool_number_and_unicode() {
+        let dir = csv_temp_dir("kinds");
+        let dest = dir.join("out.csv");
+        write_query_csv(
+            &dest.display().to_string(),
+            &["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()],
+            &[vec![
+                serde_json::Value::Null,
+                serde_json::json!(true),
+                serde_json::json!(2.5),
+                serde_json::json!("ñ 名前"),
+            ]],
+        )
+        .unwrap();
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(written, "a,b,c,d\n,true,2.5,ñ 名前\n");
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    #[test]
+    fn write_query_csv_empty_result_writes_header_only() {
+        let dir = csv_temp_dir("empty");
+        let dest = dir.join("out.csv");
+        write_query_csv(
+            &dest.display().to_string(),
+            &["id".to_string(), "name".to_string()],
+            &[],
+        )
+        .unwrap();
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(written, "id,name\n");
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    #[test]
+    fn write_query_csv_rejects_missing_parent_dir() {
+        let dir = csv_temp_dir("missing");
+        let dest = dir.join("nope").join("out.csv");
+        let err = write_query_csv(
+            &dest.display().to_string(),
+            &["id".to_string()],
+            &[],
+        )
+        .unwrap_err();
+        assert!(err.contains("parent directory does not exist"), "got: {err}");
+    }
 
     #[tokio::test]
     async fn streams_lines_split_on_cr_and_ln() {

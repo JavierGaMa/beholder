@@ -8,7 +8,6 @@ import {
   DOCK_DEFAULT_RATIO,
   DOCK_MAX_RATIO,
   DOCK_MIN_HEIGHT,
-  isRunShortcut,
   parseDbLayout,
   RAIL_WIDTH,
   resolvePaneWidth,
@@ -123,19 +122,6 @@ describe("defaultDockHeight", () => {
   it("floors 40 percent of the container height", () => {
     expect(defaultDockHeight(800)).toBe(320);
     expect(defaultDockHeight(813)).toBe(325);
-  });
-});
-
-describe("isRunShortcut", () => {
-  it("returns true for Enter with meta or ctrl", () => {
-    expect(isRunShortcut({ key: "Enter", metaKey: true, ctrlKey: false })).toBe(true);
-    expect(isRunShortcut({ key: "Enter", metaKey: false, ctrlKey: true })).toBe(true);
-  });
-
-  it("returns false for plain Enter and for modifiers without Enter", () => {
-    expect(isRunShortcut({ key: "Enter", metaKey: false, ctrlKey: false })).toBe(false);
-    expect(isRunShortcut({ key: "a", metaKey: true, ctrlKey: false })).toBe(false);
-    expect(isRunShortcut({ key: "Enter", metaKey: false, ctrlKey: false })).toBe(false);
   });
 });
 

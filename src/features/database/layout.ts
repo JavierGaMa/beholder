@@ -48,10 +48,6 @@ export function defaultDockHeight(containerHeight: number): number {
   return Math.floor(containerHeight * DOCK_DEFAULT_RATIO);
 }
 
-export function isRunShortcut(e: { key: string; metaKey: boolean; ctrlKey: boolean }): boolean {
-  return e.key === "Enter" && (e.metaKey || e.ctrlKey);
-}
-
 export function parseDbLayout(raw: string | null): Partial<DbLayout> | null {
   if (raw == null) return null;
   let parsed: unknown;

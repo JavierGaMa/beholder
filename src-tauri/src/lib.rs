@@ -133,7 +133,8 @@ pub fn run() {
             commands::database_table_rows,
             commands::run_db_query,
             commands::reveal_snapshot,
-            commands::export_snapshot
+            commands::export_snapshot,
+            commands::export_query_result
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
