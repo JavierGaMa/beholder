@@ -47,3 +47,35 @@ export function appendPending(list: PendingWrite[], entry: PendingWrite): Pendin
 export function clearPending(): PendingWrite[] {
   return [];
 }
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+export function cellLiteral(value: number | string | null): string {
+  if (value == null) return "NULL";
+  if (typeof value === "number") return String(value);
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function cellValueFromInput(text: string, original: unknown): number | string | null {
+  if (text === "") return null;
+  if (typeof original === "number") {
+    const parsed = Number(text.trim());
+    if (text.trim() !== "" && Number.isFinite(parsed)) return parsed;
+  }
+  return text;
+}
+
+export function cellUpdateSql(
+  table: string,
+  col: string,
+  value: number | string | null,
+  rowid: number,
+): string {
+  return `UPDATE ${quoteIdent(table)} SET ${quoteIdent(col)} = ${cellLiteral(value)} WHERE rowid = ${rowid}`;
+}
+
+export function deleteRowSql(table: string, rowid: number): string {
+  return `DELETE FROM ${quoteIdent(table)} WHERE rowid = ${rowid}`;
+}

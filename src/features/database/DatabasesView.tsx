@@ -77,7 +77,9 @@ import {
 } from "./queryResults";
 import {
   appendPending,
+  cellUpdateSql,
   clearPending,
+  deleteRowSql,
   isWriteStatement,
   type PendingWrite,
 } from "./writes";
@@ -124,6 +126,7 @@ export function DatabasesView() {
   const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
   const [lastMutation, setLastMutation] = useState<MutationResult | null>(null);
   const [writePanel, setWritePanel] = useState<WritePanel>("none");
+  const [activeTable, setActiveTable] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const lastRunSqlRef = useRef<string | null>(null);
@@ -214,6 +217,7 @@ export function DatabasesView() {
     setPendingWrites(clearPending());
     setLastMutation(null);
     setWritePanel("none");
+    setActiveTable(null);
     lastRunSqlRef.current = null;
   }, [selectedDb]);
 
@@ -245,6 +249,7 @@ export function DatabasesView() {
   async function runSql(sqlArg?: string) {
     const sql = (sqlArg ?? sqlText).trim();
     if (sql === "" || run.isPending || runMutation.isPending || !viewerReady) return;
+    if (sqlArg == null) setActiveTable(null);
     lastRunSqlRef.current = sql;
     setLastRunSql(sql);
     setPage(0);
@@ -321,6 +326,33 @@ export function DatabasesView() {
     }
   }
 
+  async function refreshAfterWrite() {
+    const sql = lastRunSqlRef.current;
+    if (sql != null) await runSql(sql);
+  }
+
+  async function commitCellEdit(
+    col: string,
+    value: number | string | null,
+    rowid: number,
+  ) {
+    if (!viewerReady || activeTable == null) return;
+    const ok = await executeWrite(cellUpdateSql(activeTable, col, value, rowid));
+    if (ok) await refreshAfterWrite();
+  }
+
+  async function onDeleteRow(rowid: number) {
+    if (!viewerReady || activeTable == null) return;
+    const { confirm } = await import("@tauri-apps/plugin-dialog");
+    const yes = await confirm(
+      `Delete row ${rowid} from "${activeTable}" on the local snapshot?`,
+      { title: "Delete row", kind: "warning" },
+    );
+    if (!yes) return;
+    const ok = await executeWrite(deleteRowSql(activeTable, rowid));
+    if (ok) await refreshAfterWrite();
+  }
+
   async function runPage(nextPage: number) {
     if (lastRunSql == null || run.isPending || runMutation.isPending || !viewerReady || nextPage < 0)
       return;
@@ -365,7 +397,8 @@ export function DatabasesView() {
   }
 
   function onTableClick(name: string) {
-    const sql = prefillQuery(name);
+    setActiveTable(name);
+    const sql = prefillQuery(name, editMode);
     setSqlText(sql);
     setSqlOpen(true);
     void runSql(sql);
@@ -688,7 +721,7 @@ export function DatabasesView() {
                               key={t.name}
                               type="button"
                               onClick={() => onTableClick(t.name)}
-                              title={`SELECT * FROM "${t.name}" LIMIT 50`}
+                              title={prefillQuery(t.name, editMode)}
                               className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2"
                             >
                               <span className="min-w-0 flex-1 truncate">{t.name}</span>
@@ -967,6 +1000,9 @@ export function DatabasesView() {
                       <TableGrid
                         page={queryResultToPage(result)}
                         offsetBase={page * QUERY_PAGE_SIZE}
+                        editing={editMode && activeTable != null}
+                        onCommitCell={(col, value, rowid) => void commitCellEdit(col, value, rowid)}
+                        onDeleteRow={(rowid) => void onDeleteRow(rowid)}
                       />
                     )}
                   </div>

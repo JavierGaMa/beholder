@@ -60,9 +60,12 @@ export function joinExportPath(dir: string, fileName: string): string {
   return `${trimmed}/${fileName}`;
 }
 
-export function prefillQuery(tableName: string | null): string {
+export function prefillQuery(tableName: string | null, includeRowid = false): string {
   if (tableName == null) return "";
-  return `SELECT * FROM "${tableName.replace(/"/g, '""')}" LIMIT 50`;
+  const quoted = `"${tableName.replace(/"/g, '""')}"`;
+  return includeRowid
+    ? `SELECT rowid, * FROM ${quoted} LIMIT 500`
+    : `SELECT * FROM ${quoted} LIMIT 50`;
 }
 
 export function pushHistory(history: string[], sql: string, cap = 10): string[] {

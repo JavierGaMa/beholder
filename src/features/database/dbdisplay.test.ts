@@ -161,6 +161,17 @@ describe("prefillQuery", () => {
       'SELECT * FROM "weird ""quoted""" LIMIT 50',
     );
   });
+
+  it("prefaces a rowid column with limit 500 when requested", () => {
+    expect(prefillQuery("users", true)).toBe('SELECT rowid, * FROM "users" LIMIT 500');
+    expect(prefillQuery(null, true)).toBe("");
+  });
+
+  it("escapes embedded double quotes in the rowid variant", () => {
+    expect(prefillQuery('weird "quoted"', true)).toBe(
+      'SELECT rowid, * FROM "weird ""quoted""" LIMIT 500',
+    );
+  });
 });
 
 describe("pushHistory", () => {
