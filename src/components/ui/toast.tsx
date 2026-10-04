@@ -42,7 +42,7 @@ export function Toaster() {
         <div
           key={t.id}
           className={clsx(
-            "rounded-md border bg-surface-2 px-3 py-1.5 font-mono text-[11px] shadow-xl",
+            "anim-toast-in rounded-[var(--radius-md)] border bg-surface-2 px-3 py-1.5 text-[11px] shadow-[var(--shadow-2)]",
             t.tone === "accent" && "border-line text-txt",
             t.tone === "warn" && "border-warn/50 text-warn",
             t.tone === "danger" && "border-danger/50 text-danger",

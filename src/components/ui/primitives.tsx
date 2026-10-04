@@ -1,8 +1,18 @@
 import type { ReactNode } from "react";
 import clsx from "clsx";
+import { Button } from "./Button";
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={clsx("rounded-md border border-line bg-surface", className)}>{children}</div>;
+  return (
+    <div
+      className={clsx(
+        "rounded-[var(--radius-md)] border border-line bg-surface shadow-[var(--shadow-1)]",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Badge({
@@ -15,16 +25,16 @@ export function Badge({
   className?: string;
 }) {
   const tones = {
-    muted: "bg-surface-2 text-muted border-line",
-    ok: "bg-surface-2 text-ok border-line",
-    warn: "bg-surface-2 text-warn border-line",
-    danger: "bg-surface-2 text-danger border-line",
-    accent: "bg-surface-2 text-accent border-line",
+    muted: "border-line bg-surface-2 text-muted",
+    ok: "border-ok/25 bg-ok/10 text-ok",
+    warn: "border-warn/25 bg-warn/10 text-warn",
+    danger: "border-danger/25 bg-danger/10 text-danger",
+    accent: "border-accent/25 bg-accent/10 text-accent",
   } as const;
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+        "inline-flex items-center rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[11px] font-medium leading-none",
         tones[tone],
         className,
       )}
@@ -48,19 +58,16 @@ export function IconButton({
   className?: string;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon"
       title={title}
       onClick={onClick}
-      className={clsx(
-        "inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted transition-colors",
-        "hover:bg-surface-2 hover:text-txt",
-        active && "bg-surface-2 text-accent",
-        className,
-      )}
+      aria-pressed={active}
+      className={clsx(active && "bg-surface-2 text-accent hover:bg-surface-2 hover:text-accent", className)}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -75,7 +82,11 @@ export function EmptyState({
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
-      {icon && <span className="mb-1 text-muted/40">{icon}</span>}
+      {icon && (
+        <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-muted">
+          {icon}
+        </span>
+      )}
       <p className="text-sm text-muted">{title}</p>
       {hint && <p className="text-xs text-muted/70">{hint}</p>}
     </div>
