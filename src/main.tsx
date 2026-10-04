@@ -9,6 +9,8 @@ import "./styles/theme.css";
 const { theme, accent } = loadTheme();
 applyTheme(theme, accent);
 
+document.documentElement.dataset.platform = /Mac/i.test(navigator.userAgent) ? "macos" : "other";
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

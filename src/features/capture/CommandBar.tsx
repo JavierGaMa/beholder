@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import clsx from "clsx";
-import { ChevronDown, CircleDot, MonitorSmartphone, Plus, RotateCcw, Settings, Square, Play } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CircleDot,
+  MonitorSmartphone,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Play,
+  Plus,
+  RotateCcw,
+  Settings,
+  Square,
+} from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { loadBodyCapMb } from "../../lib/prefs";
@@ -8,12 +21,42 @@ import { useAdbDevicesQuery } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
 import type { AvdInfo } from "../../store/types";
-import { isFailed } from "../requests/filters";
+import { useTraffic, type View } from "../../store/traffic";
+import { isFailed, type Filters } from "../requests/filters";
+import { RequestsToolbar } from "../requests/RequestsToolbar";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { Badge } from "../../components/ui/primitives";
-import { useTraffic } from "../../store/traffic";
+import { Button } from "../../components/ui/Button";
+import { Menu, type MenuOption } from "../../components/ui/Menu";
+import { Tooltip } from "../../components/ui/Tooltip";
 
-export function CommandBar() {
+const VIEW_LABELS: Record<View, string> = {
+  requests: "Requests",
+  websockets: "WebSockets",
+  emulators: "Emulators",
+  apks: "APKs",
+  database: "Databases",
+  console: "Console",
+};
+
+export function CommandBar({
+  sidebarCollapsed,
+  onToggleSidebar,
+  filters,
+  onFiltersChange,
+  follow,
+  onFollowChange,
+  searchRef,
+}: {
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
+  filters: Filters;
+  onFiltersChange: (f: Filters) => void;
+  follow: boolean;
+  onFollowChange: (v: boolean) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+}) {
+  const activeView = useTraffic((s) => s.activeView);
   const captureOn = useTraffic((s) => s.captureOn);
   const capturePort = useTraffic((s) => s.capturePort);
   const metro = useTraffic((s) => s.metro);
@@ -34,10 +77,8 @@ export function CommandBar() {
   const refreshAvds = useInvalidateEmulators();
   const avds = avdsQ.data ?? [];
   const adbError = qError(adbQ.error) ?? qError(avdsQ.error);
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
 
   const failures = useMemo(
     () => order.filter((id) => { const ex = exchanges.get(id); return ex ? isFailed(ex) : false; }).length,
@@ -51,21 +92,10 @@ export function CommandBar() {
     }
   }, [refreshAvds]);
 
-  useEffect(() => {
-    if (!open) return;
-    void refreshAvds();
-    function onClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    window.addEventListener("mousedown", onClickOutside);
-    return () => window.removeEventListener("mousedown", onClickOutside);
-  }, [open, refreshAvds]);
-
   const running = avds.filter((a) => a.running);
   const stopped = avds.filter((a) => !a.running);
 
   async function selectAvd(avd: AvdInfo) {
-    setOpen(false);
     setTarget(avd.running ? avd.serial : null, avd.name);
     if (!avd.running) {
       try {
@@ -122,135 +152,154 @@ export function CommandBar() {
 
   const label = targetAvd ?? targetSerial ?? "select target";
 
+  function targetMeta(a: AvdInfo): string {
+    return a.running || a.beholder_ready ? `API ${a.api_level ?? "?"}` : "no root";
+  }
+
+  function avdItem(a: AvdInfo): MenuOption {
+    const active = targetAvd === a.name;
+    return {
+      key: `${a.running ? "run" : "stop"}-${a.name}`,
+      label: `${a.name} · ${targetMeta(a)}${active ? " · active" : ""}`,
+      icon: active ? Check : a.running ? CircleDot : undefined,
+      onSelect: () => void selectAvd(a),
+    };
+  }
+
+  const targetItems: MenuOption[] = [];
+  if (adbError) {
+    targetItems.push({ key: "adb-error", label: adbError, danger: true, disabled: true, onSelect: () => {} });
+  } else if (avds.length === 0) {
+    targetItems.push({
+      key: "no-avds",
+      label: "No emulators found — create one below.",
+      disabled: true,
+      onSelect: () => {},
+    });
+  } else {
+    if (running.length > 0) {
+      targetItems.push({ key: "hdr-running", label: "running", disabled: true, onSelect: () => {} });
+    }
+    running.forEach((a) => targetItems.push(avdItem(a)));
+    if (stopped.length > 0) {
+      targetItems.push({ key: "hdr-stopped", label: "stopped", disabled: true, onSelect: () => {} });
+    }
+    stopped.forEach((a) => targetItems.push(avdItem(a)));
+  }
+  targetItems.push({
+    key: "create-emulator",
+    label: "Create emulator",
+    icon: Plus,
+    onSelect: () => setActiveView("emulators"),
+  });
+
   return (
-    <header className="relative z-30 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
+    <header
+      data-tauri-drag-region
+      className="app-toolbar relative z-30 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-[var(--window-tint)] px-2"
+    >
+      <Tooltip label={sidebarCollapsed ? "Expand sidebar (Cmd/Ctrl+B)" : "Collapse sidebar (Cmd/Ctrl+B)"}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleSidebar}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+        </Button>
+      </Tooltip>
+
+      <div data-tauri-drag-region className="min-w-4 flex-1" />
+
+      <div className="flex items-center">
+        {activeView === "requests" ? (
+          <RequestsToolbar
+            filters={filters}
+            onChange={onFiltersChange}
+            follow={follow}
+            onFollowChange={onFollowChange}
+            searchRef={searchRef}
+          />
+        ) : (
+          <span className="px-2 text-[12px] font-medium text-muted">{VIEW_LABELS[activeView]}</span>
+        )}
+      </div>
+
+      <div data-tauri-drag-region className="min-w-4 flex-1" />
+
       <div className="flex items-center gap-2">
-        <span
-          className={clsx(
-            "h-2.5 w-2.5 rounded-full",
-            captureOn ? "animate-pulse bg-ok" : "bg-muted/50",
+        <div className="flex items-center gap-2">
+          <span
+            className={clsx(
+              "h-2.5 w-2.5 rounded-full",
+              captureOn ? "animate-pulse bg-ok" : "bg-muted/50",
+            )}
+          />
+          <span className="text-[13px] font-semibold tracking-tight text-txt">Beholder</span>
+        </div>
+
+        <Menu
+          items={targetItems}
+          onClose={() => {}}
+          width={320}
+          trigger={(t) => (
+            <Button
+              ref={t.ref}
+              variant="ghost"
+              onClick={() => {
+                void refreshAvds();
+                t.onClick();
+              }}
+              aria-haspopup="menu"
+              aria-expanded={t["aria-expanded"]}
+              title="Select emulator target"
+            >
+              <MonitorSmartphone size={13} className="text-muted" />
+              <span className="max-w-40 truncate font-mono">{label}</span>
+              <ChevronDown size={13} className="text-muted" />
+            </Button>
           )}
         />
-        <span className="text-[13px] font-semibold tracking-tight text-txt">Beholder</span>
-      </div>
 
-      <div ref={ref} className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="flex h-8 items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-[12px] text-txt hover:border-muted/50"
+        <Button
+          variant={captureOn ? "danger" : "primary"}
+          icon={captureOn ? Square : Play}
+          disabled={busy || (!captureOn && !targetSerial)}
+          onClick={toggleCapture}
+          title={captureOn ? "Stop capture" : targetSerial ? "Start capture" : "Select a running emulator first"}
         >
-          <MonitorSmartphone size={13} className="text-muted" />
-          <span className="max-w-52 truncate font-mono">{label}</span>
-          <ChevronDown size={13} className="text-muted" />
-        </button>
-        {open && (
-          <div className="absolute left-0 top-10 w-80 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
-            {adbError && (
-              <p className="px-2 py-2 text-[11px] leading-relaxed text-danger">
-                {adbError}
-              </p>
-            )}
-            {!adbError && avds.length === 0 && (
-              <p className="px-2 py-2 text-[11px] text-muted">
-                No emulators found — create one below.
-              </p>
-            )}
-            {running.length > 0 && (
-              <p className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted/70">running</p>
-            )}
-            {running.map((a) => (
-              <TargetRow key={a.name} avd={a} onSelect={() => selectAvd(a)} active={targetAvd === a.name} />
-            ))}
-            {stopped.length > 0 && (
-              <p className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted/70">stopped</p>
-            )}
-            {stopped.map((a) => (
-              <TargetRow key={a.name} avd={a} onSelect={() => selectAvd(a)} active={targetAvd === a.name} />
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setActiveView("emulators");
-              }}
-              className="mt-1 flex w-full items-center gap-2 rounded-md border border-dashed border-line px-2.5 py-2 text-[12px] text-muted hover:border-accent hover:text-accent"
-            >
-              <Plus size={13} /> Create emulator
-            </button>
-          </div>
-        )}
+          {captureOn ? "Stop" : "Capture"}
+        </Button>
+
+        {error && <ErrorBox message={error} compact className="max-w-80" />}
+
+        <div className="hidden items-center gap-3 font-mono text-[11px] text-muted lg:flex">
+          {captureOn && (
+            <CaptureDoctor
+              checks={checks}
+              unknown={healthQ.isPending || healthQ.isError}
+              busy={busy}
+              hasTarget={targetSerial != null}
+              onRestart={restartCapture}
+            />
+          )}
+          {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
+          {captureOn && metro?.detected && (
+            <Badge tone="accent">
+              Metro :{metro.port}
+            </Badge>
+          )}
+          <span>{order.length} req</span>
+          {failures > 0 && <span className="text-danger">{failures} fail</span>}
+        </div>
+
+        <Tooltip label="Settings">
+          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+            <Settings size={15} />
+          </Button>
+        </Tooltip>
       </div>
-
-      <button
-        type="button"
-        disabled={busy || (!captureOn && !targetSerial)}
-        onClick={toggleCapture}
-        title={captureOn ? "Stop capture" : targetSerial ? "Start capture" : "Select a running emulator first"}
-        className={clsx(
-          "flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-semibold transition-colors",
-          captureOn
-            ? "bg-danger/15 text-danger hover:bg-danger/25"
-            : "bg-accent text-accent-fg disabled:opacity-40",
-        )}
-      >
-        {captureOn ? <Square size={12} /> : <Play size={12} />}
-        {captureOn ? "Stop" : "Capture"}
-      </button>
-
-      {error && <ErrorBox message={error} compact className="max-w-80" />}
-
-      <div className="flex-1" />
-
-      <div className="flex items-center gap-3 font-mono text-[11px] text-muted">
-        {captureOn && (
-          <CaptureDoctor
-            checks={checks}
-            unknown={healthQ.isPending || healthQ.isError}
-            busy={busy}
-            hasTarget={targetSerial != null}
-            onRestart={restartCapture}
-          />
-        )}
-        {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
-        {captureOn && metro?.detected && (
-          <Badge tone="accent">
-            Metro :{metro.port}
-          </Badge>
-        )}
-        <span>{order.length} req</span>
-        {failures > 0 && <span className="text-danger">{failures} fail</span>}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setSettingsOpen(true)}
-        title="Settings"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-bg hover:text-txt"
-      >
-        <Settings size={15} />
-      </button>
     </header>
-  );
-}
-
-function TargetRow({ avd, onSelect, active }: { avd: AvdInfo; onSelect: () => void; active: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={clsx(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-surface",
-        active && "bg-surface",
-      )}
-    >
-      {avd.running ? <CircleDot size={12} className="shrink-0 text-ok" /> : <span className="h-3 w-3 shrink-0" />}
-      <span className="min-w-0 flex-1 truncate font-mono text-txt/90">{avd.name}</span>
-      <span className="shrink-0 text-[10px] text-muted/70">
-        {avd.running ? `API ${avd.api_level ?? "?"}` : avd.beholder_ready ? `API ${avd.api_level ?? "?"}` : "no root"}
-      </span>
-      {active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
-    </button>
   );
 }
 
@@ -297,16 +346,17 @@ function CaptureDoctor({
 
   return (
     <div ref={ref} className="relative flex items-center">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setOpen((o) => !o)}
         title="Capture doctor"
-        className="flex h-4 w-4 items-center justify-center rounded hover:bg-bg"
+        aria-expanded={open}
       >
         <span className={clsx("h-2 w-2 rounded-full", dotCls)} />
-      </button>
+      </Button>
       {open && (
-        <div className="absolute right-0 top-5 w-80 rounded-md border border-line bg-surface-2 p-1.5 shadow-xl">
+        <div className="anim-pop-in absolute right-0 top-5 w-80 rounded-[var(--radius-md)] border border-line bg-surface-2 p-1.5 shadow-[var(--shadow-3)]">
           <p className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted/70">Capture doctor</p>
           {checks.length === 0 && (
             <p className="px-2 py-1.5 text-[11px] text-muted">checking capture health...</p>
@@ -316,19 +366,19 @@ function CaptureDoctor({
               {c.title} — {c.detail}
             </p>
           ))}
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            icon={RotateCcw}
+            className="mt-1 w-full"
             disabled={busy || !hasTarget}
             title={hasTarget ? "Restart capture" : "Select a target first"}
             onClick={() => {
               setOpen(false);
               onRestart();
             }}
-            className="mt-1 flex w-full items-center gap-1.5 rounded-md bg-danger/15 px-2.5 py-2 text-[12px] font-semibold text-danger transition-colors hover:bg-danger/25 disabled:opacity-40"
           >
-            <RotateCcw size={12} />
             Restart capture
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -6,7 +6,8 @@ import { invoke } from "../../lib/tauri";
 import { formatMs } from "../../lib/format";
 import { loadSlowMs } from "../../lib/prefs";
 import { Badge, IconButton } from "../../components/ui/primitives";
-import { ContextMenu } from "../../components/ui/ContextMenu";
+import { Button, type ButtonIcon } from "../../components/ui/Button";
+import { Menu } from "../../components/ui/Menu";
 import { BodyView } from "./BodyView";
 
 type Tab = "headers" | "cookies" | "body" | "timing";
@@ -18,34 +19,29 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "timing", label: "Timing" },
 ];
 
-function CopyButton({ label, icon: Icon, onCopy }: { label: string; icon: typeof Terminal; onCopy: () => Promise<string> | string }) {
+function CopyButton({ label, icon: Icon, onCopy }: { label: string; icon: ButtonIcon; onCopy: () => Promise<string> | string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="sm"
       title={label}
+      icon={copied ? Check : Icon}
       onClick={async () => {
         const text = await onCopy();
         await navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 1300);
       }}
-      className={clsx(
-        "flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors",
-        copied
-          ? "border-ok/50 bg-ok/10 text-ok"
-          : "border-line text-muted hover:border-accent/60 hover:text-accent",
-      )}
+      className={clsx(copied && "text-ok! hover:text-ok!")}
     >
-      {copied ? <Check size={11} /> : <Icon size={11} />}
       {label}
-    </button>
+    </Button>
   );
 }
 
 function HeaderRow({ header }: { header: Header }) {
   const [copied, setCopied] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   async function copy(text: string, what: string) {
     await navigator.clipboard.writeText(text);
@@ -54,7 +50,7 @@ function HeaderRow({ header }: { header: Header }) {
   }
 
   return (
-    <div className="group grid grid-cols-[170px_1fr_24px] items-start gap-2 rounded px-1.5 py-1 font-mono text-[length:var(--mono-size,12px)] hover:bg-surface-2/60">
+    <div className="group grid grid-cols-[170px_1fr_28px] items-start gap-2 rounded px-1.5 py-1 font-mono text-[length:var(--mono-size,12px)] hover:bg-surface-2/60">
       <button
         type="button"
         title="Copy name"
@@ -77,34 +73,31 @@ function HeaderRow({ header }: { header: Header }) {
       >
         {header.value}
       </button>
-      <button
-        type="button"
-        title="Copy options"
-        onClick={(e) => {
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
-        className={clsx(
-          "flex h-5 w-6 items-center justify-center rounded text-muted/50 transition-opacity",
-          "opacity-0 group-hover:opacity-100 hover:!opacity-100 hover:text-accent",
-          menu && "!opacity-100 text-accent",
-          copied === "full" && "!opacity-100 text-ok",
+      <Menu
+        items={[
+          { key: "copy-name", label: "Copy name", icon: Type, onSelect: () => void copy(header.name, "name") },
+          { key: "copy-value", label: "Copy value", icon: TextQuote, onSelect: () => void copy(header.value, "value") },
+          { key: "copy-full", label: "Copy name: value", icon: ClipboardList, onSelect: () => void copy(`${header.name}: ${header.value}`, "full") },
+        ]}
+        onClose={() => {}}
+        trigger={(t) => (
+          <Button
+            ref={t.ref}
+            variant="ghost"
+            size="icon"
+            title="Copy options"
+            onClick={t.onClick}
+            aria-haspopup={t["aria-haspopup"]}
+            aria-expanded={t["aria-expanded"]}
+            className={clsx(
+              "-mt-1 opacity-60 hover:opacity-100 focus-visible:opacity-100",
+              copied === "full" && "text-ok! hover:text-ok!",
+            )}
+          >
+            {copied === "full" ? <Check size={11} /> : <ClipboardList size={11} />}
+          </Button>
         )}
-      >
-        {copied === "full" ? <Check size={11} /> : <ClipboardList size={11} />}
-      </button>
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={[
-            { label: `Copy name`, icon: Type, onSelect: () => copy(header.name, "name") },
-            { label: "Copy value", icon: TextQuote, onSelect: () => copy(header.value, "value") },
-            { label: "Copy name: value", icon: ClipboardList, onSelect: () => copy(`${header.name}: ${header.value}`, "full") },
-          ]}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      />
     </div>
   );
 }
@@ -116,7 +109,7 @@ function HeaderSection({ title, rows, defaultOpen = false }: { title: string; ro
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-2 text-left hover:bg-surface-2/40"
+        className="press focus-ring flex w-full items-center gap-1.5 px-2 py-2 text-left hover:bg-surface-2/40"
       >
         {open ? <ChevronDown size={12} className="text-muted" /> : <ChevronRight size={12} className="text-muted" />}
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</span>
@@ -125,7 +118,7 @@ function HeaderSection({ title, rows, defaultOpen = false }: { title: string; ro
       {open && (
         <div className="pb-1">
           {rows.length === 0 ? (
-            <p className="px-3 py-1 font-mono text-[12px] text-muted/60">none</p>
+            <p className="px-3 py-1 text-[12px] text-muted/60">none</p>
           ) : (
             rows.map((h, i) => <HeaderRow key={`${h.name}-${i}`} header={h} />)
           )}
@@ -164,7 +157,7 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
   const maxTotal = Math.max(t.ttfb_ms ?? 0, t.download_ms ?? 0, t.total_ms ?? 1);
 
   return (
-    <div className="flex w-[480px] max-w-[55vw] shrink-0 flex-col border-l border-line bg-surface">
+    <div className="anim-slide-in-right flex w-[480px] max-w-[55vw] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-start gap-2 border-b border-line px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

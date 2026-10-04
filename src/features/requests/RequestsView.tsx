@@ -1,58 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTraffic } from "../../store/traffic";
 import type { HttpExchange } from "../../store/types";
 
 type HttpExchangeLike = HttpExchange;
 import { invoke, isTauri } from "../../lib/tauri";
-import { loadFilters, loadFollow, loadSlowMs, saveFilters, saveFollow } from "../../lib/prefs";
+import { loadSlowMs } from "../../lib/prefs";
 import { EmptyState } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
 import { matchFilters, type Filters } from "./filters";
 import { RequestRow, RequestListHeader } from "./RequestRow";
 import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
 import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Pin, Terminal } from "lucide-react";
 import { DetailPane } from "./DetailPane";
-import { FilterBar, type DomainChip } from "./FilterBar";
 import { togglePinned } from "./pins";
 import { followTarget, PROGRAMMATIC_SCROLL_RESET_MS, shouldUnfollow } from "./follow";
 
-export function RequestsView() {
+export function RequestsView({
+  filters,
+  follow,
+  onFollowChange,
+  searchRef,
+}: {
+  filters: Filters;
+  follow: boolean;
+  onFollowChange: (v: boolean) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+}) {
   const exchanges = useTraffic((s) => s.exchanges);
   const order = useTraffic((s) => s.order);
   const pendingSelectId = useTraffic((s) => s.pendingSelectId);
-  const [filters, setFilters] = useState<Filters>(loadFilters);
   const [selected, setSelected] = useState<number | null>(null);
-  const [follow, setFollow] = useState(loadFollow);
   const [newCount, setNewCount] = useState(0);
   const [flashIds, setFlashIds] = useState<Set<number>>(new Set());
   const [pinned, setPinned] = useState<Set<number>>(new Set());
-  const [filtersCollapsed, setFiltersCollapsed] = useState(
-    () => localStorage.getItem("beholder.filtersOpen") === "false",
-  );
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const prevOrderLen = useRef(order.length);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const programmaticScrollRef = useRef(false);
   const programmaticScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slowMs = loadSlowMs();
   const hideDomain = filters.includeDomains.length === 1;
-
-  const domains = useMemo<DomainChip[]>(() => {
-    const counts = new Map<string, number>();
-    for (const id of order) {
-      const ex = exchanges.get(id);
-      if (!ex) continue;
-      counts.set(ex.request.host, (counts.get(ex.request.host) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([host, count]) => ({ host, count }));
-  }, [order, exchanges]);
 
   const rows = useMemo(() => {
     const all = order.map((id) => exchanges.get(id)).filter((e): e is NonNullable<typeof e> => Boolean(e));
@@ -67,14 +59,6 @@ export function RequestsView() {
     estimateSize: () => rowH + 1,
     overscan: 20,
   });
-
-  useEffect(() => {
-    saveFilters(filters);
-  }, [filters]);
-
-  useEffect(() => {
-    saveFollow(follow);
-  }, [follow]);
 
   useEffect(() => {
     if (pendingSelectId == null) return;
@@ -106,6 +90,11 @@ export function RequestsView() {
     if (!follow) return;
     scrollToFilteredBottom();
   }, [order.length, rows.length]);
+
+  useEffect(() => {
+    setNewCount(0);
+    if (follow) scrollToFilteredBottom();
+  }, [follow]);
 
   useEffect(() => {
     if (newIds.length === 0) return;
@@ -157,12 +146,12 @@ export function RequestsView() {
         programmatic: false,
       })
     ) {
-      setFollow(false);
+      onFollowChange(false);
     }
   }
 
   function jumpToLatest() {
-    setFollow(true);
+    onFollowChange(true);
     setNewCount(0);
     scrollToFilteredBottom();
   }
@@ -286,41 +275,23 @@ export function RequestsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <FilterBar
-        filters={filters}
-        onChange={setFilters}
-        domains={domains}
-        follow={follow}
-        onFollowChange={(v) => {
-          setFollow(v);
-          setNewCount(0);
-          if (v) scrollToFilteredBottom();
-        }}
-        searchRef={searchRef}
-        collapsed={filtersCollapsed}
-        onToggleCollapsed={() => {
-          setFiltersCollapsed((c) => {
-            localStorage.setItem("beholder.filtersOpen", String(!c));
-            return !c;
-          });
-        }}
-      />
       <div className="relative flex flex-1 gap-0 overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
+          <div className="flex items-center justify-between border-b border-line/50 px-3 py-0.5 text-[10px] uppercase tracking-wider text-muted/70">
             <span>
               {rows.length} requests{filters.includeDomains.length > 0 ? ` · ${filters.includeDomains.length} domains included` : ""}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={FileDown}
               onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const r = e.currentTarget.getBoundingClientRect();
                 setExportMenu({ x: r.left, y: r.bottom + 4 });
               }}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium hover:text-accent"
             >
-              <FileDown size={11} /> Export
-            </button>
+              Export
+            </Button>
             {exportNote && <span className="text-[10px] normal-case text-accent">{exportNote}</span>}
           </div>
           <RequestListHeader hideDomain={hideDomain} />
@@ -365,13 +336,14 @@ export function RequestsView() {
               )}
             </div>
             {!follow && newCount > 0 && (
-              <button
-                type="button"
+              <Button
+                variant="subtle"
+                icon={ArrowDown}
                 onClick={jumpToLatest}
-                className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-accent bg-surface-2 px-3 py-1.5 text-[12px] font-medium text-accent shadow-lg"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full! text-accent shadow-[var(--shadow-2)]"
               >
-                <ArrowDown size={12} /> {newCount} new requests
-              </button>
+                {newCount} new requests
+              </Button>
             )}
           </div>
         </div>
@@ -407,7 +379,7 @@ export function RequestsView() {
             type="button"
             title="Show detail"
             onClick={() => setDetailCollapsed(false)}
-            className="flex w-7 shrink-0 flex-col items-center justify-center gap-2 border-l border-line bg-surface text-muted hover:text-accent"
+            className="press focus-ring flex w-7 shrink-0 flex-col items-center justify-center gap-2 border-l border-line bg-surface text-muted hover:text-accent"
           >
             <PanelRight size={14} className="rotate-180" />
             <span className="text-[10px] [writing-mode:vertical-rl]">detail</span>

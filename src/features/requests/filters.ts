@@ -17,6 +17,18 @@ export function isFailed(ex: HttpExchange): boolean {
   return status != null && status >= 400;
 }
 
+export function activeFilterCount(f: Filters): number {
+  let n = 0;
+  if (f.method) n++;
+  if (f.status !== "all") n++;
+  if (f.failuresOnly) n++;
+  if (f.slowOnly) n++;
+  if (f.inBodies) n++;
+  if (f.includeDomains.length > 0) n++;
+  if (f.excludeDomains.length > 0) n++;
+  return n;
+}
+
 export function matchFilters(ex: HttpExchange, f: Filters, slowMs = 500): boolean {
   if (f.method && ex.request.method !== f.method.toUpperCase()) return false;
   const status = ex.response?.status ?? null;

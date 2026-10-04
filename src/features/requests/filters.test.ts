@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isFailed, matchFilters, type Filters } from "./filters";
+import { activeFilterCount, isFailed, matchFilters, type Filters } from "./filters";
 import type { HttpExchange } from "../../store/types";
 
 const base: Filters = {
@@ -108,5 +108,33 @@ describe("isFailed", () => {
     expect(isFailed(ex({ status: 200, error: "boom" }))).toBe(true);
     expect(isFailed(ex({ status: 502 }))).toBe(true);
     expect(isFailed(ex({ status: 302 }))).toBe(false);
+  });
+});
+
+describe("activeFilterCount", () => {
+  it("returns zero for default filters", () => {
+    expect(activeFilterCount(base)).toBe(0);
+  });
+
+  it("counts each non-default facet once", () => {
+    const f: Filters = {
+      ...base,
+      status: "4xx",
+      method: "get",
+      failuresOnly: true,
+      slowOnly: true,
+      inBodies: true,
+    };
+    expect(activeFilterCount(f)).toBe(5);
+  });
+
+  it("counts domain lists as single facets regardless of length", () => {
+    expect(activeFilterCount({ ...base, includeDomains: ["a.dev", "b.dev"] })).toBe(1);
+    expect(activeFilterCount({ ...base, excludeDomains: ["x.dev"] })).toBe(1);
+    expect(activeFilterCount({ ...base, includeDomains: ["a.dev"], excludeDomains: ["x.dev"] })).toBe(2);
+  });
+
+  it("ignores search text since it is visible in the toolbar input", () => {
+    expect(activeFilterCount({ ...base, text: "api" })).toBe(0);
   });
 });

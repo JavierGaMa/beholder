@@ -43,12 +43,18 @@ export function RequestRow({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={clsx(
-        "flex cursor-default items-center gap-2 border-b border-line px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
-        selected ? "bg-surface-2 text-txt" : "text-muted hover:bg-surface/80",
-        flash && "animate-pulse bg-accent/5",
-        failed && !selected && "shadow-[inset_3px_0_0_0_var(--danger)]",
+        "relative flex cursor-default items-center gap-2 border-b border-line px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
+        selected ? "bg-accent/10 text-txt" : "text-muted hover:bg-surface/80",
+        flash && "anim-fade-flash",
+        failed &&
+          (selected
+            ? "shadow-[inset_-3px_0_0_0_var(--danger)]"
+            : "shadow-[inset_3px_0_0_0_var(--danger)]"),
       )}
     >
+      {selected && (
+        <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
+      )}
       <span
         className={clsx(
           "flex w-14 shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide",
@@ -71,7 +77,7 @@ export function RequestRow({
       {ex.error ? (
         <AlertCircle size={13} className="w-8 shrink-0 text-danger" />
       ) : status == null ? (
-        <span className="w-8 shrink-0 animate-pulse text-center text-muted">·</span>
+        <span className="w-8 shrink-0 text-center text-muted/70">·</span>
       ) : (
         <span className={clsx("w-8 shrink-0 text-center font-semibold", statusTextCls(status))}>{status}</span>
       )}

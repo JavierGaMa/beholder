@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeftRight,
   Database,
   MonitorSmartphone,
   Package,
-  PanelLeftClose,
-  PanelLeftOpen,
   SquareTerminal,
   Waves,
   X,
@@ -17,9 +15,17 @@ import type { ConsoleEvent } from "./store/console-types";
 import { invoke, isTauri, listenTraffic } from "./lib/tauri";
 import { applyUiConfig } from "./lib/theme/applyConfig";
 import type { UiConfig } from "./lib/theme/config-types";
-import { loadSidebarCollapsed, saveSidebarCollapsed } from "./lib/prefs";
+import {
+  loadFilters,
+  loadFollow,
+  loadSidebarCollapsed,
+  saveFilters,
+  saveFollow,
+  saveSidebarCollapsed,
+} from "./lib/prefs";
 import { startMock } from "./lib/mock";
 import { CommandBar } from "./features/capture/CommandBar";
+import type { Filters } from "./features/requests/filters";
 import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
@@ -31,6 +37,9 @@ import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Toaster } from "./components/ui/toast";
+import { Modal } from "./components/ui/Modal";
+import { Drawer } from "./components/ui/Drawer";
+import { Button } from "./components/ui/Button";
 
 const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeof Waves }[] }[] = [
   {
@@ -64,10 +73,21 @@ export default function App() {
   const onboarding = useTraffic((s) => s.onboarding);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+  const [filters, setFilters] = useState<Filters>(loadFilters);
+  const [follow, setFollow] = useState<boolean>(loadFollow);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     saveSidebarCollapsed(sidebarCollapsed);
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    saveFilters(filters);
+  }, [filters]);
+
+  useEffect(() => {
+    saveFollow(follow);
+  }, [follow]);
 
   useEffect(() => {
     if (isTauri) {
@@ -154,13 +174,21 @@ export default function App() {
   }, [setActiveView]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-bg text-txt">
+    <div className="flex h-full w-full flex-col overflow-hidden text-txt">
+      <CommandBar
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
+        filters={filters}
+        onFiltersChange={setFilters}
+        follow={follow}
+        onFollowChange={setFollow}
+        searchRef={searchRef}
+      />
       <UpdateBanner />
-      <CommandBar />
       <div className="flex min-h-0 flex-1">
         <aside
           className={clsx(
-            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200",
+            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-[var(--window-tint)] transition-[width] duration-200",
             sidebarCollapsed ? "w-12" : "w-44",
           )}
         >
@@ -187,14 +215,18 @@ export default function App() {
                         type="button"
                         onClick={() => setActiveView(id)}
                         aria-label={label}
+                        aria-current={active ? "page" : undefined}
                         className={clsx(
-                          "group relative flex items-center gap-2.5 rounded-md py-1.5 text-[12px] font-medium transition-colors",
+                          "press focus-ring group relative flex items-center gap-2.5 rounded-md py-1.5 text-[12px] font-medium",
                           sidebarCollapsed ? "justify-center" : "px-2.5",
                           active
                             ? "bg-accent/10 text-accent"
                             : "text-muted hover:bg-surface-2 hover:text-txt",
                         )}
                       >
+                        {active && (
+                          <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
+                        )}
                         <Icon size={16} className="shrink-0" />
                         {!sidebarCollapsed && <span>{label}</span>}
                         {!sidebarCollapsed && (
@@ -222,65 +254,60 @@ export default function App() {
               </div>
             ))}
           </nav>
-          <div className="mt-auto p-2 pt-0">
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed((c) => !c)}
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={sidebarCollapsed ? "Expand (Cmd/Ctrl+B)" : "Collapse (Cmd/Ctrl+B)"}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-line text-[11px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-txt"
-            >
-              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-              {!sidebarCollapsed && <span>Collapse</span>}
-            </button>
-          </div>
         </aside>
-        <main className="min-h-0 min-w-0 flex-1">
-          {activeView === "requests" && <RequestsView />}
-          {activeView === "websockets" && <WebSocketsView />}
-          {activeView === "emulators" && <EmulatorsView />}
-          {activeView === "apks" && <ApksView />}
-          {activeView === "database" && <DatabasesView />}
-          {activeView === "console" && <ConsoleView />}
+        <main className="min-h-0 min-w-0 flex-1 bg-bg">
+          <div key={activeView} className="anim-view-enter h-full min-h-0">
+            {activeView === "requests" && (
+              <RequestsView
+                filters={filters}
+                follow={follow}
+                onFollowChange={setFollow}
+                searchRef={searchRef}
+              />
+            )}
+            {activeView === "websockets" && <WebSocketsView />}
+            {activeView === "emulators" && <EmulatorsView />}
+            {activeView === "apks" && <ApksView />}
+            {activeView === "database" && <DatabasesView />}
+            {activeView === "console" && <ConsoleView />}
+          </div>
         </main>
       </div>
 
       <Toaster />
 
-      {setupOpen && (
-        <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
-          onClick={() => setSetupOpen(false)}
-        >
-          <div className="w-[560px] max-w-full" onClick={(e) => e.stopPropagation()}>
-            <SetupView onClose={() => setSetupOpen(false)} />
-          </div>
-        </div>
-      )}
+      <Modal
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        width={560}
+        ariaLabel="Setup"
+        className="max-w-full!"
+      >
+        <SetupView onClose={() => setSetupOpen(false)} />
+      </Modal>
 
-      {settingsOpen && (
-        <div className="absolute inset-0 z-40 flex justify-end bg-black/40" onClick={() => setSettingsOpen(false)}>
-          <div
-            className="h-full w-96 overflow-y-auto border-l border-line bg-bg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+      <Drawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        width={384}
+        ariaLabel="Settings"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-bg px-4 py-3">
+          <span className="text-sm font-semibold">Settings</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSettingsOpen(false)}
+            aria-label="Close settings"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-bg px-4 py-3">
-              <span className="text-sm font-semibold">Settings</span>
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(false)}
-                className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-txt"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <SettingsView />
-          </div>
+            <X size={14} />
+          </Button>
         </div>
-      )}
+        <SettingsView />
+      </Drawer>
 
       {onboarding && (
-        <div className="absolute bottom-6 right-6 z-40 w-[420px] shadow-2xl">
+        <div className="anim-pop-in absolute bottom-6 right-6 z-40 w-[420px] shadow-[var(--shadow-3)]">
           <OnboardingPanel
             avdName={onboarding.avdName}
             createdNew={onboarding.createdNew}
