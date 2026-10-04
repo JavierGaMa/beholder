@@ -198,11 +198,11 @@ export function EmulatorsView() {
           {avds.map((avd) => (
             <div
               key={avd.name}
-              className="flex items-center justify-between rounded-md border border-line px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2"
             >
-              <div className="min-w-0">
-                <span className="font-mono text-[12px] text-txt">{avd.name}</span>
-                <span className="ml-2 text-[11px] text-muted">
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate font-mono text-[12px] text-txt">{avd.name}</span>
+                <span className="truncate text-[11px] text-muted">
                   {avd.device ?? "?"} · API {avd.api_level ?? "?"} · {avd.image_tag ?? "?"}
                 </span>
               </div>
@@ -242,7 +242,7 @@ export function EmulatorsView() {
         <div id="create-avd">
           <p className="text-[12px] font-medium text-txt">Create emulator</p>
         </div>
-        <div className="mt-2 rounded-md border border-line bg-bg p-2.5">
+        <div className="mt-2 max-w-xl rounded-md border border-line bg-bg p-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted/70">
             Beholder requirements — applied automatically
           </p>
@@ -261,7 +261,7 @@ export function EmulatorsView() {
             </li>
           </ul>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid max-w-xl grid-cols-2 gap-3">
           <Input
             id="create-avd-name"
             label="Name"
@@ -302,8 +302,8 @@ export function EmulatorsView() {
                 <span className="truncate font-mono">{installLog ?? "downloading..."}</span>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-warn">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 text-[11px] text-warn">
                   Image not installed — downloading ~1-2 GB is required before creating.
                 </span>
                 <Button

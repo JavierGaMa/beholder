@@ -322,12 +322,13 @@ export function ConsoleView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
         <SegmentedControl
           options={PANES}
           value={paneMode}
           onChange={setPaneMode}
           ariaLabel="Console pane"
+          className="shrink-0"
         />
         <span className="flex min-w-0 items-center gap-1.5">
           <span className={clsx("size-2 shrink-0 rounded-full", statusDotCls(status))} />
@@ -339,8 +340,8 @@ export function ConsoleView() {
             {serial ?? targetSerial}
           </span>
         </span>
-        <span className="text-[11px] text-muted">buffer</span>
-        <div className="w-24">
+        <span className="shrink-0 text-[11px] text-muted">buffer</span>
+        <div className="w-24 shrink-0">
           <Select
             value={buffer}
             onChange={(e) => onBufferChange(e.target.value)}
@@ -360,6 +361,7 @@ export function ConsoleView() {
           onClick={() => setPaused(!paused)}
           aria-pressed={paused}
           className={clsx(
+            "shrink-0",
             paused && "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
           )}
         >
@@ -367,11 +369,11 @@ export function ConsoleView() {
           {paused ? "Resume" : "Pause"}
         </Button>
         {running ? (
-          <Button variant="danger" size="sm" icon={Square} onClick={stop}>
+          <Button variant="danger" size="sm" icon={Square} onClick={stop} className="shrink-0">
             Stop
           </Button>
         ) : (
-          <Button variant="primary" size="sm" icon={Play} onClick={onStart}>
+          <Button variant="primary" size="sm" icon={Play} onClick={onStart} className="shrink-0">
             Start
           </Button>
         )}
@@ -447,7 +449,7 @@ export function ConsoleView() {
               </>
             )}
           </div>
-          <div className="flex h-7 items-center overflow-hidden rounded-md border border-line">
+          <div className="flex h-7 shrink-0 items-center overflow-hidden rounded-md border border-line">
             {SEVERITY.map((s, i) => (
               <button
                 key={s.label}
@@ -465,7 +467,7 @@ export function ConsoleView() {
               </button>
             ))}
           </div>
-          <div className="w-32">
+          <div className="w-32 shrink-0">
             <Input
               list="console-observed-tags"
               mono
@@ -480,7 +482,7 @@ export function ConsoleView() {
               <option key={t} value={t} />
             ))}
           </datalist>
-          <div className="w-44">
+          <div className="w-44 shrink-0">
             <Input
               mono
               value={regex}
@@ -630,7 +632,7 @@ export function ConsoleView() {
         )}
       </div>
       <div className="flex shrink-0 items-center justify-between border-t border-line bg-surface px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-        <span>
+        <span className="shrink-0">
           {lineCount} lines ·{" "}
           <button
             type="button"
@@ -652,7 +654,7 @@ export function ConsoleView() {
           {pausedDropCount > 0 ? ` · ${pausedDropCount} dropped` : ""}
           {paused && pausedDropCount === 0 ? " · paused" : ""}
         </span>
-        <span>
+        <span className="min-w-0 truncate">
           {rows.length} shown · {statusLabel(status)}
         </span>
       </div>

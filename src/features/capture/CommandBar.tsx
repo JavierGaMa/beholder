@@ -39,6 +39,10 @@ const VIEW_LABELS: Record<View, string> = {
   console: "Console",
 };
 
+export function isTrafficView(view: View): boolean {
+  return view === "requests" || view === "websockets";
+}
+
 export function CommandBar({
   sidebarCollapsed,
   onToggleSidebar,
@@ -67,6 +71,7 @@ export function CommandBar({
   const setTarget = useTraffic((s) => s.setTarget);
   const setActiveView = useTraffic((s) => s.setActiveView);
   const setCapture = useTraffic((s) => s.setCapture);
+  const settingsOpen = useTraffic((s) => s.settingsOpen);
   const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
 
@@ -84,6 +89,8 @@ export function CommandBar({
     () => order.filter((id) => { const ex = exchanges.get(id); return ex ? isFailed(ex) : false; }).length,
     [order, exchanges],
   );
+
+  const showCapture = isTrafficView(activeView);
 
   useEffect(() => {
     void refreshAvds();
@@ -196,109 +203,128 @@ export function CommandBar({
   return (
     <header
       data-tauri-drag-region
-      className="app-toolbar relative z-30 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-[var(--window-tint)] px-2"
+      className="app-toolbar relative z-30 h-11 shrink-0 border-b border-line bg-surface"
     >
-      <Tooltip label={sidebarCollapsed ? "Expand sidebar (Cmd/Ctrl+B)" : "Collapse sidebar (Cmd/Ctrl+B)"}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-        </Button>
-      </Tooltip>
-
-      <div data-tauri-drag-region className="min-w-4 flex-1" />
-
-      <div className="flex items-center">
-        {activeView === "requests" ? (
-          <RequestsToolbar
-            filters={filters}
-            onChange={onFiltersChange}
-            follow={follow}
-            onFollowChange={onFollowChange}
-            searchRef={searchRef}
-          />
-        ) : (
-          <span className="px-2 text-[12px] font-medium text-muted">{VIEW_LABELS[activeView]}</span>
-        )}
-      </div>
-
-      <div data-tauri-drag-region className="min-w-4 flex-1" />
-
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={clsx(
-              "h-2.5 w-2.5 rounded-full",
-              captureOn ? "animate-pulse bg-ok" : "bg-muted/50",
-            )}
-          />
-          <span className="text-[13px] font-semibold tracking-tight text-txt">Beholder</span>
-        </div>
-
-        <Menu
-          items={targetItems}
-          onClose={() => {}}
-          width={320}
-          trigger={(t) => (
-            <Button
-              ref={t.ref}
-              variant="ghost"
-              onClick={() => {
-                void refreshAvds();
-                t.onClick();
-              }}
-              aria-haspopup="menu"
-              aria-expanded={t["aria-expanded"]}
-              title="Select emulator target"
-            >
-              <MonitorSmartphone size={13} className="text-muted" />
-              <span className="max-w-40 truncate font-mono">{label}</span>
-              <ChevronDown size={13} className="text-muted" />
-            </Button>
-          )}
-        />
-
-        <Button
-          variant={captureOn ? "danger" : "primary"}
-          icon={captureOn ? Square : Play}
-          disabled={busy || (!captureOn && !targetSerial)}
-          onClick={toggleCapture}
-          title={captureOn ? "Stop capture" : targetSerial ? "Start capture" : "Select a running emulator first"}
-        >
-          {captureOn ? "Stop" : "Capture"}
-        </Button>
-
-        {error && <ErrorBox message={error} compact className="max-w-80" />}
-
-        <div className="hidden items-center gap-3 font-mono text-[11px] text-muted lg:flex">
-          {captureOn && (
-            <CaptureDoctor
-              checks={checks}
-              unknown={healthQ.isPending || healthQ.isError}
-              busy={busy}
-              hasTarget={targetSerial != null}
-              onRestart={restartCapture}
-            />
-          )}
-          {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
-          {captureOn && metro?.detected && (
-            <Badge tone="accent">
-              Metro :{metro.port}
-            </Badge>
-          )}
-          <span>{order.length} req</span>
-          {failures > 0 && <span className="text-danger">{failures} fail</span>}
-        </div>
-
-        <Tooltip label="Settings">
-          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Settings">
-            <Settings size={15} />
+      <div className="flex h-full flex-nowrap items-center gap-2 overflow-hidden px-2">
+        <Tooltip label={sidebarCollapsed ? "Expand sidebar (Cmd/Ctrl+B)" : "Collapse sidebar (Cmd/Ctrl+B)"}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={onToggleSidebar}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           </Button>
         </Tooltip>
+
+        <div data-tauri-drag-region className="min-w-0 flex-1" />
+
+        <div className="flex min-w-0 max-w-3xl flex-auto items-center justify-center overflow-hidden">
+          {activeView === "requests" ? (
+            <RequestsToolbar
+              filters={filters}
+              onChange={onFiltersChange}
+              follow={follow}
+              onFollowChange={onFollowChange}
+              searchRef={searchRef}
+            />
+          ) : (
+            <span className="min-w-0 truncate px-2 text-[12px] font-medium text-muted">
+              {VIEW_LABELS[activeView]}
+            </span>
+          )}
+        </div>
+
+        <div data-tauri-drag-region className="min-w-0 flex-1" />
+
+        <div className="flex min-w-0 items-center gap-2">
+          {showCapture && (
+            <>
+              <span
+                title={captureOn ? "Capture running" : "Capture stopped"}
+                className={clsx(
+                  "h-2.5 w-2.5 shrink-0 rounded-full",
+                  captureOn ? "animate-pulse bg-ok" : "bg-muted/50",
+                )}
+              />
+
+              <Menu
+                items={targetItems}
+                onClose={() => {}}
+                width={320}
+                trigger={(t) => (
+                  <Button
+                    ref={t.ref}
+                    variant="ghost"
+                    className="min-w-0"
+                    onClick={() => {
+                      void refreshAvds();
+                      t.onClick();
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={t["aria-expanded"]}
+                    title="Select emulator target"
+                  >
+                    <MonitorSmartphone size={13} className="shrink-0 text-muted" />
+                    <span className="min-w-12 max-w-40 truncate font-mono">{label}</span>
+                    <ChevronDown size={13} className="shrink-0 text-muted" />
+                  </Button>
+                )}
+              />
+
+              <Button
+                variant={captureOn ? "danger" : "primary"}
+                icon={captureOn ? Square : Play}
+                disabled={busy || (!captureOn && !targetSerial)}
+                onClick={toggleCapture}
+                className="shrink-0 whitespace-nowrap"
+                title={captureOn ? "Stop capture" : targetSerial ? "Start capture" : "Select a running emulator first"}
+              >
+                {captureOn ? "Stop" : "Capture"}
+              </Button>
+
+              <div className="hidden shrink-0 items-center gap-3 font-mono text-[11px] text-muted lg:flex">
+                {captureOn && (
+                  <CaptureDoctor
+                    checks={checks}
+                    unknown={healthQ.isPending || healthQ.isError}
+                    busy={busy}
+                    hasTarget={targetSerial != null}
+                    onRestart={restartCapture}
+                  />
+                )}
+                {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
+                {captureOn && metro?.detected && (
+                  <Badge tone="accent">
+                    Metro :{metro.port}
+                  </Badge>
+                )}
+                <span>{order.length} req</span>
+                {failures > 0 && <span className="text-danger">{failures} fail</span>}
+              </div>
+            </>
+          )}
+
+          <Tooltip label="Settings">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              aria-label="Settings"
+            >
+              <Settings size={15} />
+            </Button>
+          </Tooltip>
+        </div>
       </div>
+
+      {error && (
+        <div className="anim-pop-in absolute right-2 top-full z-40 w-80 max-w-[calc(100vw-1rem)]">
+          <ErrorBox message={error} />
+        </div>
+      )}
     </header>
   );
 }

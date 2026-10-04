@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Pin, PinOff, Trash2 } from "lucide-react";
+import { Pin, PinOff, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Checkbox } from "../../components/ui/Checkbox";
 import { Chip } from "../../components/ui/Chip";
 import { Input } from "../../components/ui/Input";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { Tooltip } from "../../components/ui/Tooltip";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Badge, IconButton } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
@@ -96,8 +97,8 @@ export function RequestsToolbar({
   const activeCount = activeFilterCount(filters);
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-64">
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <div className="min-w-28 max-w-md flex-1">
         <Input
           ref={searchRef}
           mono
@@ -107,24 +108,31 @@ export function RequestsToolbar({
           aria-label="Search requests"
         />
       </div>
-      <Button
-        ref={anchorRef}
-        variant="ghost"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        Filters
-        {activeCount > 0 && <Badge tone="accent">{activeCount}</Badge>}
-      </Button>
-      <Chip
-        selected={follow}
-        onClick={() => onFollowChange(!follow)}
-        title="Follow newest requests (pauses when you scroll up)"
-      >
-        {follow ? <Pin size={12} /> : <PinOff size={12} />} follow
-      </Chip>
-      <IconButton title="Clear all captured traffic" onClick={clear}>
+      <Tooltip label="Filters">
+        <Button
+          ref={anchorRef}
+          variant="ghost"
+          className="shrink-0 whitespace-nowrap"
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Filters"
+        >
+          <SlidersHorizontal size={14} className="shrink-0 md:hidden" />
+          <span className="hidden md:inline">Filters</span>
+          {activeCount > 0 && <Badge tone="accent">{activeCount}</Badge>}
+        </Button>
+      </Tooltip>
+      <span className="hidden shrink-0 md:inline-flex">
+        <Chip
+          selected={follow}
+          onClick={() => onFollowChange(!follow)}
+          title="Follow newest requests (pauses when you scroll up)"
+        >
+          {follow ? <Pin size={12} /> : <PinOff size={12} />} follow
+        </Chip>
+      </span>
+      <IconButton title="Clear all captured traffic" onClick={clear} className="shrink-0">
         <Trash2 size={14} />
       </IconButton>
       {open && (

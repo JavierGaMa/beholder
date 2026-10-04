@@ -47,7 +47,7 @@ export function SettingsView() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4 p-5">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-4">
       <h1 className="text-sm font-semibold text-txt">Settings</h1>
 
       <Panel className="p-4">

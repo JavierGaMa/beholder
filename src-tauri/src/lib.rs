@@ -70,6 +70,7 @@ pub fn run() {
             {
                 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
                 if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title("");
                     if let Err(e) = apply_vibrancy(
                         &window,
                         NSVisualEffectMaterial::Sidebar,

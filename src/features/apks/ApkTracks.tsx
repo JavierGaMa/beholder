@@ -382,12 +382,14 @@ export function BuildCard({
           deviceSelected={deviceSelected}
           onInstall={() => onInstall(apk)}
         />
-        <RowMenu
-          downloaded={downloaded}
-          busy={busy}
-          onReveal={() => onRevealLocal(apk)}
-          onDelete={() => onDeleteLocal(apk)}
-        />
+        <div className="flex shrink-0 items-center">
+          <RowMenu
+            downloaded={downloaded}
+            busy={busy}
+            onReveal={() => onRevealLocal(apk)}
+            onDelete={() => onDeleteLocal(apk)}
+          />
+        </div>
       </div>
     </div>
   );

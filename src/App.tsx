@@ -38,7 +38,7 @@ import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Toaster } from "./components/ui/toast";
 import { Modal } from "./components/ui/Modal";
-import { Drawer } from "./components/ui/Drawer";
+import { Tooltip } from "./components/ui/Tooltip";
 import { Button } from "./components/ui/Button";
 
 const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeof Waves }[] }[] = [
@@ -76,6 +76,22 @@ export default function App() {
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [follow, setFollow] = useState<boolean>(loadFollow);
   const searchRef = useRef<HTMLInputElement>(null);
+  const settingsCloseRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    settingsCloseRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSettingsOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus();
+    };
+  }, [settingsOpen, setSettingsOpen]);
 
   useEffect(() => {
     saveSidebarCollapsed(sidebarCollapsed);
@@ -185,10 +201,10 @@ export default function App() {
         searchRef={searchRef}
       />
       <UpdateBanner />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <aside
           className={clsx(
-            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-[var(--window-tint)] transition-[width] duration-200",
+            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200",
             sidebarCollapsed ? "w-12" : "w-44",
           )}
         >
@@ -272,6 +288,32 @@ export default function App() {
             {activeView === "console" && <ConsoleView />}
           </div>
         </main>
+
+        {settingsOpen && (
+          <div
+            role="dialog"
+            aria-label="Settings"
+            className="anim-view-enter absolute inset-0 z-30 flex flex-col border-t border-line bg-bg"
+          >
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
+              <span className="text-sm font-semibold">Settings</span>
+              <Tooltip label="Close (Esc)">
+                <Button
+                  ref={settingsCloseRef}
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSettingsOpen(false)}
+                  aria-label="Close settings"
+                >
+                  <X size={14} />
+                </Button>
+              </Tooltip>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <SettingsView />
+            </div>
+          </div>
+        )}
       </div>
 
       <Toaster />
@@ -286,28 +328,8 @@ export default function App() {
         <SetupView onClose={() => setSetupOpen(false)} />
       </Modal>
 
-      <Drawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        width={384}
-        ariaLabel="Settings"
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-bg px-4 py-3">
-          <span className="text-sm font-semibold">Settings</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSettingsOpen(false)}
-            aria-label="Close settings"
-          >
-            <X size={14} />
-          </Button>
-        </div>
-        <SettingsView />
-      </Drawer>
-
       {onboarding && (
-        <div className="anim-pop-in absolute bottom-6 right-6 z-40 w-[420px] shadow-[var(--shadow-3)]">
+        <div className="anim-pop-in absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100vw-3rem)] shadow-[var(--shadow-3)]">
           <OnboardingPanel
             avdName={onboarding.avdName}
             createdNew={onboarding.createdNew}

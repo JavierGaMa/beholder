@@ -161,8 +161,8 @@ export function ApksView() {
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-4 overflow-y-auto p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-sm font-semibold text-txt">APKs</h1>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <h1 className="shrink-0 text-sm font-semibold text-txt">APKs</h1>
         <SourceChip listUrl={listUrl} buildCount={entries.length} onSaved={() => void refresh()} />
       </div>
 

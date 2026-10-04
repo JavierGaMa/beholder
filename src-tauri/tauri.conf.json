@@ -16,6 +16,8 @@
         "title": "Beholder",
         "width": 800,
         "height": 600,
+        "minWidth": 640,
+        "minHeight": 480,
         "titleBarStyle": "Overlay",
         "transparent": true
       }

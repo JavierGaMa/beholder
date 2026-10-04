@@ -488,7 +488,7 @@ export function DatabasesView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
         <DevicePicker serial={serial} onSelect={setSerial} />
         <PackagePicker
           pkg={pkg}
@@ -497,7 +497,7 @@ export function DatabasesView() {
           disabled={serial === ""}
           onSelect={setPkg}
         />
-        <span className="ml-auto flex items-center gap-2">
+        <span className="ml-auto flex min-w-0 items-center gap-2">
           {pkg != null && dbs.length > 0 && (
             <span className="font-mono text-[11px] text-muted/70">
               {dbs.length} database{dbs.length === 1 ? "" : "s"}
@@ -545,7 +545,7 @@ export function DatabasesView() {
             ) : (
               <>
                 <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-                  <span className="truncate" title={pkg}>
+                  <span className="min-w-0 truncate" title={pkg}>
                     {shortPackage(pkg)}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -759,12 +759,12 @@ export function DatabasesView() {
                       </div>
                     </section>
                   )}
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
-                    <span className="font-mono text-[11px] text-muted">{summaryText}</span>
+                  <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1">
+                    <span className="min-w-0 truncate font-mono text-[11px] text-muted">{summaryText}</span>
                     {lastMutation != null && !run.isPending && !runMutation.isPending && (
                       <span
                         title={`Applied to the local snapshot; the grid keeps the previous query result:\n${lastMutation.changes} change${lastMutation.changes === 1 ? "" : "s"} · ${lastMutation.elapsed_ms} ms`}
-                        className="font-mono text-[11px] text-accent"
+                        className="min-w-0 truncate font-mono text-[11px] text-accent"
                       >
                         {formatRowCount(lastMutation.changes)} row{lastMutation.changes === 1 ? "" : "s"}{" "}
                         changed · {lastMutation.elapsed_ms} ms
@@ -789,7 +789,7 @@ export function DatabasesView() {
                         edit its rows
                       </span>
                     )}
-                    <span className="ml-auto flex items-center gap-2">
+                    <span className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
                       {editMode && pendingWrites.length > 0 && (
                         <Button
                           variant="ghost"
@@ -1036,11 +1036,11 @@ export function DatabasesView() {
                       </Button>
                     </div>
                   )}
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
-                    <span className="ml-auto flex items-center gap-2">
+                  <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
+                    <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
                       {activeSnapshot != null && (
                         <span
-                          className="font-mono text-[10px] text-muted/70"
+                          className="min-w-0 truncate font-mono text-[10px] text-muted/70"
                           title={activeSnapshot.local_path}
                         >
                           snapshot {formatPulledAt(activeSnapshot.pulled_at_epoch_ms)}

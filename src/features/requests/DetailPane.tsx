@@ -157,15 +157,15 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
   const maxTotal = Math.max(t.ttfb_ms ?? 0, t.download_ms ?? 0, t.total_ms ?? 1);
 
   return (
-    <div className="anim-slide-in-right flex w-[480px] max-w-[55vw] shrink-0 flex-col border-l border-line bg-surface">
+    <div className="anim-slide-in-right flex w-[38%] min-w-[360px] max-w-[560px] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-start gap-2 border-b border-line px-3 py-2.5">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[12px] font-bold text-accent">{ex.request.method}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 font-mono text-[12px] font-bold text-accent">{ex.request.method}</span>
             {status != null && (
               <span
                 className={clsx(
-                  "font-mono text-[12px] font-bold",
+                  "shrink-0 font-mono text-[12px] font-bold",
                   status < 300 ? "text-ok" : status < 400 ? "text-warn" : "text-danger",
                 )}
               >
@@ -173,7 +173,7 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
               </span>
             )}
             {ex.error && <Badge tone="danger">error</Badge>}
-            <span className="text-[10px] text-muted">{ex.protocol}</span>
+            <span className="min-w-0 truncate text-[10px] text-muted">{ex.protocol}</span>
           </div>
           <button
             type="button"
