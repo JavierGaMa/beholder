@@ -9,6 +9,9 @@ import { invoke, isTauri } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
 import { toast } from "../../components/ui/toast";
 import { Panel } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Toggle } from "../../components/ui/Toggle";
 import {
   bridgeStatusLine,
   formatBridgeInfo,
@@ -56,7 +59,7 @@ export function SettingsView() {
               type="button"
               onClick={() => save({ ...config, theme: t })}
               className={clsx(
-                "rounded-md border p-2.5 text-left transition-colors",
+                "press focus-ring rounded-md border p-2.5 text-left transition-colors",
                 config.theme === t ? "border-accent" : "border-line hover:border-muted/40",
               )}
               data-theme={t}
@@ -77,7 +80,7 @@ export function SettingsView() {
               type="button"
               onClick={() => save({ ...config, accent: a })}
               className={clsx(
-                "flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors",
+                "press focus-ring flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors",
                 config.accent === a ? "border-txt" : "border-transparent hover:border-line",
               )}
               title={a}
@@ -97,13 +100,14 @@ export function SettingsView() {
             </p>
           </div>
           {isTauri && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={FileCode2}
               onClick={() => invoke("reveal_config").catch(() => {})}
-              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-accent"
             >
-              <FileCode2 size={12} /> Reveal
-            </button>
+              Reveal
+            </Button>
           )}
         </div>
         <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse
@@ -133,14 +137,17 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
           next capture start.
         </p>
         <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            step={0.25}
-            value={bodyCapMb}
-            onChange={(e) => changeCap(Number(e.target.value))}
-            className="h-7 w-24 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
-          />
+          <div className="w-24">
+            <Input
+              type="number"
+              min={0}
+              step={0.25}
+              mono
+              aria-label="Body capture limit in megabytes"
+              value={bodyCapMb}
+              onChange={(e) => changeCap(Number(e.target.value))}
+            />
+          </div>
           <span className="text-[12px] text-muted">MB</span>
         </div>
       </Panel>
@@ -151,14 +158,17 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
           Requests slower than this are highlighted in the list, the slow filter, and timing bars.
         </p>
         <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={50}
-            step={50}
-            value={slowMs}
-            onChange={(e) => changeSlow(Number(e.target.value))}
-            className="h-7 w-24 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
-          />
+          <div className="w-24">
+            <Input
+              type="number"
+              min={50}
+              step={50}
+              mono
+              aria-label="Slow request threshold in milliseconds"
+              value={slowMs}
+              onChange={(e) => changeSlow(Number(e.target.value))}
+            />
+          </div>
           <span className="text-[12px] text-muted">ms</span>
         </div>
       </Panel>
@@ -203,14 +213,16 @@ function UpdatesPanel() {
             {appVersion ? ` — running ${appVersion}` : ""}.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0"
           disabled={!isTauri || busy}
           onClick={checkForUpdates}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-accent disabled:opacity-40"
         >
-          <RefreshCw size={12} className={checking ? "animate-spin" : undefined} /> Check for updates
-        </button>
+          <RefreshCw size={14} className={clsx("shrink-0", checking && "animate-spin")} /> Check for
+          updates
+        </Button>
       </div>
       {result && (
         <p
@@ -283,25 +295,12 @@ function AgentBridgePanel() {
             HTTP API.
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          aria-label="Enable agent bridge"
+        <Toggle
+          checked={enabled}
+          onChange={() => void toggleEnabled()}
           disabled={busy || !status}
-          onClick={toggleEnabled}
-          className={clsx(
-            "relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:opacity-40",
-            enabled ? "border-accent bg-accent/20" : "border-line bg-bg",
-          )}
-        >
-          <span
-            className={clsx(
-              "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full transition-all",
-              enabled ? "left-[calc(100%-1rem)] bg-accent" : "left-1 bg-muted",
-            )}
-          />
-        </button>
+          label="Enable agent bridge"
+        />
       </div>
       {status && (
         <>
@@ -309,14 +308,15 @@ function AgentBridgePanel() {
             {bridgeStatusLine(status)}
           </p>
           <div className="mt-3">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Copy}
               disabled={!enabled}
               onClick={copyMcpConfig}
-              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-accent disabled:opacity-40"
             >
-              <Copy size={12} /> Copy MCP config
-            </button>
+              Copy MCP config
+            </Button>
             <p className="mt-2 font-mono text-[11px] text-muted">
               {formatBridgeInfo(status)}
             </p>
@@ -368,22 +368,12 @@ function DeviceMaintenance() {
         sessions — remove it with full cleanup.
       </p>
       <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={revertProxy}
-          className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-txt disabled:opacity-40"
-        >
+        <Button variant="ghost" size="sm" disabled={busy} onClick={revertProxy}>
           Revert proxy
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={fullCleanup}
-          className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-danger disabled:opacity-40"
-        >
+        </Button>
+        <Button variant="danger" size="sm" disabled={busy} onClick={fullCleanup}>
           Full cleanup
-        </button>
+        </Button>
       </div>
       {msg && <p className="mt-2 break-words text-[11px] text-muted">{msg}</p>}
     </Panel>

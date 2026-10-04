@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
-import { Badge, Panel } from "../../components/ui/primitives";
+import { Badge } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useHostDoctorQuery, useInvalidateHostDoctor } from "../../queries/hostDoctor";
 import { fixPlan, type HostCheckT } from "./fixPlan";
@@ -77,7 +78,7 @@ export function SetupView({ onClose }: { onClose: () => void }) {
   const anyFail = checks.some((c) => c.status === "fail");
 
   return (
-    <Panel className="p-5">
+    <div className="p-5">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-semibold text-txt">Setup</p>
@@ -86,23 +87,18 @@ export function SetupView({ onClose }: { onClose: () => void }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => void refreshDoctor()}
             disabled={loading || busy}
             title="Re-run checks"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
-          >
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose} title="Close">
             <X size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -124,21 +120,22 @@ export function SetupView({ onClose }: { onClose: () => void }) {
                   </p>
                 </div>
                 {c.fix && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="shrink-0"
                     disabled={busy}
                     onClick={() =>
                       c.fix === "write_shell_env" ? askEnvPreview() : applyFix(c.fix!)
                     }
-                    className="flex shrink-0 items-center gap-1 rounded-md border border-accent/50 px-2 py-1 text-[11px] font-medium text-accent hover:bg-accent/10 disabled:opacity-40"
                   >
                     {running === c.fix ? (
-                      <CircleDashed size={11} className="animate-spin" />
+                      <CircleDashed size={12} className="animate-spin" />
                     ) : (
-                      <Zap size={11} />
+                      <Zap size={12} />
                     )}
                     Fix
-                  </button>
+                  </Button>
                 )}
               </li>
             );
@@ -151,24 +148,20 @@ export function SetupView({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] text-muted">This line will be appended to your ~/.zshrc:</p>
           <pre className="mt-1 font-mono text-[11px] text-txt">{envPreview.join("\n")}</pre>
           <div className="mt-2 flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               disabled={busy}
               onClick={async () => {
                 setEnvPreview(null);
                 await applyFix("write_shell_env");
               }}
-              className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-fg disabled:opacity-40"
             >
               Append to ~/.zshrc
-            </button>
-            <button
-              type="button"
-              onClick={() => setEnvPreview(null)}
-              className="rounded-md border border-line px-2.5 py-1 text-[11px] text-muted hover:text-txt"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEnvPreview(null)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -183,15 +176,10 @@ export function SetupView({ onClose }: { onClose: () => void }) {
       {checks.length > 0 && (
         <div className="mt-4 flex items-center gap-2 border-t border-line pt-3">
           {plan.length > 0 && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={setupAll}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-fg disabled:opacity-40"
-            >
+            <Button variant="primary" disabled={busy} onClick={setupAll}>
               {busy ? <CircleDashed size={12} className="animate-spin" /> : <Zap size={12} />} Set
               up everything
-            </button>
+            </Button>
           )}
           {!anyFail && !loading && (
             <Badge tone="ok" className="ml-auto">
@@ -200,6 +188,6 @@ export function SetupView({ onClose }: { onClose: () => void }) {
           )}
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
