@@ -3,6 +3,8 @@ import { AlertCircle, CircleCheck, Loader2 } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { toast } from "../../components/ui/toast";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
 import {
   applyApksTestResult,
   canSaveApks,
@@ -58,38 +60,28 @@ export function ApksOnboarding({
         here, ready to install on any emulator.
       </p>
 
-      <label className="mt-4 block text-[11px] font-medium uppercase tracking-wider text-muted/70">
-        Container list URL
-      </label>
-      <input
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        placeholder={URL_PLACEHOLDER}
-        spellCheck={false}
-        className="mt-1.5 h-8 w-full rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
-      />
+      <div className="mt-4">
+        <Input
+          label="Container list URL"
+          mono
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder={URL_PLACEHOLDER}
+          spellCheck={false}
+        />
+      </div>
 
       <div className="mt-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void runTest()}
-          disabled={!canTest}
-          className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-txt hover:border-accent disabled:opacity-40 disabled:hover:border-line"
-        >
+        <Button variant="subtle" size="sm" onClick={() => void runTest()} disabled={!canTest}>
           {test.phase === "testing" ? (
-            <Loader2 size={12} className="animate-spin" />
+            <Loader2 size={14} className="animate-spin" />
           ) : null}
           Test connection
-        </button>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!canSave}
-          className="flex h-7 items-center gap-1.5 rounded-md bg-accent px-3 text-[12px] font-semibold text-accent-fg transition-transform hover:scale-[1.01] disabled:opacity-40 disabled:hover:scale-100"
-        >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : null}
+        </Button>
+        <Button variant="primary" size="sm" onClick={() => void save()} disabled={!canSave}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : null}
           Save
-        </button>
+        </Button>
       </div>
 
       {test.phase === "ok" && (

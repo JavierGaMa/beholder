@@ -20,6 +20,7 @@ import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { loadDbLayout, saveDbLayout } from "../../lib/prefs";
 import { EmptyState } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
 import { DevicePicker } from "../apks/DevicePicker";
@@ -502,15 +503,15 @@ export function DatabasesView() {
               {dbs.length} database{dbs.length === 1 ? "" : "s"}
             </span>
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => void invalidateAll()}
             disabled={pkg == null || refreshing}
             title="Refetch the package and database lists"
-            className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-[12px] text-muted hover:text-txt disabled:opacity-40"
           >
-            <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> Refresh
-          </button>
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
+          </Button>
         </span>
       </div>
 
@@ -528,14 +529,15 @@ export function DatabasesView() {
           >
             {layout.dbsCollapsed ? (
               <div className="flex flex-1 flex-col items-center gap-2 py-2">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setLayout((l) => ({ ...l, dbsCollapsed: false }))}
                   title="Expand the databases sidebar"
-                  className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                  aria-label="Expand databases sidebar"
                 >
-                  <ChevronRight size={11} />
-                </button>
+                  <ChevronRight size={14} />
+                </Button>
                 <span className="font-mono text-[10px] tabular-nums text-muted/70">
                   {dbs.length}
                 </span>
@@ -550,27 +552,29 @@ export function DatabasesView() {
                     {dbsQ.isFetching && !dbsQ.isPending && (
                       <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
                     )}
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setLayout((l) => ({ ...l, dbsCollapsed: true }))}
                       title="Collapse the databases sidebar"
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                      aria-label="Collapse databases sidebar"
                     >
-                      <ChevronLeft size={11} />
-                    </button>
+                      <ChevronLeft size={14} />
+                    </Button>
                   </span>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
                   {dbsError != null && (
                     <div className="flex flex-col gap-2">
                       <ErrorBox message={dbsError} compact />
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void dbsQ.refetch()}
-                        className="h-7 rounded-md border border-line text-[11px] font-medium text-muted hover:text-txt"
+                        className="self-start"
                       >
                         Retry
-                      </button>
+                      </Button>
                     </div>
                   )}
                   {dbsError == null && dbsLoading && (
@@ -632,13 +636,14 @@ export function DatabasesView() {
           ) : !viewerReady && pullError != null ? (
             <div className="mx-auto flex w-full max-w-xl flex-col gap-2 p-6">
               <ErrorBox message={pullError} />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => void openDb(selectedDb)}
-                className="h-7 self-start rounded-md border border-line px-2.5 text-[11px] font-medium text-muted hover:text-txt"
+                className="self-start"
               >
                 Retry pull
-              </button>
+              </Button>
             </div>
           ) : viewerReady ? (
             <div ref={columnRef} className="flex min-h-0 flex-1 flex-col">
@@ -654,19 +659,20 @@ export function DatabasesView() {
                   }}
                 >
                   {layout.tablesCollapsed ? (
-                    <div className="flex flex-1 flex-col items-center gap-2 py-2">
-                      <button
-                        type="button"
-                        onClick={() => setLayout((l) => ({ ...l, tablesCollapsed: false }))}
-                        title="Expand the tables sidebar"
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
-                      >
-                        <ChevronRight size={11} />
-                      </button>
-                      <span className="font-mono text-[10px] tabular-nums text-muted/70">
-                        {tables.length}
-                      </span>
-                    </div>
+              <div className="flex flex-1 flex-col items-center gap-2 py-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setLayout((l) => ({ ...l, tablesCollapsed: false }))}
+                  title="Expand the tables sidebar"
+                  aria-label="Expand tables sidebar"
+                >
+                  <ChevronRight size={14} />
+                </Button>
+                <span className="font-mono text-[10px] tabular-nums text-muted/70">
+                  {tables.length}
+                </span>
+              </div>
                   ) : (
                     <>
                       <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
@@ -675,14 +681,15 @@ export function DatabasesView() {
                           {tablesQ.isFetching && !tablesQ.isPending && (
                             <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
                           )}
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => setLayout((l) => ({ ...l, tablesCollapsed: true }))}
                             title="Collapse the tables sidebar"
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                            aria-label="Collapse tables sidebar"
                           >
-                            <ChevronLeft size={11} />
-                          </button>
+                            <ChevronLeft size={14} />
+                          </Button>
                         </span>
                       </div>
                       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -704,7 +711,7 @@ export function DatabasesView() {
                               type="button"
                               onClick={() => onTableClick(t.name)}
                               title={prefillQuery(t.name, editMode)}
-                              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2"
+                              className="focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2"
                             >
                               <span className="min-w-0 flex-1 truncate">{t.name}</span>
                               <span className="shrink-0 text-[10px] tabular-nums text-muted/70">
@@ -784,83 +791,85 @@ export function DatabasesView() {
                     )}
                     <span className="ml-auto flex items-center gap-2">
                       {editMode && pendingWrites.length > 0 && (
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() =>
                             setWritePanel(writePanel === "history" ? "none" : "history")
                           }
                           title="Statements applied to the local snapshot since the last apply or revert"
-                          className="flex h-7 items-center gap-1 rounded-md border border-warn/40 bg-warn/10 px-2 text-[11px] font-medium text-warn"
+                          className="border-warn/40! bg-warn/10! text-warn! hover:text-warn!"
                         >
                           {pendingWrites.length} pending
-                        </button>
+                        </Button>
                       )}
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={onToggleEditMode}
+                        aria-pressed={editMode}
                         title="Edit mode: writes apply to the local snapshot, then Apply to device pushes them"
                         className={clsx(
-                          "flex h-7 items-center gap-1 rounded-md border px-2 text-[11px]",
-                          editMode
-                            ? "border-danger/40 bg-danger/10 font-medium text-danger"
-                            : "border-line text-muted hover:text-txt",
+                          editMode &&
+                            "border-danger/40! bg-danger/10! text-danger! hover:text-danger!",
                         )}
                       >
-                        <Pencil size={11} /> Edit
-                      </button>
+                        <Pencil size={14} /> Edit
+                      </Button>
                       {editMode && (
                         <>
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => void onRevert()}
                             disabled={pull.isPending}
                             title="Discard local changes and re-pull the snapshot from the device"
-                            className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                           >
-                            <RotateCcw size={11} className={pull.isPending ? "animate-spin" : ""} />{" "}
+                            <RotateCcw size={14} className={pull.isPending ? "animate-spin" : ""} />{" "}
                             Revert
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
                             onClick={() =>
                               setWritePanel(writePanel === "apply" ? "none" : "apply")
                             }
                             disabled={applyToDevice.isPending || pull.isPending}
                             title="Push the local snapshot to the device (force-stops the app first)"
-                            className="flex h-7 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2 text-[11px] font-medium text-danger hover:bg-danger/20 disabled:opacity-40"
+                            className="border-danger/40! bg-danger/10!"
                           >
                             {applyToDevice.isPending ? (
-                              <Loader2 size={11} className="animate-spin" />
+                              <Loader2 size={14} className="animate-spin" />
                             ) : (
-                              <Upload size={11} />
+                              <Upload size={14} />
                             )}{" "}
                             Apply to device
-                          </button>
+                          </Button>
                         </>
                       )}
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void onCopyResult()}
                         disabled={run.isPending || result == null || result.rows.length === 0}
                         title="Copy the result as Markdown to the clipboard"
-                        className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
-                        <Copy size={11} /> Copy
-                      </button>
-                      <button
-                        type="button"
+                        <Copy size={14} /> Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void onExportResult()}
                         disabled={run.isPending || exportingResult || result == null}
                         title="Export the result as Markdown or CSV"
-                        className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
                         {exportingResult ? (
-                          <Loader2 size={11} className="animate-spin" />
+                          <Loader2 size={14} className="animate-spin" />
                         ) : (
-                          <FileDown size={11} />
+                          <FileDown size={14} />
                         )}{" "}
                         Export
-                      </button>
+                      </Button>
                     </span>
                   </div>
                   {editMode && writePanel === "history" && (
@@ -870,22 +879,23 @@ export function DatabasesView() {
                           Applied to snapshot
                         </span>
                         <span className="ml-auto flex items-center gap-2">
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => setPendingWrites(clearPending())}
                             title="Clear this list only; statements already applied to the snapshot stay applied"
-                            className="h-6 rounded-md border border-line px-2 text-[10px] text-muted hover:text-txt"
                           >
                             Clear
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => setWritePanel("none")}
                             title="Close the statement list"
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                            aria-label="Close statement list"
                           >
-                            <X size={10} />
-                          </button>
+                            <X size={14} />
+                          </Button>
                         </span>
                       </header>
                       <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-y-auto">
@@ -909,14 +919,16 @@ export function DatabasesView() {
                         <span className="text-[10px] font-medium uppercase tracking-wider text-danger">
                           Apply to device
                         </span>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => setWritePanel("none")}
                           title="Close without pushing"
-                          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+                          aria-label="Close apply panel"
+                          className="ml-auto"
                         >
-                          <X size={10} />
-                        </button>
+                          <X size={14} />
+                        </Button>
                       </header>
                       <p className="mt-1 text-[11px] leading-relaxed text-muted">
                         Pushes the local snapshot of{" "}
@@ -946,26 +958,23 @@ export function DatabasesView() {
                         </p>
                       )}
                       <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setWritePanel("none")}
-                          className="h-7 rounded-md border border-line px-2.5 text-[11px] text-muted hover:text-txt"
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => setWritePanel("none")}>
                           Cancel
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
                           onClick={() => void onApplyToDevice()}
                           disabled={applyToDevice.isPending || pull.isPending}
-                          className="flex h-7 items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-2.5 text-[11px] font-medium text-danger hover:bg-danger/20 disabled:opacity-40"
+                          className="border-danger/40! bg-danger/10!"
                         >
                           {applyToDevice.isPending ? (
-                            <Loader2 size={11} className="animate-spin" />
+                            <Loader2 size={14} className="animate-spin" />
                           ) : (
-                            <Upload size={11} />
+                            <Upload size={14} />
                           )}{" "}
                           Push to device
-                        </button>
+                        </Button>
                       </div>
                     </section>
                   )}
@@ -1002,27 +1011,29 @@ export function DatabasesView() {
                   </div>
                   {pagerVisible && (
                     <div className="flex h-8 shrink-0 items-center justify-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => void runPage(page - 1)}
                         disabled={page === 0 || run.isPending}
                         title="Previous page"
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt disabled:opacity-40"
+                        aria-label="Previous page"
                       >
-                        <ChevronLeft size={11} />
-                      </button>
+                        <ChevronLeft size={14} />
+                      </Button>
                       <span className="font-mono tabular-nums">
                         {pageLabel(pagerFrom, pagerTo, total)}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => void runPage(page + 1)}
                         disabled={pagerOnLastPage || run.isPending}
                         title="Next page"
-                        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted hover:text-txt disabled:opacity-40"
+                        aria-label="Next page"
                       >
-                        <ChevronRight size={11} />
-                      </button>
+                        <ChevronRight size={14} />
+                      </Button>
                     </div>
                   )}
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-3 py-1 text-[11px] text-muted">
@@ -1035,55 +1046,56 @@ export function DatabasesView() {
                           snapshot {formatPulledAt(activeSnapshot.pulled_at_epoch_ms)}
                         </span>
                       )}
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => selectedDb != null && void openDb(selectedDb)}
                         disabled={pull.isPending}
                         title="Pull a fresh snapshot and reload"
-                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
-                        <RefreshCw size={11} className={pull.isPending ? "animate-spin" : ""} />{" "}
+                        <RefreshCw size={14} className={pull.isPending ? "animate-spin" : ""} />{" "}
                         Refresh
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setSqlOpen(!sqlOpen)}
+                        aria-pressed={sqlOpen}
                         title={
                           sqlOpen
                             ? "Hide the SQL console"
                             : "Open a read-only SQL console on this snapshot"
                         }
                         className={clsx(
-                          "flex h-7 items-center gap-1 rounded-md border px-1.5 text-[11px] hover:text-txt",
-                          sqlOpen
-                            ? "border-accent/40 bg-accent/10 text-accent"
-                            : "border-line text-muted",
+                          sqlOpen &&
+                            "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
                         )}
                       >
-                        <SquareTerminal size={11} /> SQL
-                      </button>
-                      <button
-                        type="button"
+                        <SquareTerminal size={14} /> SQL
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={FolderOpen}
                         onClick={() => void onReveal()}
                         title="Reveal the snapshot file in Finder"
-                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt"
                       >
-                        <FolderOpen size={11} /> Reveal
-                      </button>
-                      <button
-                        type="button"
+                        Reveal
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void onExport()}
                         disabled={exporting}
                         title="Copy the snapshot to a folder you pick"
-                        className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
                       >
                         {exporting ? (
-                          <Loader2 size={11} className="animate-spin" />
+                          <Loader2 size={14} className="animate-spin" />
                         ) : (
-                          <FileDown size={11} />
+                          <FileDown size={14} />
                         )}{" "}
                         Export…
-                      </button>
+                      </Button>
                     </span>
                   </div>
                 </div>

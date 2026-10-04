@@ -110,7 +110,7 @@ export const LogRow = memo(function LogRow({
             e.stopPropagation();
             onPin(line);
           }}
-          className="shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
+          className="focus-ring shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-accent"
         >
           <Pin size={11} />
         </button>

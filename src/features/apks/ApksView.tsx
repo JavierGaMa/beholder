@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import clsx from "clsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { useApksDirQuery, useApksQuery, useLocalApksQuery } from "../../queries/apks";
 import { EmptyState, Panel } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { toast } from "../../components/ui/toast";
 import { useTraffic } from "../../store/traffic";
@@ -27,7 +29,11 @@ const MAX_RENDERED = 200;
 
 const NOW_TICK_MS = 30_000;
 
-const ENV_FILTERS = ["all", "QA", "PROD"] as const;
+const ENV_FILTERS: readonly { value: EnvFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "QA", label: "QA" },
+  { value: "PROD", label: "PROD" },
+];
 
 export function ApksView() {
   const listUrl = useTraffic(
@@ -162,37 +168,31 @@ export function ApksView() {
 
       <Panel className="p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search builds"
-            className="h-7 min-w-40 flex-1 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
-          />
-          <div className="flex h-7 overflow-hidden rounded-md border border-line">
-            {ENV_FILTERS.map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setEnv(v)}
-                className={clsx(
-                  "h-7 px-2 text-[11px] font-medium transition-colors",
-                  env === v ? "bg-accent text-accent-fg" : "bg-bg text-muted hover:text-txt",
-                )}
-              >
-                {v === "all" ? "All" : v}
-              </button>
-            ))}
+          <div className="min-w-40 flex-1">
+            <Input
+              mono
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search builds"
+              aria-label="Search builds"
+            />
           </div>
+          <SegmentedControl
+            options={ENV_FILTERS}
+            value={env}
+            onChange={setEnv}
+            ariaLabel="Environment filter"
+          />
           <DevicePicker serial={serial} onSelect={setSerial} />
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => void refresh()}
             disabled={refreshing}
             title="Refetch the build list"
-            className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-[12px] text-muted hover:text-txt disabled:opacity-40"
           >
-            <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> Refresh
-          </button>
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
+          </Button>
         </div>
 
         {dirLabel && (
@@ -203,26 +203,28 @@ export function ApksView() {
             >
               {dirLabel}
             </p>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void revealDir()}
-              className="h-6 shrink-0 rounded-md border border-line px-2 text-[10px] font-medium text-muted hover:text-txt"
+              className="h-6! shrink-0 px-2! text-[10px]!"
             >
               Reveal
-            </button>
+            </Button>
           </div>
         )}
 
         {error && (
           <div className="mt-3 flex items-center gap-2">
             <ErrorBox message={error} compact className="flex-1" />
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void refresh()}
-              className="h-7 shrink-0 rounded-md border border-line px-2 text-[11px] font-medium text-muted hover:text-txt"
+              className="shrink-0"
             >
               Retry
-            </button>
+            </Button>
           </div>
         )}
 

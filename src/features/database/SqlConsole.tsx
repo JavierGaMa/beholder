@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { History, Loader2, Play, X } from "lucide-react";
 import { useDropdownPosition } from "../../components/ui/popover";
+import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
@@ -51,21 +52,21 @@ export function SqlConsole({
         </span>
         <span className="ml-auto flex items-center gap-2">
           <div ref={wrapRef} className="relative">
-            <button
+            <Button
               ref={anchorRef}
-              type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setHistoryOpen((o) => !o)}
               disabled={history.length === 0}
               title="Recent successful queries"
-              className="flex h-7 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] text-muted hover:text-txt disabled:opacity-40"
             >
-              <History size={11} /> History
-            </button>
+              <History size={14} /> History
+            </Button>
             {historyOpen && (
               <div
                 ref={menuRef}
                 style={style}
-                className="z-20 flex flex-col overflow-y-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1.5 shadow-xl"
+                className="anim-pop-in z-20 flex flex-col overflow-y-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1.5 shadow-[var(--shadow-3)]"
               >
                 {history.map((q) => (
                   <button
@@ -76,7 +77,7 @@ export function SqlConsole({
                       setHistoryOpen(false);
                     }}
                     title={q}
-                    className="rounded px-2 py-1.5 text-left font-mono text-[11px] text-txt/90 hover:bg-surface-2 hover:text-txt"
+                    className="focus-ring rounded px-2 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2 hover:text-txt"
                   >
                     <span className="line-clamp-2 break-all">{q}</span>
                   </button>
@@ -84,28 +85,29 @@ export function SqlConsole({
               </div>
             )}
           </div>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={onRun}
             disabled={running || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
-            className="flex h-7 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[11px] font-medium text-accent-fg disabled:opacity-40"
           >
             {running ? (
-              <Loader2 size={11} className="animate-spin" />
+              <Loader2 size={14} className="animate-spin" />
             ) : (
-              <Play size={11} />
+              <Play size={14} />
             )}{" "}
             Run ⌘↵
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             title="Close the SQL console"
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:text-txt"
+            aria-label="Close SQL console"
           >
-            <X size={11} />
-          </button>
+            <X size={14} />
+          </Button>
         </span>
       </header>
       <div className="min-h-0 flex-1">

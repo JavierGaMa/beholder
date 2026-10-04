@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { AlertCircle, ArrowRight, Check, Loader2, RotateCcw, X } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
+import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 
 type StepStatus = "pending" | "active" | "done" | "error";
@@ -131,14 +132,15 @@ export function OnboardingPanel({
               : `Setting up ${avdName} — you can watch the emulator window boot in parallel.`}
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onCancel}
           title="Dismiss"
-          className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-txt"
+          aria-label="Dismiss"
         >
           <X size={14} />
-        </button>
+        </Button>
       </div>
 
       <ol className="mt-4 flex flex-col gap-3">
@@ -188,35 +190,28 @@ export function OnboardingPanel({
         <div className="mt-4 rounded-md border border-danger/40 bg-danger/10 p-3">
           <ErrorBox message={error ?? ""} className="border-0 bg-transparent p-0" />
           <div className="mt-2.5 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={retry}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[12px] font-semibold text-accent-fg"
-            >
-              <RotateCcw size={12} /> Retry step
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="text-[12px] text-muted underline-offset-2 hover:text-txt hover:underline"
-            >
+            <Button variant="primary" size="sm" icon={RotateCcw} onClick={retry}>
+              Retry step
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onCancel}>
               Dismiss
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {finished && (
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          className="mt-4"
+          icon={ArrowRight}
           onClick={() => {
             onCancel();
             setActiveView("requests");
           }}
-          className="mt-4 flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2 text-[12px] font-semibold text-accent-fg transition-transform hover:scale-[1.01]"
         >
-          View requests <ArrowRight size={13} />
-        </button>
+          View requests
+        </Button>
       )}
     </div>
   );

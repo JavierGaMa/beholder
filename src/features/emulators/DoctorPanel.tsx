@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, RefreshCw, RotateCcw, Zap, X, XCircle } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { Badge } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 
 type CheckStatus = "ok" | "warn" | "fail";
@@ -102,23 +103,19 @@ export function DoctorPanel({
           <p className="mt-0.5 font-mono text-[11px] text-muted">{serial}</p>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={run}
             disabled={loading || busy}
             title="Re-run checks"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
+            aria-label="Re-run checks"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-txt"
-          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose} title="Close" aria-label="Close">
             <X size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -138,14 +135,15 @@ export function DoctorPanel({
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{c.detail}</p>
                 </div>
                 {c.fix && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={busy}
                     onClick={() => applyFix(c.fix!)}
-                    className="flex shrink-0 items-center gap-1 rounded-md border border-accent/50 px-2 py-1 text-[11px] font-medium text-accent hover:bg-accent/10 disabled:opacity-40"
+                    className="shrink-0 border-accent/50! text-accent! hover:bg-accent/10! hover:text-accent!"
                   >
-                    <Zap size={11} /> Fix
-                  </button>
+                    <Zap size={14} /> Fix
+                  </Button>
                 )}
               </li>
             );
@@ -158,24 +156,19 @@ export function DoctorPanel({
       {checks.length > 0 && (
         <div className="mt-4 flex items-center gap-2 border-t border-line pt-3">
           {fixable.length > 0 && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={fixAll}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-fg disabled:opacity-40"
-            >
-              <Zap size={12} /> Fix all issues
-            </button>
+            <Button variant="primary" icon={Zap} disabled={busy} onClick={fixAll}>
+              Fix all issues
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            icon={RotateCcw}
             disabled={busy}
             onClick={() => applyFix("reboot")}
             title="Last resort — full emulator reboot"
-            className="flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[12px] text-muted hover:text-danger disabled:opacity-40"
           >
-            <RotateCcw size={12} /> Reboot
-          </button>
+            Reboot
+          </Button>
           {!failing && !loading && (
             <Badge tone="ok" className="ml-auto">
               all healthy

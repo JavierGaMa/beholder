@@ -5,6 +5,7 @@ import type { ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { RotateCw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
+import { Button } from "../../components/ui/Button";
 import { decodeChunks } from "./shellcodec";
 
 function cssVar(name: string, fallback: string): string {
@@ -138,13 +139,9 @@ export function ShellPane({ serial }: { serial: string }) {
                 ? `Shell exited (code ${exitCode})`
                 : "Shell exited"}
           </span>
-          <button
-            type="button"
-            onClick={reconnect}
-            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-fg"
-          >
-            <RotateCw size={11} /> Reconnect
-          </button>
+          <Button variant="primary" size="sm" icon={RotateCw} onClick={reconnect}>
+            Reconnect
+          </Button>
         </div>
       )}
     </div>

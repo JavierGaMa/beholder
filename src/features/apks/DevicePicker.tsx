@@ -11,6 +11,7 @@ import {
 import { invoke } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { useDropdownPosition } from "../../components/ui/popover";
+import { Button } from "../../components/ui/Button";
 import { useAdbDevicesQuery, useInvalidateDevices } from "../../queries/devices";
 import { useAvdsQuery } from "../../queries/emulators";
 import {
@@ -108,27 +109,27 @@ export function DevicePicker({
 
   return (
     <div ref={ref} className="relative">
-      <button
+      <Button
         ref={anchorRef}
-        type="button"
+        variant="subtle"
+        size="sm"
         onClick={() => setOpen(!open)}
-        className="flex h-7 items-center gap-2 rounded-md border border-line bg-bg px-2 text-[12px] text-txt hover:border-muted/50"
       >
-        <MonitorSmartphone size={13} className="text-muted" />
+        <MonitorSmartphone size={14} className="text-muted" />
         <span className="max-w-52 truncate font-mono">
           {booting ? `Booting ${booting}…` : serial || "select device"}
         </span>
         {booting ? (
-          <Loader2 size={13} className="animate-spin text-accent" />
+          <Loader2 size={14} className="animate-spin text-accent" />
         ) : (
-          <ChevronDown size={13} className="text-muted" />
+          <ChevronDown size={14} className="text-muted" />
         )}
-      </button>
+      </Button>
       {open && (
         <div
           ref={menuRef}
           style={style}
-          className="z-20 overflow-y-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1.5 shadow-xl"
+          className="anim-pop-in z-20 overflow-y-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1.5 text-left shadow-[var(--shadow-3)]"
         >
           {error && (
             <p className="px-2 py-2 text-[11px] leading-relaxed text-danger">{error}</p>
@@ -180,7 +181,7 @@ export function DevicePicker({
             type="button"
             onClick={() => void refresh()}
             disabled={refreshing}
-            className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-muted hover:bg-surface disabled:opacity-40"
+            className="focus-ring mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-muted transition-colors hover:bg-surface disabled:pointer-events-none disabled:opacity-40"
           >
             <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> Refresh
           </button>
@@ -204,7 +205,7 @@ function DeviceRow({
       type="button"
       onClick={onSelect}
       className={clsx(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-surface",
+        "focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-surface",
         active && "bg-surface",
       )}
     >
@@ -239,7 +240,7 @@ function AvdRow({
       onClick={onBoot}
       disabled={disabled}
       className={clsx(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-surface",
+        "focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-surface disabled:pointer-events-none disabled:opacity-40",
         booting && "bg-surface",
       )}
     >

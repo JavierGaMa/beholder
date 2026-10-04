@@ -34,7 +34,7 @@ export function DbList({
             disabled={pulling}
             title={snap ? `${db.name} · snapshot pulled at ${formatPulledAt(snap.pulled_at_epoch_ms)}` : db.name}
             className={clsx(
-              "group flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors disabled:cursor-wait",
+              "focus-ring group flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-40",
               active
                 ? "border-accent/40 bg-accent/10"
                 : "border-transparent hover:border-line hover:bg-surface-2",

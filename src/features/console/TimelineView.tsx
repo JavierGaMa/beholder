@@ -67,7 +67,7 @@ function TimelineExchangeRow({
       type="button"
       onClick={() => onSelect(ex.id)}
       title="Open in Requests view"
-      className="flex w-full cursor-pointer items-center gap-2 border-b border-line/40 px-3 py-0.5 text-left font-mono text-[length:var(--mono-size,12px)] leading-5 hover:bg-surface/60"
+      className="focus-ring flex w-full cursor-pointer items-center gap-2 border-b border-line/40 px-3 py-0.5 text-left font-mono text-[length:var(--mono-size,12px)] leading-5 transition-colors hover:bg-surface/60"
     >
       <span className="w-[86px] shrink-0 tabular-nums text-muted/80">{timeOf(item.at)}</span>
       <span className={clsx("w-14 shrink-0 text-[11px] font-bold tracking-wide", methodClass(ex.request.method))}>
@@ -147,7 +147,7 @@ export function TimelineView() {
               type="button"
               title="Decrease skew by 1 ms"
               onClick={() => setSkew((s) => s - 1)}
-              className="flex h-full w-5 items-center justify-center text-muted hover:text-accent"
+              className="focus-ring flex h-full w-5 items-center justify-center text-muted transition-colors hover:text-accent"
             >
               <Minus size={10} />
             </button>
@@ -155,13 +155,13 @@ export function TimelineView() {
               type="number"
               value={skew}
               onChange={(e) => setSkew(Number.isFinite(e.target.valueAsNumber) ? e.target.valueAsNumber : 0)}
-              className="h-6 w-16 border-x border-line bg-transparent text-center tabular-nums text-txt focus:outline-none"
+              className="focus-ring h-6 w-16 border-x border-line bg-transparent text-center tabular-nums text-txt outline-none"
             />
             <button
               type="button"
               title="Increase skew by 1 ms"
               onClick={() => setSkew((s) => s + 1)}
-              className="flex h-full w-5 items-center justify-center text-muted hover:text-accent"
+              className="focus-ring flex h-full w-5 items-center justify-center text-muted transition-colors hover:text-accent"
             >
               <Plus size={10} />
             </button>

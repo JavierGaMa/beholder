@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import clsx from "clsx";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
 import type { LogLine } from "../../store/console-types";
 import { formatLogLine, timeOf } from "./rows";
 
@@ -35,23 +36,24 @@ export const CrashCard = memo(function CrashCard({
             × {repeatCount}
           </span>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onCopy?.(formatLogLine(line))}
           aria-label="Copy crash details"
           title="Copy crash details"
-          onClick={() => onCopy?.(formatLogLine(line))}
-          className="shrink-0 text-muted hover:text-txt"
         >
-          <Copy size={11} />
-        </button>
-        <button
-          type="button"
+          <Copy size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setOpen((o) => !o)}
           title={open ? "Collapse stack" : "Expand stack"}
-          className="shrink-0 text-muted hover:text-txt"
+          aria-label={open ? "Collapse stack" : "Expand stack"}
         >
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </button>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </Button>
       </div>
       {open && <pre className="mt-1 whitespace-pre-wrap break-all text-txt/80">{line.message}</pre>}
     </div>

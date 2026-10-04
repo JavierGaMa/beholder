@@ -29,10 +29,13 @@ export function WebSocketsView() {
                 type="button"
                 onClick={() => setSelected(c.id)}
                 className={clsx(
-                  "block w-full border-b border-line/50 px-3 py-2 text-left",
-                  active?.id === c.id ? "bg-surface-2" : "hover:bg-surface/60",
+                  "focus-ring relative block w-full border-b border-line/50 px-3 py-2 text-left transition-colors",
+                  active?.id === c.id ? "bg-accent/10" : "hover:bg-surface/60",
                 )}
               >
+                {active?.id === c.id && (
+                  <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
+                )}
                 <span className="block truncate font-mono text-[12px] text-txt/90">{c.url}</span>
                 <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
                   {c.closed ? "closed" : "open"} · {c.frames.length} frames

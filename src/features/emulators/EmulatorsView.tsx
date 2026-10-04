@@ -9,6 +9,9 @@ import {
   useProfilesQuery,
 } from "../../queries/emulators";
 import { Badge, Panel } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Select } from "../../components/ui/Select";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { useTraffic } from "../../store/traffic";
 import { DoctorPanel } from "./DoctorPanel";
@@ -152,13 +155,9 @@ export function EmulatorsView() {
             ))}
           </ul>
         </details>
-        <button
-          type="button"
-          onClick={() => setSetupOpen(true)}
-          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-fg"
-        >
+        <Button variant="primary" onClick={() => setSetupOpen(true)}>
           Open setup
-        </button>
+        </Button>
       </div>
     );
   }
@@ -170,14 +169,9 @@ export function EmulatorsView() {
       <Panel className="p-4">
         <div className="flex items-center justify-between">
           <p className="text-[12px] font-medium text-txt">Your AVDs</p>
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[12px] text-muted hover:text-txt disabled:opacity-40"
-          >
-            <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Refresh
-          </button>
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={busy}>
+            <RefreshCw size={14} className={busy ? "animate-spin" : ""} /> Refresh
+          </Button>
         </div>
         <div className="mt-3 flex flex-col gap-1.5">
           {avds.length === 0 && (
@@ -186,18 +180,19 @@ export function EmulatorsView() {
               <p className="text-[11px] text-muted">
                 Beholder picks a rootable image and applies the right settings automatically.
               </p>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   document
                     .getElementById("create-avd")
                     ?.scrollIntoView({ behavior: "smooth", block: "center" });
                   document.getElementById("create-avd-name")?.focus();
                 }}
-                className="flex items-center gap-1 rounded-md border border-accent/50 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/10"
+                className="border-accent/50! text-accent! hover:bg-accent/10! hover:text-accent!"
               >
-                <Plus size={11} /> Create emulator
-              </button>
+                <Plus size={14} /> Create emulator
+              </Button>
             </div>
           )}
           {avds.map((avd) => (
@@ -220,23 +215,19 @@ export function EmulatorsView() {
                 {avd.running ? (
                   <>
                     <Badge tone="accent">running</Badge>
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => openDoctor(avd.name)}
                       title="Diagnose and repair this emulator"
-                      className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:text-accent"
                     >
-                      <Stethoscope size={11} /> Doctor
-                    </button>
+                      <Stethoscope size={14} /> Doctor
+                    </Button>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => launch(avd.name)}
-                    className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:text-accent"
-                  >
-                    <Play size={11} /> Launch
-                  </button>
+                  <Button variant="ghost" size="sm" onClick={() => launch(avd.name)}>
+                    <Play size={14} /> Launch
+                  </Button>
                 )}
               </div>
             </div>
@@ -271,43 +262,37 @@ export function EmulatorsView() {
           </ul>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted">Name</span>
-            <input
-              id="create-avd-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted">Device profile</span>
-            <select
-              value={profile}
-              onChange={(e) => setProfile(e.target.value)}
-              className="h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
-            >
-              {profiles.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-[11px] text-muted">System image (google_apis · arm64-v8a)</span>
-            <select
+          <Input
+            id="create-avd-name"
+            label="Name"
+            mono
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Select
+            label="Device profile"
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+          >
+            {profiles.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </Select>
+          <div className="col-span-2">
+            <Select
+              label="System image (google_apis · arm64-v8a)"
               value={imagePkg}
               onChange={(e) => setImagePkg(e.target.value)}
-              className="h-7 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt focus:border-accent focus:outline-none"
             >
               {images.map((img) => (
                 <option key={img.pkg} value={img.pkg}>
                   API {img.api} · {img.tag} {img.installed ? "· installed" : "· needs download"}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </div>
         </div>
         {selectedImage && !selectedImage.installed && (
           <div className="mt-3 rounded-md border border-line bg-bg p-2.5">
@@ -321,26 +306,27 @@ export function EmulatorsView() {
                 <span className="text-[11px] text-warn">
                   Image not installed — downloading ~1-2 GB is required before creating.
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => install(selectedImage.pkg)}
-                  className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:text-accent"
+                  className="shrink-0"
                 >
-                  <Download size={11} /> Install now
-                </button>
+                  <Download size={14} /> Install now
+                </Button>
               </div>
             )}
           </div>
         )}
         <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            icon={Rocket}
             disabled={busy || installing != null || !name.trim() || !imagePkg || !profile}
             onClick={createAndLaunch}
-            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-fg disabled:opacity-40"
           >
-            <Rocket size={13} /> Create &amp; Launch
-          </button>
+            Create &amp; Launch
+          </Button>
         </div>
         {(actionError ?? queryError) && <ErrorBox message={actionError ?? queryError ?? ""} className="mt-3" />}
       </Panel>

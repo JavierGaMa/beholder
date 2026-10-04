@@ -15,6 +15,9 @@ import { qError } from "../../lib/query";
 import { toast } from "../../components/ui/toast";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Badge } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Menu } from "../../components/ui/Menu";
 import { downloadPct, formatBytes, type ApkEntry } from "./apksFormat";
 import { localFileName, type DownloadPhase, type LocalApk } from "./apksLocalState";
 import { formatRelativeLastModified, normalizedEnv, normalizedFlavor } from "./apksTracks";
@@ -118,55 +121,57 @@ export function SourceChip({
 
   return (
     <div ref={ref} className="relative">
-      <button
+      <Button
         ref={anchorRef}
-        type="button"
+        variant="subtle"
+        size="sm"
         onClick={() => setOpen(!open)}
         title={listUrl}
-        className="flex h-7 items-center gap-2 rounded-md border border-line bg-bg px-2 text-[12px] text-txt transition-colors hover:border-muted/50"
       >
         <span className="max-w-52 truncate font-mono">{sourceHost(listUrl)}</span>
         <span className="text-muted">{buildCount} builds</span>
         <ChevronDown
-          size={12}
+          size={14}
           className={clsx("text-muted transition-transform", open && "rotate-180")}
         />
-      </button>
+      </Button>
       {open && (
         <div
           ref={menuRef}
           style={style}
-          className="z-20 rounded-md border border-line bg-surface-2 p-3 shadow-xl"
+          className="anim-pop-in z-20 rounded-[var(--radius-md)] border border-line bg-surface-2 p-3 text-left shadow-[var(--shadow-3)]"
         >
           <p className="text-[10px] font-medium uppercase tracking-wider text-muted/70">
             Builds source
           </p>
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={URL_PLACEHOLDER}
-            spellCheck={false}
-            className="mt-1.5 h-8 w-full rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-txt placeholder:text-muted/60 focus:border-accent focus:outline-none"
-          />
+          <div className="mt-1.5">
+            <Input
+              mono
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder={URL_PLACEHOLDER}
+              spellCheck={false}
+            />
+          </div>
           <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="subtle"
+              size="sm"
               onClick={() => void runTest()}
               disabled={!canTest}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-txt transition-colors hover:border-accent disabled:opacity-40 disabled:hover:border-line"
             >
-              {test.phase === "testing" ? <Loader2 size={12} className="animate-spin" /> : null}
+              {test.phase === "testing" ? <Loader2 size={14} className="animate-spin" /> : null}
               Test connection
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void save()}
               disabled={!canSave}
-              className="flex h-7 items-center gap-1.5 rounded-md bg-accent px-3 text-[12px] font-semibold text-accent-fg transition-transform hover:scale-[1.01] disabled:opacity-40 disabled:hover:scale-100"
             >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : null}
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null}
               Save
-            </button>
+            </Button>
           </div>
           {test.phase === "ok" && (
             <p className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-ok">
@@ -183,13 +188,14 @@ export function SourceChip({
             </p>
           )}
           <div className="mt-3 border-t border-line/60 pt-2">
-            <button
-              type="button"
+            <Button
+              variant="danger"
+              size="sm"
+              icon={Trash2}
               onClick={() => void removeSource()}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-danger/40 px-2.5 text-[12px] font-medium text-danger transition-colors hover:bg-danger/10"
             >
-              <Trash2 size={12} /> Remove source
-            </button>
+              Remove source
+            </Button>
           </div>
         </div>
       )}
@@ -198,22 +204,8 @@ export function SourceChip({
 }
 
 function EnvBadge({ env }: { env: string }) {
-  const tone =
-    env === "QA"
-      ? "border-warn/40 bg-warn/10 text-warn"
-      : env === "PROD"
-        ? "border-danger/40 bg-danger/10 text-danger"
-        : "border-line bg-surface-2 text-muted";
-  return (
-    <span
-      className={clsx(
-        "inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[11px] font-medium leading-none",
-        tone,
-      )}
-    >
-      {env}
-    </span>
-  );
+  const tone = env === "QA" ? "warn" : env === "PROD" ? "danger" : "muted";
+  return <Badge tone={tone}>{env}</Badge>;
 }
 
 function RowMenu({
@@ -227,45 +219,31 @@ function RowMenu({
   onReveal: () => void;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useDismiss(() => setOpen(false), open);
   if (!downloaded) return null;
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        disabled={busy}
-        title="More actions"
-        className="flex h-6 w-6 items-center justify-center rounded-md border border-line text-muted transition-colors hover:text-txt disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <MoreHorizontal size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-md border border-line bg-surface-2 p-1 shadow-xl">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onReveal();
-            }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-txt/90 transition-colors hover:bg-surface"
-          >
-            <FolderOpen size={12} /> Reveal file
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-txt/90 transition-colors hover:bg-surface hover:text-danger"
-          >
-            <Trash2 size={12} /> Delete local copy
-          </button>
-        </div>
+    <Menu
+      items={[
+        { key: "reveal", label: "Reveal file", icon: FolderOpen, onSelect: onReveal },
+        { key: "delete", label: "Delete local copy", icon: Trash2, danger: true, onSelect: onDelete },
+      ]}
+      onClose={() => {}}
+      width={168}
+      trigger={(t) => (
+        <Button
+          ref={t.ref}
+          variant="ghost"
+          size="icon"
+          onClick={t.onClick}
+          disabled={busy}
+          aria-haspopup="menu"
+          aria-expanded={t["aria-expanded"]}
+          title="More actions"
+          aria-label="More actions"
+        >
+          <MoreHorizontal size={14} />
+        </Button>
       )}
-    </div>
+    />
   );
 }
 
@@ -302,26 +280,21 @@ function LatestAction({
     );
   }
   return (
-    <button
-      type="button"
+    <Button
+      variant="primary"
+      size="sm"
       onClick={onInstall}
       disabled={!deviceSelected}
       title={deviceSelected ? `Install on ${serial}` : "Select a device first"}
-      className={clsx(
-        "flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-semibold transition-colors",
-        deviceSelected
-          ? "bg-accent text-accent-fg"
-          : "border border-line text-muted disabled:opacity-40",
-      )}
     >
       {state.phase === "error" ? (
         "Retry"
       ) : (
         <>
-          <Download size={12} /> Install
+          <Download size={14} /> Install
         </>
       )}
-    </button>
+    </Button>
   );
 }
 

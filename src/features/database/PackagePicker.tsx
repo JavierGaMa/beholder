@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { ChevronDown, Loader2, Package as PackageIcon, Search } from "lucide-react";
 import type { AppProcess } from "../../store/console-types";
 import { useDropdownPosition } from "../../components/ui/popover";
+import { Button } from "../../components/ui/Button";
 import { shortPackage } from "./dbdisplay";
 
 const MAX_VISIBLE = 100;
@@ -51,29 +52,29 @@ export function PackagePicker({
 
   return (
     <div ref={ref} className="relative">
-      <button
+      <Button
         ref={anchorRef}
-        type="button"
+        variant="subtle"
+        size="sm"
         onClick={() => setOpen(!open)}
         disabled={disabled}
         title={pkg ?? "Pick an installed app"}
-        className="flex h-7 items-center gap-2 rounded-md border border-line bg-bg px-2 text-[12px] text-txt hover:border-muted/50 disabled:opacity-40"
       >
-        <PackageIcon size={13} className="shrink-0 text-muted" />
+        <PackageIcon size={14} className="shrink-0 text-muted" />
         <span className="max-w-52 truncate font-mono">
           {pkg ? shortPackage(pkg) : "select package"}
         </span>
         {loading ? (
-          <Loader2 size={13} className="animate-spin text-accent" />
+          <Loader2 size={14} className="animate-spin text-accent" />
         ) : (
-          <ChevronDown size={13} className="text-muted" />
+          <ChevronDown size={14} className="text-muted" />
         )}
-      </button>
+      </Button>
       {open && (
         <div
           ref={menuRef}
           style={style}
-          className="z-20 overflow-y-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1.5 shadow-xl"
+          className="anim-pop-in z-20 overflow-y-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1.5 text-left shadow-[var(--shadow-3)]"
         >
           <div className="relative">
             <Search
@@ -89,7 +90,7 @@ export function PackagePicker({
                 if (e.key === "Escape") setOpen(false);
               }}
               placeholder="filter packages"
-              className="h-7 w-full rounded-md border border-line bg-bg pl-6 pr-2 font-mono text-[11px] text-txt placeholder:text-muted/50 focus:border-accent focus:outline-none"
+              className="focus-ring h-7 w-full rounded-md border border-line bg-bg pl-6 pr-2 font-mono text-[11px] text-txt transition-colors placeholder:text-muted/50 focus:border-accent focus:outline-none"
             />
           </div>
           {loading && apps.length === 0 && (
@@ -113,7 +114,7 @@ export function PackagePicker({
                 onClick={() => pick(a)}
                 title={a.package}
                 className={clsx(
-                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] hover:bg-surface",
+                  "focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-surface",
                   pkg === a.package && "bg-surface",
                 )}
               >

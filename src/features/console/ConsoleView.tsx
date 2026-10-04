@@ -18,10 +18,8 @@ import {
   GripHorizontal,
   Pause,
   Play,
-  Search,
   Smartphone,
   Square,
-  Tag,
   Terminal,
   X,
 } from "lucide-react";
@@ -29,6 +27,11 @@ import { useConsole } from "../../store/console";
 import { useTraffic } from "../../store/traffic";
 import { invoke, isTauri } from "../../lib/tauri";
 import { EmptyState } from "../../components/ui/primitives";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Select } from "../../components/ui/Select";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { Menu, type MenuOption } from "../../components/ui/Menu";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { toast } from "../../components/ui/toast";
 import { isLogLine, type AppProcess, type ConsoleColumns, type LogLevel, type LogStatus, type PaneMode } from "../../store/console-types";
@@ -40,9 +43,9 @@ import { CrashCard } from "./CrashCard";
 const ShellPane = lazy(() => import("./ShellPane").then((m) => ({ default: m.ShellPane })));
 const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default: m.TimelineView })));
 
-const PANES: { id: PaneMode; label: string }[] = [
-  { id: "logs", label: "Logs" },
-  { id: "timeline", label: "Timeline" },
+const PANES: { value: PaneMode; label: string }[] = [
+  { value: "logs", label: "Logs" },
+  { value: "timeline", label: "Timeline" },
 ];
 
 const SEVERITY: { level: LogLevel | null; label: string; cls: string }[] = [
@@ -133,9 +136,6 @@ export function ConsoleView() {
   const effectiveSerial = serial ?? targetSerial;
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const appMenuPos = useDropdownPosition(appMenuOpen, { width: 320, estHeight: 288 });
-  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
-  const [columnsMenuPos, setColumnsMenuPos] = useState<{ right: number; top: number } | null>(null);
-  const columnsBtnRef = useRef<HTMLButtonElement | null>(null);
   const [apps, setApps] = useState<AppProcess[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const appMissedRef = useRef(0);
@@ -313,81 +313,75 @@ export function ConsoleView() {
 
   const word = statusWord(status);
 
+  const columnItems: MenuOption[] = COLUMN_CHOICES.map((c) => ({
+    key: c.key,
+    label: c.label,
+    icon: columns[c.key] ? Check : undefined,
+    onSelect: () => setColumns({ [c.key]: !columns[c.key] } as Partial<ConsoleColumns>),
+  }));
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-        <div className="flex h-7 items-center overflow-hidden rounded-md border border-line">
-          {PANES.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setPaneMode(p.id)}
-              className={clsx(
-                "h-full px-2 font-mono text-[11px] transition-colors",
-                paneMode === p.id ? "bg-surface-2 text-accent" : "text-muted hover:text-txt",
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={PANES}
+          value={paneMode}
+          onChange={setPaneMode}
+          ariaLabel="Console pane"
+        />
         <span className="flex min-w-0 items-center gap-1.5">
           <span className={clsx("size-2 shrink-0 rounded-full", statusDotCls(status))} />
-          <span className={clsx("shrink-0 font-mono text-[11px] font-medium", word.cls)} title={statusLabel(status)}>
+          <span className={clsx("shrink-0 text-[11px] font-medium", word.cls)} title={statusLabel(status)}>
             {word.text}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-muted/70">·</span>
+          <span className="shrink-0 text-[11px] text-muted/70">·</span>
           <span className="truncate font-mono text-[11px] text-muted" title={statusLabel(status)}>
             {serial ?? targetSerial}
           </span>
         </span>
-        <span className="font-mono text-[11px] text-muted">buffer</span>
-        <select
-          value={buffer}
-          onChange={(e) => onBufferChange(e.target.value)}
-          title="Logcat buffer"
-          className="h-7 rounded-md border border-line bg-bg px-1.5 font-mono text-[11px] text-txt focus:border-accent focus:outline-none"
-        >
-          {BUFFER_CHOICES.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
+        <span className="text-[11px] text-muted">buffer</span>
+        <div className="w-24">
+          <Select
+            value={buffer}
+            onChange={(e) => onBufferChange(e.target.value)}
+            title="Logcat buffer"
+            aria-label="Logcat buffer"
+          >
+            {BUFFER_CHOICES.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setPaused(!paused)}
+          aria-pressed={paused}
           className={clsx(
-            "flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] transition-colors",
-            paused ? "border-accent text-accent" : "text-muted hover:text-txt",
+            paused && "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
           )}
         >
-          {paused ? <Play size={11} /> : <Pause size={11} />}
+          {paused ? <Play size={14} /> : <Pause size={14} />}
           {paused ? "Resume" : "Pause"}
-        </button>
+        </Button>
         {running ? (
-          <button
-            type="button"
-            onClick={stop}
-            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:border-danger"
-          >
-            <Square size={11} /> Stop
-          </button>
+          <Button variant="danger" size="sm" icon={Square} onClick={stop}>
+            Stop
+          </Button>
         ) : (
-          <button
-            type="button"
-            onClick={onStart}
-            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-fg"
-          >
-            <Play size={11} /> Start
-          </button>
+          <Button variant="primary" size="sm" icon={Play} onClick={onStart}>
+            Start
+          </Button>
         )}
         <span className="h-4 w-px shrink-0 bg-line" />
         <span className="flex min-w-0 flex-wrap items-center gap-1">
           <div className="relative">
-            <button
-              type="button"
+            <Button
               ref={appMenuPos.anchorRef}
+              variant="subtle"
+              size="sm"
               onClick={() => (appMenuOpen ? setAppMenuOpen(false) : openAppMenu())}
               title={
                 appFilter
@@ -395,24 +389,24 @@ export function ConsoleView() {
                   : "Filter by app process"
               }
               className={clsx(
-                "flex h-7 max-w-56 items-center gap-1.5 rounded-md border bg-bg px-1.5 font-mono text-[11px] focus:outline-none",
-                appFilter ? "border-accent text-accent" : "border-line text-txt hover:border-accent",
+                "max-w-56 font-mono",
+                appFilter && "border-accent/40! bg-accent/10! text-accent!",
               )}
             >
-              <Smartphone size={11} className="shrink-0" />
+              <Smartphone size={14} className="shrink-0" />
               <span className="truncate">
                 {appFilter
                   ? `${shortPkg(appFilter.package)}${appFilter.pid != null ? ` · ${appFilter.pid}` : ""}`
                   : "All apps"}
               </span>
-            </button>
+            </Button>
             {appMenuOpen && (
               <>
                 <div className="fixed inset-0 z-20" onClick={() => setAppMenuOpen(false)} />
                 <div
                   ref={appMenuPos.menuRef}
                   style={appMenuPos.style}
-                  className="z-30 overflow-auto overscroll-contain rounded-md border border-line bg-surface-2 p-1 shadow-xl"
+                  className="anim-pop-in z-30 overflow-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1 text-left shadow-[var(--shadow-3)]"
                 >
                   {appsLoading ? (
                     <div className="px-2 py-1 font-mono text-[11px] text-muted">loading...</div>
@@ -424,7 +418,7 @@ export function ConsoleView() {
                         <button
                           type="button"
                           onClick={() => selectApp(null)}
-                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] text-accent hover:bg-surface"
+                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] text-accent transition-colors hover:bg-surface"
                         >
                           All apps
                         </button>
@@ -437,7 +431,7 @@ export function ConsoleView() {
                           title={a.pid == null ? `${a.package} is not running` : a.package}
                           onClick={() => selectApp(a)}
                           className={clsx(
-                            "flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] hover:bg-surface",
+                            "focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] transition-colors hover:bg-surface disabled:pointer-events-none",
                             a.pid == null ? "cursor-not-allowed text-muted/50" : "text-txt",
                             appFilter?.package === a.package && "text-accent",
                           )}
@@ -461,7 +455,7 @@ export function ConsoleView() {
                 title={s.level == null ? "Show all log levels" : `Show ${s.level} and above`}
                 onClick={() => setMinLevel(s.level)}
                 className={clsx(
-                  "h-full px-2 font-mono text-[11px] transition-colors",
+                  "focus-ring h-full px-2 font-mono text-[11px] transition-colors",
                   i > 0 && "border-l border-line",
                   minLevel === s.level ? "bg-surface-2 font-semibold" : "hover:bg-surface",
                   s.cls,
@@ -471,139 +465,87 @@ export function ConsoleView() {
               </button>
             ))}
           </div>
-          <span className="relative">
-            <Tag
-              size={11}
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted/70"
-            />
-            <input
+          <div className="w-32">
+            <Input
               list="console-observed-tags"
+              mono
               value={tagQuery}
               onChange={(e) => setTagQuery(e.target.value)}
               placeholder="filter by tag"
               title="Tag filter (server-side)"
-              className="h-7 w-32 rounded-md border border-line bg-bg pl-6 pr-2 font-mono text-[11px] text-txt placeholder:text-muted/50 focus:border-accent focus:outline-none"
             />
-          </span>
+          </div>
           <datalist id="console-observed-tags">
             {observedTags.slice(-200).map((t) => (
               <option key={t} value={t} />
             ))}
           </datalist>
-          <span className="relative">
-            <Search
-              size={11}
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted/70"
-            />
-            <input
+          <div className="w-44">
+            <Input
+              mono
               value={regex}
               onChange={(e) => setRegex(e.target.value)}
               placeholder="search message (regex)"
               title={regexError ?? "Regex search (client-side)"}
-              className={clsx(
-                "h-7 w-44 rounded-md border bg-bg pl-6 pr-2 font-mono text-[11px] text-txt placeholder:text-muted/50 focus:outline-none",
-                regexError != null ? "border-danger text-danger" : "border-line focus:border-accent",
-              )}
+              className={clsx(regexError != null && "border-danger! text-danger!")}
             />
-          </span>
+          </div>
         </span>
         <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-          <div className="relative">
-            <button
-              ref={columnsBtnRef}
-              type="button"
-              onClick={() => {
-                if (columnsMenuOpen) {
-                  setColumnsMenuOpen(false);
-                  return;
-                }
-                const rect = columnsBtnRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const menuH = 168;
-                const menuW = 152;
-                const top =
-                  rect.bottom + 4 + menuH > window.innerHeight
-                    ? Math.max(8, rect.top - menuH - 4)
-                    : rect.bottom + 4;
-                const right = Math.min(
-                  Math.max(8, window.innerWidth - rect.right),
-                  window.innerWidth - menuW - 8,
-                );
-                setColumnsMenuPos({ right, top });
-                setColumnsMenuOpen(true);
-              }}
-              aria-haspopup="menu"
-              aria-expanded={columnsMenuOpen}
-              title="Choose visible columns"
-              className={clsx(
-                "flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors",
-                columns.time || columns.tag || columns.pid || columns.tid
-                  ? "border-accent text-accent"
-                  : "border-line text-muted hover:text-txt",
-              )}
-            >
-              <AlignLeft size={11} /> Columns
-            </button>
-            {columnsMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setColumnsMenuOpen(false)} />
-                <div
-                  className="fixed z-40 w-36 rounded-md border border-line bg-surface-2 p-1 shadow-xl"
-                  style={columnsMenuPos ?? undefined}
-                >
-                  {COLUMN_CHOICES.map((c) => (
-                    <button
-                      key={c.key}
-                      type="button"
-                      onClick={() => setColumns({ [c.key]: !columns[c.key] } as Partial<ConsoleColumns>)}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] text-txt hover:bg-surface"
-                    >
-                      {columns[c.key] ? (
-                        <Check size={11} className="shrink-0 text-accent" />
-                      ) : (
-                        <span className="w-[11px] shrink-0" />
-                      )}
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </>
+          <Menu
+            items={columnItems}
+            onClose={() => {}}
+            width={160}
+            trigger={(t) => (
+              <Button
+                ref={t.ref}
+                variant="ghost"
+                size="sm"
+                onClick={t.onClick}
+                aria-haspopup="menu"
+                aria-expanded={t["aria-expanded"]}
+                title="Choose visible columns"
+                className={clsx(
+                  (columns.time || columns.tag || columns.pid || columns.tid) &&
+                    "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
+                )}
+              >
+                <AlignLeft size={14} /> Columns
+              </Button>
             )}
-          </div>
-          <button
-            type="button"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={toggleShell}
             aria-label="Toggle adb shell"
+            aria-pressed={shellOpen}
             title="adb shell (open a terminal on the device)"
             className={clsx(
-              "flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors",
-              shellOpen ? "border-accent text-accent" : "border-line text-muted hover:text-txt",
+              shellOpen && "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
             )}
           >
-            <Terminal size={11} /> Shell
-          </button>
-          <button
-            type="button"
+            <Terminal size={14} /> Shell
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Eraser}
             onClick={onClearBuffer}
             title="Clear device logcat buffer and view"
-            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:text-txt"
           >
-            <Eraser size={11} /> Clear
-          </button>
-          <button
-            type="button"
+            Clear
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={FileDown}
             onClick={onExport}
             disabled={rows.length === 0}
             title="Export visible rows to a text file"
-            className={clsx(
-              "flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] transition-colors",
-              rows.length === 0
-                ? "cursor-not-allowed text-muted/40"
-                : "text-muted hover:text-txt",
-            )}
           >
-            <FileDown size={11} /> Export
-          </button>
+            Export
+          </Button>
         </span>
       </div>
       <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
@@ -669,15 +611,15 @@ export function ConsoleView() {
                 adb shell · {effectiveSerial ?? targetSerial}
               </span>
               <span className="flex-1" />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => setShellOpen(false)}
                 aria-label="Close shell"
                 title="Close shell"
-                className="shrink-0 text-muted hover:text-txt"
               >
-                <X size={11} />
-              </button>
+                <X size={14} />
+              </Button>
             </div>
             <div className="min-h-0 flex-1 bg-bg">
               <Suspense fallback={null}>
@@ -694,7 +636,7 @@ export function ConsoleView() {
             type="button"
             title="Show Error and above"
             onClick={() => setMinLevel("Error")}
-            className={clsx("hover:underline", stats.errors > 0 ? "text-danger" : "text-muted/50")}
+            className={clsx("focus-ring rounded-sm hover:underline", stats.errors > 0 ? "text-danger" : "text-muted/50")}
           >
             {stats.errors} errors
           </button>{" "}
@@ -703,7 +645,7 @@ export function ConsoleView() {
             type="button"
             title="Show Warn and above"
             onClick={() => setMinLevel("Warn")}
-            className={clsx("hover:underline", stats.warns > 0 ? "text-warn" : "text-muted/50")}
+            className={clsx("focus-ring rounded-sm hover:underline", stats.warns > 0 ? "text-warn" : "text-muted/50")}
           >
             {stats.warns} warns
           </button>

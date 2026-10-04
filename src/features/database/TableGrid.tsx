@@ -1,8 +1,11 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import clsx from "clsx";
 import { Ban, ChevronDown, ChevronUp, ChevronsUpDown, Copy, Pencil, Table, Trash2, type LucideIcon } from "lucide-react";
 import type { TableOrder, TablePage } from "../../queries/databases";
 import { toast } from "../../components/ui/toast";
+import { Button } from "../../components/ui/Button";
+import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
 import { classifyCell, columnTitle } from "./dbdisplay";
 import {
   cellMenuItems,
@@ -21,79 +24,13 @@ const MENU_ICONS: Record<CellMenuAction, LucideIcon> = {
   "copy-row": Table,
 };
 
-function ContextMenu({
-  x,
-  y,
-  items,
-  onPick,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  items: CellMenuItem[];
-  onPick: (id: CellMenuAction) => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el == null) return;
-    const left = Math.max(4, Math.min(x, window.innerWidth - el.offsetWidth - 4));
-    const top = Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 4));
-    setPos({ left, top });
-  }, [x, y]);
-
-  useEffect(() => {
-    const onPointerDown = (e: MouseEvent) => {
-      if (ref.current != null && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("mousedown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("scroll", onClose, true);
-    window.addEventListener("blur", onClose);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("scroll", onClose, true);
-      window.removeEventListener("blur", onClose);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={ref}
-      role="menu"
-      style={{ left: pos.left, top: pos.top }}
-      onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-50 min-w-[160px] rounded-md border border-line bg-surface p-1 text-[12px] shadow-lg"
-    >
-      {items.map((item, i) => {
-        const Icon = MENU_ICONS[item.id];
-        return (
-          <Fragment key={item.id}>
-            {item.id === "copy-value" && i > 0 && <div className="my-1 border-t border-line" />}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => onPick(item.id)}
-              className={clsx(
-                "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left",
-                item.danger ? "text-danger hover:bg-danger/10" : "text-txt hover:bg-surface-2",
-              )}
-            >
-              <Icon size={11} className="shrink-0" />
-              {item.label}
-            </button>
-          </Fragment>
-        );
-      })}
-    </div>
-  );
+function cellContextMenuItems(items: CellMenuItem[], onPick: (id: CellMenuAction) => void): MenuItem[] {
+  return items.map((item) => ({
+    label: item.label,
+    icon: MENU_ICONS[item.id],
+    danger: item.danger,
+    onSelect: () => onPick(item.id),
+  }));
 }
 
 function Cell({ value, onEdit }: { value: unknown; onEdit?: () => void }) {
@@ -301,7 +238,7 @@ export function TableGrid({
                     <button
                       type="button"
                       onClick={() => onSort(col.name)}
-                      className="flex items-center gap-1 text-left hover:text-txt"
+                      className="focus-ring flex items-center gap-1 rounded-sm text-left transition-colors hover:text-txt"
                     >
                       <span>{col.name}</span>
                       {col.decl_type && (
@@ -390,14 +327,16 @@ export function TableGrid({
                 {canEdit && (
                   <td className="px-1 py-1.5 text-center align-top">
                     {rowEditable && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => rowid != null && onDeleteRow?.(rowid)}
                         title={`DELETE FROM this table WHERE rowid = ${rowid}`}
-                        className="flex h-5 w-5 items-center justify-center rounded-sm text-muted/60 hover:bg-danger/10 hover:text-danger"
+                        aria-label="Delete row"
+                        className="hover:bg-danger/10! hover:text-danger!"
                       >
-                        <Trash2 size={11} />
-                      </button>
+                        <Trash2 size={14} />
+                      </Button>
                     )}
                   </td>
                 )}
@@ -410,11 +349,14 @@ export function TableGrid({
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          items={cellMenuItems({
-            editable: canEdit && menu.col != null && menu.col !== "rowid" && menu.rowid != null,
-            isRowid: menu.col === "rowid" || menu.col == null,
-          })}
-          onPick={onMenuPick}
+          items={cellContextMenuItems(
+            cellMenuItems({
+              editable:
+                canEdit && menu.col != null && menu.col !== "rowid" && menu.rowid != null,
+              isRowid: menu.col === "rowid" || menu.col == null,
+            }),
+            onMenuPick,
+          )}
           onClose={closeMenu}
         />
       )}
