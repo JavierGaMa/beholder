@@ -1,6 +1,6 @@
 [package]
 name = "beholder"
-version = "0.5.0"
+version = "0.6.0"
 description = "Network traffic inspector for React Native apps on Android emulators"
 authors = ["valinor"]
 edition = "2021"
