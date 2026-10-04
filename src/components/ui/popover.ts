@@ -36,8 +36,7 @@ export function computeDropdownStyle(
 
   let left = anchor.left;
   if (left + opts.width > viewportW - margin) {
-    const rightEdge = Math.min(anchor.right, viewportW - margin);
-    left = rightEdge - opts.width;
+    left = viewportW - margin - opts.width;
   }
   left = Math.max(margin, left);
 
@@ -76,9 +75,11 @@ export function useDropdownPosition(open: boolean, opts: DropdownPositionOpts) {
     place();
     raf = requestAnimationFrame(place);
     window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, { passive: true, capture: true });
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, { capture: true } as EventListenerOptions);
     };
   }, [open, width, estHeight, margin, gap]);
 

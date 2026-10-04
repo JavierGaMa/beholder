@@ -21,12 +21,12 @@ describe("computeDropdownStyle", () => {
     expect(style.maxHeight).toBe(800 - MARGIN - (128 + GAP));
   });
 
-  it("shifts left when the menu would overflow the right edge", () => {
+  it("shifts left only by the overflow amount when the menu would overflow the right edge", () => {
     const { style } = computeDropdownStyle(rect(1000, 100, 120, 28), 1280, 800, {
       width: 384,
       estHeight: 360,
     });
-    expect(style.left).toBe(1120 - 384);
+    expect(style.left).toBe(1280 - MARGIN - 384);
     expect(Number(style.left) + 384).toBeLessThanOrEqual(1280 - MARGIN);
     expect(style.left).toBeGreaterThanOrEqual(MARGIN);
   });

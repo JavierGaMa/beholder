@@ -63,7 +63,7 @@ export function Menu({ items, onClose, trigger, x, y, width = 208, className }: 
     };
     return (
       <>
-        <span ref={wrapperRef} className="relative inline-flex">
+        <span ref={wrapperRef} className="relative inline-flex min-w-0">
           {trigger({
             ref: anchorRef,
             onClick: () => setOpen((o) => !o),
