@@ -280,7 +280,7 @@ body {
 }
 
 .anim-view-enter {
-  animation: view-enter 240ms var(--ease-out) both;
+  animation: view-enter 240ms var(--ease-out) backwards;
 }
 
 @keyframes view-enter {
