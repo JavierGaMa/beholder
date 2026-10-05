@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyCell,
   columnTitle,
+  filterTables,
   formatPulledAt,
   formatRowCount,
   humanizeSize,
@@ -13,7 +14,7 @@ import {
   snapshotKey,
   sortDatabases,
 } from "./dbdisplay";
-import type { DbFile, TableColumn } from "../../queries/databases";
+import type { DbFile, TableColumn, TableSummary } from "../../queries/databases";
 
 function db(name: string, sizeBytes = 1024, hasWal = false): DbFile {
   return { name, size_bytes: sizeBytes, has_wal: hasWal };
@@ -39,6 +40,44 @@ describe("humanizeSize", () => {
 
   it("renders gigabytes with two decimals", () => {
     expect(humanizeSize(1536 * 1024 * 1024)).toBe("1.50 GB");
+  });
+});
+
+describe("filterTables", () => {
+  const tables: TableSummary[] = [
+    { name: "users", row_count: 12 },
+    { name: "user_settings", row_count: 3 },
+    { name: "orders", row_count: 0 },
+  ];
+
+  it("returns every table when the query is empty", () => {
+    expect(filterTables(tables, "")).toEqual(tables);
+  });
+
+  it("treats a whitespace-only query as empty", () => {
+    expect(filterTables(tables, "   ")).toEqual(tables);
+  });
+
+  it("matches case-insensitively on a name substring", () => {
+    expect(filterTables(tables, "USER").map((t) => t.name)).toEqual([
+      "users",
+      "user_settings",
+    ]);
+  });
+
+  it("trims the query before matching", () => {
+    expect(filterTables(tables, " settings ").map((t) => t.name)).toEqual([
+      "user_settings",
+    ]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(filterTables(tables, "nope")).toEqual([]);
+  });
+
+  it("does not mutate the input array", () => {
+    filterTables(tables, "user");
+    expect(tables.map((t) => t.name)).toEqual(["users", "user_settings", "orders"]);
   });
 });
 

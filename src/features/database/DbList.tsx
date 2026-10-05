@@ -1,7 +1,15 @@
+import { useState } from "react";
 import clsx from "clsx";
-import { Loader2 } from "lucide-react";
+import { FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import type { DbFile, SnapshotInfo } from "../../queries/databases";
+import { ContextMenu } from "../../components/ui/ContextMenu";
 import { formatPulledAt, humanizeSize, snapshotKey } from "./dbdisplay";
+
+interface DbMenuTarget {
+  x: number;
+  y: number;
+  name: string;
+}
 
 export function DbList({
   dbs,
@@ -11,6 +19,8 @@ export function DbList({
   pulling,
   snapshots,
   onSelect,
+  onDeleteSnapshot,
+  onRevealSnapshot,
 }: {
   dbs: DbFile[];
   serial: string;
@@ -19,7 +29,11 @@ export function DbList({
   pulling: boolean;
   snapshots: Record<string, SnapshotInfo>;
   onSelect: (name: string) => void;
+  onDeleteSnapshot: (name: string) => void;
+  onRevealSnapshot: (name: string) => void;
 }) {
+  const [menu, setMenu] = useState<DbMenuTarget | null>(null);
+  const closeMenu = () => setMenu(null);
   return (
     <div className="flex flex-col gap-0.5">
       {dbs.map((db) => {
@@ -31,6 +45,10 @@ export function DbList({
             key={db.name}
             type="button"
             onClick={() => onSelect(db.name)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, name: db.name });
+            }}
             disabled={pulling}
             title={snap ? `${db.name} · snapshot pulled at ${formatPulledAt(snap.pulled_at_epoch_ms)}` : db.name}
             className={clsx(
@@ -80,6 +98,33 @@ export function DbList({
           </button>
         );
       })}
+      {menu != null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          items={[
+            {
+              label: "Re-pull snapshot",
+              icon: RefreshCw,
+              disabled: pulling,
+              onSelect: () => onSelect(menu.name),
+            },
+            {
+              label: "Delete local snapshot",
+              icon: Trash2,
+              danger: true,
+              onSelect: () => onDeleteSnapshot(menu.name),
+            },
+            {
+              label: "Reveal in Finder",
+              icon: FolderOpen,
+              disabled: snapshots[snapshotKey(serial, pkg, menu.name)] == null,
+              onSelect: () => onRevealSnapshot(menu.name),
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

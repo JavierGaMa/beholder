@@ -1,4 +1,10 @@
-import type { DbFile, QueryResult, TableColumn, TablePage } from "../../queries/databases";
+import type {
+  DbFile,
+  QueryResult,
+  TableColumn,
+  TablePage,
+  TableSummary,
+} from "../../queries/databases";
 
 const BLOB_MARKER_RE = /^<\d+ bytes>$/;
 
@@ -18,6 +24,12 @@ export function humanizeSize(bytes: number): string {
 
 export function sortDatabases(dbs: DbFile[]): DbFile[] {
   return [...dbs].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function filterTables(tables: TableSummary[], query: string): TableSummary[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return tables;
+  return tables.filter((t) => t.name.toLowerCase().includes(q));
 }
 
 export function shortPackage(pkg: string): string {

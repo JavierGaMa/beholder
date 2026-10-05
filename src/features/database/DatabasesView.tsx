@@ -12,6 +12,7 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
+  Search,
   SquareTerminal,
   Upload,
   X,
@@ -29,6 +30,7 @@ import {
   useAppPackagesQuery,
   useApplyDbToDevice,
   useDatabaseTablesQuery,
+  useDeleteSnapshot,
   useInvalidateDatabases,
   usePullSnapshot,
   useRunDbMutation,
@@ -55,6 +57,7 @@ import {
   type DbLayout,
 } from "./layout";
 import {
+  filterTables,
   formatPulledAt,
   formatRowCount,
   joinExportPath,
@@ -110,6 +113,7 @@ export function DatabasesView() {
   const [activeTable, setActiveTable] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
+  const [tableFilter, setTableFilter] = useState("");
   const lastRunSqlRef = useRef<string | null>(null);
   const [layout, setLayout] = useState<DbLayout>(loadDbLayout);
   const columnRef = useRef<HTMLDivElement>(null);
@@ -145,6 +149,7 @@ export function DatabasesView() {
   const packagesQ = useAppPackagesQuery(serial, isTauri && serial !== "");
   const dbsQ = useAppDatabasesQuery(serial, pkg ?? "", isTauri && serial !== "" && pkg != null);
   const pull = usePullSnapshot();
+  const deleteSnap = useDeleteSnapshot();
   const invalidateAll = useInvalidateDatabases(serial, pkg);
   const run = useRunDbQuery();
   const runMutation = useRunDbMutation();
@@ -167,6 +172,8 @@ export function DatabasesView() {
     () => [...(tablesQ.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [tablesQ.data],
   );
+  const visibleTables = useMemo(() => filterTables(tables, tableFilter), [tables, tableFilter]);
+  const tableFilterActive = tableFilter.trim() !== "";
   const tablesError = qError(tablesQ.error);
 
   useEffect(() => {
@@ -199,6 +206,7 @@ export function DatabasesView() {
     setLastMutation(null);
     setWritePanel("none");
     setActiveTable(null);
+    setTableFilter("");
     lastRunSqlRef.current = null;
   }, [selectedDb]);
 
@@ -302,6 +310,32 @@ export function DatabasesView() {
       setLastMutation(null);
       setWritePanel("none");
       toast(`Reverted ${selectedDb} to device state`);
+    } catch (e) {
+      toast(qError(e) ?? String(e), "danger");
+    }
+  }
+
+  async function onDeleteSnapshot(name: string) {
+    if (serial === "" || pkg == null || deleteSnap.isPending) return;
+    const { confirm } = await import("@tauri-apps/plugin-dialog");
+    const yes = await confirm(
+      `Delete the local snapshot of ${name}? Opening it again pulls a fresh copy from the device.`,
+      { title: "Delete local snapshot", kind: "warning" },
+    );
+    if (!yes) return;
+    try {
+      await deleteSnap.mutateAsync({ serial, pkg, dbName: name });
+      const key = snapshotKey(serial, pkg, name);
+      setSnapshots((cur) => {
+        const next = { ...cur };
+        delete next[key];
+        return next;
+      });
+      if (selectedDb === name) {
+        setSelectedDb(null);
+        setPullError(null);
+      }
+      toast(`Deleted local snapshot of ${name}`);
     } catch (e) {
       toast(qError(e) ?? String(e), "danger");
     }
@@ -427,10 +461,10 @@ export function DatabasesView() {
     }
   }
 
-  async function onReveal() {
-    if (serial === "" || pkg == null || selectedDb == null) return;
+  async function onRevealDb(name: string) {
+    if (serial === "" || pkg == null) return;
     try {
-      await invoke("reveal_snapshot", { serial, package: pkg, dbName: selectedDb });
+      await invoke("reveal_snapshot", { serial, package: pkg, dbName: name });
     } catch (e) {
       toast(qError(e) ?? String(e), "danger");
     }
@@ -506,11 +540,19 @@ export function DatabasesView() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void invalidateAll()}
-            disabled={pkg == null || refreshing}
-            title="Refetch the package and database lists"
+            onClick={() => {
+              void invalidateAll();
+              if (selectedDb != null && activeSnapshot != null) void openDb(selectedDb);
+            }}
+            disabled={pkg == null || refreshing || pull.isPending}
+            title="Refetch the lists and re-pull the selected database snapshot"
+            aria-label="Refetch the lists and re-pull the selected database snapshot"
           >
-            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
+            <RefreshCw
+              size={14}
+              className={refreshing || pull.isPending ? "animate-spin" : ""}
+            />{" "}
+            Refresh
           </Button>
         </span>
       </div>
@@ -599,6 +641,8 @@ export function DatabasesView() {
                       pulling={pull.isPending}
                       snapshots={snapshots}
                       onSelect={(name) => void openDb(name)}
+                      onDeleteSnapshot={(name) => void onDeleteSnapshot(name)}
+                      onRevealSnapshot={(name) => void onRevealDb(name)}
                     />
                   )}
                 </div>
@@ -676,7 +720,11 @@ export function DatabasesView() {
                   ) : (
                     <>
                       <div className="flex items-center justify-between gap-2 border-b border-line/50 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-                        <span>tables · {formatRowCount(tables.length)}</span>
+                        <span className="min-w-0 truncate">
+                          {tableFilterActive
+                            ? `tables · ${formatRowCount(visibleTables.length)}/${formatRowCount(tables.length)}`
+                            : `tables · ${formatRowCount(tables.length)}`}
+                        </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {tablesQ.isFetching && !tablesQ.isPending && (
                             <Loader2 size={10} className="shrink-0 animate-spin text-accent" />
@@ -692,6 +740,27 @@ export function DatabasesView() {
                           </Button>
                         </span>
                       </div>
+                      <div className="px-1.5 pt-1.5">
+                        <div className="relative">
+                          <Search
+                            size={12}
+                            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted/70"
+                          />
+                          <input
+                            value={tableFilter}
+                            onChange={(e) => setTableFilter(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && visibleTables.length > 0) {
+                                onTableClick(visibleTables[0].name);
+                              }
+                              if (e.key === "Escape") setTableFilter("");
+                            }}
+                            placeholder="filter tables"
+                            aria-label="Filter tables"
+                            className="focus-ring h-7 w-full rounded-md border border-line bg-bg pl-6 pr-2 font-mono text-[11px] text-txt transition-colors placeholder:text-muted/50 focus:border-accent focus:outline-none"
+                          />
+                        </div>
+                      </div>
                       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
                         {tablesError != null && <ErrorBox message={tablesError} compact />}
                         {tablesError == null && tablesQ.isPending && (
@@ -704,8 +773,13 @@ export function DatabasesView() {
                             No tables in this database.
                           </p>
                         )}
+                        {tableFilterActive && visibleTables.length === 0 && (
+                          <p className="px-2 py-2 text-[11px] text-muted">
+                            No tables match “{tableFilter.trim()}”.
+                          </p>
+                        )}
                         <div className="flex flex-col gap-0.5">
-                          {tables.map((t) => (
+                          {visibleTables.map((t) => (
                             <button
                               key={t.name}
                               type="button"
@@ -1077,7 +1151,7 @@ export function DatabasesView() {
                         variant="ghost"
                         size="sm"
                         icon={FolderOpen}
-                        onClick={() => void onReveal()}
+                        onClick={() => selectedDb != null && void onRevealDb(selectedDb)}
                         title="Reveal the snapshot file in Finder"
                       >
                         Reveal

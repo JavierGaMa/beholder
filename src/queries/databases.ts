@@ -129,6 +129,29 @@ export function usePullSnapshot() {
   });
 }
 
+export function useDeleteSnapshot() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { serial: string; pkg: string; dbName: string }) =>
+      invoke<boolean>("delete_snapshot", {
+        serial: vars.serial,
+        package: vars.pkg,
+        dbName: vars.dbName,
+      }),
+    onSuccess: (_deleted, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["app-databases", vars.serial, vars.pkg],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["db-tables", vars.serial, vars.pkg, vars.dbName],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["db-schema", vars.serial, vars.pkg, vars.dbName],
+      });
+    },
+  });
+}
+
 export function useRunDbQuery() {
   return useMutation({
     mutationFn: (vars: { serial: string; pkg: string; dbName: string; sql: string }) =>
