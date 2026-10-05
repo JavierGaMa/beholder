@@ -155,6 +155,7 @@ pub fn run() {
             commands::agent_mcp_config,
             commands::list_app_databases,
             commands::pull_database_snapshot,
+            commands::delete_snapshot,
             commands::database_tables,
             commands::database_schema,
             commands::database_table_rows,

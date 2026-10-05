@@ -627,6 +627,22 @@ pub async fn pull_database_snapshot(
 }
 
 #[tauri::command]
+pub async fn delete_snapshot(
+    app: tauri::AppHandle,
+    serial: String,
+    package: String,
+    db_name: String,
+) -> Result<bool, String> {
+    let root = snapshot_root(&app)?;
+    tokio::task::spawn_blocking(move || {
+        bh_db::delete_snapshot(&serial, &package, &db_name, &root)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn database_tables(
     app: tauri::AppHandle,
     serial: String,

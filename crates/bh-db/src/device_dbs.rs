@@ -237,6 +237,21 @@ pub fn pull_snapshot(
     })
 }
 
+pub fn delete_snapshot(
+    serial: &str,
+    package: &str,
+    db_name: &str,
+    dest_root: &Path,
+) -> Result<bool, DbError> {
+    let dir = snapshot_dir(dest_root, serial, package, db_name)?;
+    if !dir.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_dir_all(&dir)
+        .map_err(|e| DbError::Other(format!("delete snapshot {}: {e}", dir.display())))?;
+    Ok(true)
+}
+
 fn run_shell(runner: &dyn CommandRunner, serial: &str, cmd: &str) -> Result<String, DeviceError> {
     let out = runner.run(&["-s", serial, "shell", cmd])?;
     if !out.success {
@@ -612,6 +627,35 @@ mod tests {
     fn snapshot_dir_rejects_slashes_in_serial() {
         let err = snapshot_dir(Path::new("/tmp"), "e/mu", "com.x", "app.db").unwrap_err();
         assert!(err.to_string().contains("invalid serial"));
+    }
+
+    #[test]
+    fn delete_snapshot_removes_dir_with_sidecar_files() {
+        let dest = std::env::temp_dir().join(format!("bh-db-delete-{}", std::process::id()));
+        let dir = dest.join("emu").join("com.x").join("app.db");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("app.db"), b"data").unwrap();
+        std::fs::write(dir.join("app.db-wal"), b"wal").unwrap();
+
+        assert!(delete_snapshot("emu", "com.x", "app.db", &dest).unwrap());
+
+        assert!(!dir.exists());
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn delete_snapshot_returns_false_when_no_dir_exists() {
+        let dest =
+            std::env::temp_dir().join(format!("bh-db-delete-missing-{}", std::process::id()));
+        assert!(!delete_snapshot("emu", "com.x", "app.db", &dest).unwrap());
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn delete_snapshot_rejects_path_traversal_db_name() {
+        let err = delete_snapshot("emu", "com.x", "../evil", Path::new("/tmp/bh-db-delete-evil"))
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid database name"));
     }
 
     fn snapshot_with_wal(tag: &str) -> (std::path::PathBuf, rusqlite::Connection) {
