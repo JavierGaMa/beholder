@@ -414,6 +414,13 @@ fn build_tools_version(name: &str) -> Option<Vec<u32>> {
 }
 
 pub fn read_apk_package(aapt: &Path, apk: &Path) -> Result<String, DeviceError> {
+    let badging = dump_badging(aapt, apk)?;
+    parse_badging_package(&badging).ok_or_else(|| {
+        DeviceError::Other("aapt badging output did not contain a package name".into())
+    })
+}
+
+pub fn dump_badging(aapt: &Path, apk: &Path) -> Result<String, DeviceError> {
     let out = Command::new(aapt)
         .arg("dump")
         .arg("badging")
@@ -427,9 +434,21 @@ pub fn read_apk_package(aapt: &Path, apk: &Path) -> Result<String, DeviceError> 
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    parse_badging_package(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| {
-        DeviceError::Other("aapt badging output did not contain a package name".into())
-    })
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+pub fn parse_badging_activity(badging: &str) -> Option<String> {
+    for line in badging.lines() {
+        let Some(rest) = line.trim().strip_prefix("launchable-activity:") else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix("name='") else {
+            continue;
+        };
+        let end = rest.find('\'')?;
+        return Some(rest[..end].to_string());
+    }
+    None
 }
 
 pub fn parse_badging_package(badging: &str) -> Option<String> {
@@ -605,5 +624,21 @@ mod tests {
         assert!(content.contains("hw.device.name=pixel_7"));
         assert!(content.contains("hw.lcd.density=420"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_badging_activity_reads_launchable_activity() {
+        let badging = "package: name='com.example.app'\n\
+                       launchable-activity: name='com.example.app.MainActivity'  label='App' icon=''\n";
+        assert_eq!(
+            parse_badging_activity(badging),
+            Some("com.example.app.MainActivity".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_badging_activity_absent_line_is_none() {
+        let badging = "package: name='com.example.app'\n";
+        assert_eq!(parse_badging_activity(badging), None);
     }
 }

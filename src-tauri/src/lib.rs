@@ -1,5 +1,6 @@
 mod apks;
 mod batch;
+mod buildrun;
 mod commands;
 mod config;
 mod console;
@@ -101,6 +102,8 @@ pub fn run() {
             commands::set_apks_config,
             commands::download_apk,
             commands::install_apk,
+            commands::list_rn_variants,
+            commands::build_and_run,
             commands::apks_download_dir,
             commands::list_local_apks,
             commands::reveal_apks_dir,

@@ -1,0 +1,15 @@
+apply plugin: "com.android.application"
+
+android {
+    defaultConfig {
+        applicationId "com.rninspector.plain"
+    }
+
+    buildTypes {
+        debug {
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+}

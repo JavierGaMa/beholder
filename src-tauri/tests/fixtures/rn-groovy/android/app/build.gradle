@@ -1,0 +1,49 @@
+apply plugin: "com.android.application"
+
+import com.android.build.OutputFile
+
+def reactNativeArchitectures() {
+    return ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
+
+android {
+    compileSdkVersion rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.rninspector.groovy"
+        minSdkVersion rootProject.ext.minSdkVersion
+    }
+
+    flavorDimensions "tier"
+
+    // productFlavors { commentedOut { dimension "tier" } }
+    productFlavors {
+        dev {
+            dimension "tier"
+            applicationIdSuffix ".dev"
+            extraProperty {
+                nested {
+                    deeper {
+                    }
+                }
+            }
+        }
+
+        prod {
+            dimension "tier"
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            signingConfig signingConfigs.debug
+        }
+        staging {
+            matchingFallbacks = ['debug', 'release']
+        }
+    }
+}

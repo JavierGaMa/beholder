@@ -6,10 +6,10 @@ pub mod runner;
 pub mod types;
 
 pub use avd::{
-    accept_licenses, create_avd_with_stdin, enrich_avds_from_config, find_aapt,
-    launch_emulator_detached, parse_avdmanager_list, parse_badging_package, parse_device_profiles,
-    parse_sdkmanager_images, read_apk_package, AvdManager, FakeSdkRunner, RealSdkRunner, SdkTool,
-    SdkToolRunner,
+    accept_licenses, create_avd_with_stdin, dump_badging, enrich_avds_from_config, find_aapt,
+    launch_emulator_detached, parse_avdmanager_list, parse_badging_activity, parse_badging_package,
+    parse_device_profiles, parse_sdkmanager_images, read_apk_package, AvdManager, FakeSdkRunner,
+    RealSdkRunner, SdkTool, SdkToolRunner,
 };
 pub use doctor::{apply_basic_fix, run_checks, CheckStatus, DoctorCheck, FixId};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
@@ -298,6 +298,30 @@ impl<'a> ApkInstaller for AdbDevice<'a> {
     }
 }
 
+pub trait AppLauncher {
+    fn launch_app(&self, package: &str, activity: Option<&str>) -> Result<(), DeviceError>;
+}
+
+impl<'a> AppLauncher for AdbDevice<'a> {
+    fn launch_app(&self, package: &str, activity: Option<&str>) -> Result<(), DeviceError> {
+        let component = match activity {
+            Some(name) if !name.trim().is_empty() => format!("{package}/{}", name.trim()),
+            _ => package.to_string(),
+        };
+        let out = self
+            .runner
+            .run(&["-s", &self.serial, "shell", "am", "start", "-n", &component])?;
+        if out.success {
+            return Ok(());
+        }
+        Err(DeviceError::Other(format!(
+            "am start failed: {} {}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
+    }
+}
+
 impl<'a> ProxyConfigurator for AdbDevice<'a> {
     fn set_proxy(&self, host: &str, port: u16) -> Result<(), DeviceError> {
         self.shell_ok(&format!("settings put global http_proxy {}:{}", host, port))?;
@@ -366,5 +390,46 @@ mod tests {
         let device = AdbDevice::new(&runner, "emulator-5554");
         let err = ApkInstaller::uninstall(&device, "com.example.app").unwrap_err();
         assert!(err.to_string().contains("DELETE_FAILED_INTERNAL_ERROR"));
+    }
+
+    #[test]
+    fn launch_app_runs_am_start_with_activity() {
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("Starting: Intent { cmp=com.example.app/.MainActivity }");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        AppLauncher::launch_app(&device, "com.example.app", Some(".MainActivity")).unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            vec![
+                "-s",
+                "emulator-5554",
+                "shell",
+                "am",
+                "start",
+                "-n",
+                "com.example.app/.MainActivity"
+            ]
+        );
+    }
+
+    #[test]
+    fn launch_app_without_activity_targets_bare_package() {
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("Starting");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        AppLauncher::launch_app(&device, "com.example.app", None).unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            vec!["-s", "emulator-5554", "shell", "am", "start", "-n", "com.example.app"]
+        );
+    }
+
+    #[test]
+    fn launch_app_failure_includes_raw_output() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail("Error: Activity class does not exist");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        let err = AppLauncher::launch_app(&device, "com.example.app", Some(".Main")).unwrap_err();
+        assert!(err.to_string().contains("Activity class does not exist"));
     }
 }

@@ -3,9 +3,10 @@ use crate::state::{AppState, ConsoleState, ShellSlot};
 use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession, PtyShell, adb_shell_command};
 use bh_core::{har_to_string, to_curl, HttpExchange};
 use bh_device::{
-    accept_licenses, create_avd_with_stdin, find_aapt, launch_emulator_detached, read_apk_package,
-    ApkInstaller, AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState,
-    ProxyConfigurator, RealSdkRunner, SdkTool,
+    accept_licenses, create_avd_with_stdin, dump_badging, find_aapt, launch_emulator_detached,
+    parse_badging_activity, parse_badging_package, read_apk_package, ApkInstaller, AppLauncher,
+    AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState, ProxyConfigurator,
+    RealSdkRunner, SdkTool,
 };
 use serde::Serialize;
 use std::path::Path;
@@ -84,6 +85,81 @@ pub async fn install_apk(state: State<'_, AppState>, serial: String, path: Strin
         let _ = ApkInstaller::uninstall(&device, &package);
     }
     ApkInstaller::install_apk(&device, &path).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct RnVariantsInfo {
+    pub project_root: String,
+    pub gradle_file: String,
+    pub flavors: Vec<String>,
+    pub build_types: Vec<String>,
+}
+
+#[tauri::command]
+pub fn list_rn_variants(path: String) -> Result<RnVariantsInfo, String> {
+    let project = crate::buildrun::detect(Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(RnVariantsInfo {
+        project_root: project.root.display().to_string(),
+        gradle_file: project.gradle_file.display().to_string(),
+        flavors: project.flavors,
+        build_types: project.build_types,
+    })
+}
+
+#[tauri::command]
+pub async fn build_and_run(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    project_path: String,
+    flavor: Option<String>,
+    build_type: String,
+    serial: String,
+) -> Result<(), String> {
+    let project = crate::buildrun::detect(Path::new(&project_path)).map_err(|e| e.to_string())?;
+    let task = crate::buildrun::assemble_task_name(flavor.as_deref(), &build_type);
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let android_dir = project.android_dir;
+    let rf_flavor = flavor;
+    let rf_build_type = build_type;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let mut emit = |line: &str| {
+            let _ = app.emit("build-log", line.to_string());
+        };
+        emit(&format!("building {task}..."));
+        let outcome = crate::buildrun::run_build(
+            &android_dir,
+            &task,
+            rf_flavor.as_deref(),
+            &rf_build_type,
+            &crate::buildrun::RealHostRunner,
+            &mut emit,
+        )
+        .map_err(|e| e.to_string())?;
+        let apk = outcome.apk_path;
+        emit(&format!("apk {}", apk.display()));
+        let aapt = RealSdkRunner::discover()
+            .ok()
+            .and_then(|sdk| find_aapt(sdk.sdk_root()));
+        let badging = aapt.as_ref().and_then(|a| dump_badging(a, &apk).ok());
+        let package = badging.as_deref().and_then(parse_badging_package);
+        let activity = badging.as_deref().and_then(parse_badging_activity);
+        let Some(package) = package else {
+            return Err("could not read apk package name via aapt".to_string());
+        };
+        let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
+        let _ = ApkInstaller::uninstall(&device, &package);
+        emit(&format!("installing {package}..."));
+        let apk_path = apk.to_str().ok_or("apk path is not valid utf-8")?;
+        ApkInstaller::install_apk(&device, apk_path).map_err(|e| e.to_string())?;
+        emit(&format!("launching {package}..."));
+        AppLauncher::launch_app(&device, &package, activity.as_deref())
+            .map_err(|e| e.to_string())?;
+        emit("done");
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
