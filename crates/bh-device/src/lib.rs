@@ -302,6 +302,26 @@ pub trait AppLauncher {
     fn launch_app(&self, package: &str, activity: Option<&str>) -> Result<(), DeviceError>;
 }
 
+pub trait AppStopper {
+    fn force_stop(&self, package: &str) -> Result<(), DeviceError>;
+}
+
+impl<'a> AppStopper for AdbDevice<'a> {
+    fn force_stop(&self, package: &str) -> Result<(), DeviceError> {
+        let out = self
+            .runner
+            .run(&["-s", &self.serial, "shell", "am", "force-stop", package])?;
+        if out.success {
+            return Ok(());
+        }
+        Err(DeviceError::Other(format!(
+            "am force-stop failed: {} {}",
+            out.stdout.trim(),
+            out.stderr.trim()
+        )))
+    }
+}
+
 impl<'a> AppLauncher for AdbDevice<'a> {
     fn launch_app(&self, package: &str, activity: Option<&str>) -> Result<(), DeviceError> {
         let component = match activity {
@@ -431,5 +451,33 @@ mod tests {
         let device = AdbDevice::new(&runner, "emulator-5554");
         let err = AppLauncher::launch_app(&device, "com.example.app", Some(".Main")).unwrap_err();
         assert!(err.to_string().contains("Activity class does not exist"));
+    }
+
+    #[test]
+    fn force_stop_runs_am_force_stop_with_package() {
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        AppStopper::force_stop(&device, "com.example.app").unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            vec![
+                "-s",
+                "emulator-5554",
+                "shell",
+                "am",
+                "force-stop",
+                "com.example.app"
+            ]
+        );
+    }
+
+    #[test]
+    fn force_stop_failure_includes_raw_output() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail("Error: bad package name");
+        let device = AdbDevice::new(&runner, "emulator-5554");
+        let err = AppStopper::force_stop(&device, "com.example.app").unwrap_err();
+        assert!(err.to_string().contains("bad package name"));
     }
 }

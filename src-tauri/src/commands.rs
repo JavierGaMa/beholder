@@ -5,11 +5,12 @@ use bh_core::{har_to_string, to_curl, HttpExchange};
 use bh_device::{
     accept_licenses, create_avd_with_stdin, dump_badging, find_aapt, launch_emulator_detached,
     parse_badging_activity, parse_badging_package, read_apk_package, ApkInstaller, AppLauncher,
-    AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState, ProxyConfigurator,
-    RealSdkRunner, SdkTool,
+    AppStopper, AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState,
+    ProxyConfigurator, RealSdkRunner, SdkTool,
 };
 use serde::Serialize;
 use std::path::Path;
+use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 
 #[tauri::command]
@@ -166,6 +167,80 @@ pub async fn build_and_run(
     .await
     .map_err(|e| e.to_string())??;
     Ok(())
+}
+
+const METRO_START_PROBE_SECS: u64 = 20;
+
+#[derive(serde::Serialize)]
+pub struct MetroRunInfo {
+    pub port: u16,
+    pub running: bool,
+    pub spawned: bool,
+}
+
+#[tauri::command]
+pub async fn metro_start(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<MetroRunInfo, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let port = crate::config::load(&dir)
+        .map(|c| c.metro.port)
+        .unwrap_or(8081);
+    let log: Arc<dyn Fn(&str) + Send + Sync> = {
+        let app = app.clone();
+        Arc::new(move |line: &str| {
+            let _ = app.emit("metro-log", line.to_string());
+        })
+    };
+    let mut guard = state.metro_process.lock().await;
+    let outcome = crate::metro::start_metro(
+        port,
+        Path::new(&project_path),
+        &crate::metro::RealMetroSpawner,
+        &mut guard,
+        METRO_START_PROBE_SECS,
+        log,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(match outcome {
+        crate::metro::MetroStartOutcome::AlreadyRunning => MetroRunInfo {
+            port,
+            running: true,
+            spawned: false,
+        },
+        crate::metro::MetroStartOutcome::Spawned { running } => MetroRunInfo {
+            port,
+            running,
+            spawned: true,
+        },
+    })
+}
+
+#[tauri::command]
+pub async fn metro_stop(state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut guard = state.metro_process.lock().await;
+        crate::metro::stop_metro(&mut guard);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn force_stop_app(
+    state: State<'_, AppState>,
+    serial: String,
+    package: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
+        AppStopper::force_stop(&device, &package).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize)]

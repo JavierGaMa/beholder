@@ -104,6 +104,9 @@ pub fn run() {
             commands::install_apk,
             commands::list_rn_variants,
             commands::build_and_run,
+            commands::metro_start,
+            commands::metro_stop,
+            commands::force_stop_app,
             commands::apks_download_dir,
             commands::list_local_apks,
             commands::reveal_apks_dir,
@@ -178,6 +181,10 @@ pub fn run() {
                 let state = app_handle.state::<state::AppState>();
                 if let Some(metro_task) = state.metro_task.lock().await.take() {
                     metro_task.stop().await;
+                }
+                {
+                    let mut guard = state.metro_process.lock().await;
+                    crate::metro::stop_metro(&mut guard);
                 }
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {

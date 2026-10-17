@@ -13,6 +13,7 @@ pub struct AppState {
     pub sink: StdMutex<Arc<BatchSink>>,
     pub active_serial: AsyncMutex<Option<String>>,
     pub metro_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
+    pub metro_process: AsyncMutex<Option<crate::metro::MetroProcess>>,
 }
 
 impl AppState {
@@ -23,6 +24,7 @@ impl AppState {
             sink: StdMutex::new(sink),
             active_serial: AsyncMutex::new(None),
             metro_task: AsyncMutex::new(None),
+            metro_process: AsyncMutex::new(None),
         }
     }
 
