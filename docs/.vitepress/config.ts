@@ -36,6 +36,7 @@ export default defineConfig({
             { text: "Getting started", link: "/guide/getting-started" },
             { text: "Capturing traffic", link: "/guide/capture" },
             { text: "Emulator management", link: "/guide/emulators" },
+            { text: "Build & Run", link: "/guide/buildrun" },
             { text: "Doctor", link: "/guide/doctor" },
             { text: "Exports", link: "/guide/exports" },
           ],
