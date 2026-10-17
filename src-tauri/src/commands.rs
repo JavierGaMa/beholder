@@ -93,6 +93,9 @@ pub struct RnVariantsInfo {
     pub gradle_file: String,
     pub flavors: Vec<String>,
     pub build_types: Vec<String>,
+    pub application_id: Option<String>,
+    pub flavor_ids: Vec<crate::buildrun::FlavorApplicationId>,
+    pub duplicate_ids: Vec<String>,
 }
 
 #[tauri::command]
@@ -103,6 +106,9 @@ pub fn list_rn_variants(path: String) -> Result<RnVariantsInfo, String> {
         gradle_file: project.gradle_file.display().to_string(),
         flavors: project.flavors,
         build_types: project.build_types,
+        application_id: project.application_id,
+        flavor_ids: project.flavor_ids,
+        duplicate_ids: project.duplicate_ids,
     })
 }
 

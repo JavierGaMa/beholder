@@ -13,6 +13,16 @@ pub struct RnProject {
     pub gradle_file: PathBuf,
     pub flavors: Vec<String>,
     pub build_types: Vec<String>,
+    pub application_id: Option<String>,
+    pub flavor_ids: Vec<FlavorApplicationId>,
+    pub duplicate_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FlavorApplicationId {
+    pub flavor: String,
+    pub suffix: Option<String>,
+    pub effective: Option<String>,
 }
 
 pub fn detect(root: &Path) -> Result<RnProject, DeviceError> {
@@ -52,12 +62,20 @@ pub fn detect(root: &Path) -> Result<RnProject, DeviceError> {
     };
     let source = std::fs::read_to_string(&gradle_file)
         .map_err(|e| DeviceError::Other(format!("read {}: {e}", gradle_file.display())))?;
+    let flavors = parse_product_flavors(&source);
+    let build_types = parse_build_types(&source);
+    let application_id = parse_default_application_id(&source);
+    let flavor_ids = resolve_flavor_ids(&source, &flavors, application_id.as_deref());
+    let duplicate_ids = duplicate_effective_ids(&flavor_ids);
     Ok(RnProject {
         root: root.to_path_buf(),
         android_dir,
         gradle_file,
-        flavors: parse_product_flavors(&source),
-        build_types: parse_build_types(&source),
+        flavors,
+        build_types,
+        application_id,
+        flavor_ids,
+        duplicate_ids,
     })
 }
 
@@ -211,6 +229,151 @@ pub fn parse_build_types(gradle: &str) -> Vec<String> {
         .map(|body| names_in_block(&body))
         .unwrap_or_default()
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlavorAndroidConfig {
+    pub name: String,
+    pub application_id: Option<String>,
+    pub application_id_suffix: Option<String>,
+}
+
+fn assignment_value(body: &str, key: &str) -> Option<String> {
+    let chars: Vec<char> = strip_comments(body).chars().collect();
+    let kw: Vec<char> = key.chars().collect();
+    let mut i = 0;
+    while i + kw.len() <= chars.len() {
+        let matches = chars[i..i + kw.len()]
+            .iter()
+            .zip(kw.iter())
+            .all(|(a, b)| a == b);
+        if matches {
+            let before_ok = i == 0 || !is_ident_char(chars[i - 1]);
+            let after_idx = i + kw.len();
+            let after_ok = chars
+                .get(after_idx)
+                .map(|c| !is_ident_char(*c))
+                .unwrap_or(true);
+            if before_ok && after_ok {
+                let mut k = after_idx;
+                while k < chars.len() && chars[k].is_whitespace() {
+                    k += 1;
+                }
+                if chars.get(k) == Some(&'=') {
+                    k += 1;
+                    while k < chars.len() && chars[k].is_whitespace() {
+                        k += 1;
+                    }
+                }
+                let quote = *chars.get(k)?;
+                if quote == '"' || quote == '\'' {
+                    return quoted_arg(&chars, k - 1);
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn named_blocks(body: &str) -> Vec<(String, String)> {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '{' | '(' => {
+                if chars[i] == '{' && depth == 1 {
+                    if let Some(name) = preceding_ident(&chars, i) {
+                        if is_ident_char(name.chars().next().unwrap_or(' ')) {
+                            let mut d = 0usize;
+                            let mut j = i;
+                            let mut block = String::new();
+                            while j < chars.len() {
+                                let c = chars[j];
+                                block.push(c);
+                                if c == '{' {
+                                    d += 1;
+                                } else if c == '}' {
+                                    d -= 1;
+                                    if d == 0 {
+                                        break;
+                                    }
+                                }
+                                j += 1;
+                            }
+                            out.push((name, block));
+                        }
+                    }
+                }
+                depth += 1;
+            }
+            '}' | ')' => {
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
+pub fn parse_flavor_config(gradle: &str) -> Vec<FlavorAndroidConfig> {
+    extract_block(gradle, "productFlavors")
+        .map(|body| {
+            named_blocks(&body)
+                .into_iter()
+                .map(|(name, block)| FlavorAndroidConfig {
+                    name,
+                    application_id: assignment_value(&block, "applicationId"),
+                    application_id_suffix: assignment_value(&block, "applicationIdSuffix"),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn parse_default_application_id(gradle: &str) -> Option<String> {
+    extract_block(gradle, "defaultConfig").and_then(|body| assignment_value(&body, "applicationId"))
+}
+
+fn resolve_flavor_ids(
+    gradle: &str,
+    flavors: &[String],
+    base: Option<&str>,
+) -> Vec<FlavorApplicationId> {
+    let configs = parse_flavor_config(gradle);
+    flavors
+        .iter()
+        .map(|name| {
+            let cfg = configs.iter().find(|c| &c.name == name);
+            let suffix = cfg.and_then(|c| c.application_id_suffix.clone());
+            let effective = match cfg.and_then(|c| c.application_id.clone()) {
+                Some(id) => Some(id),
+                None => base.map(|b| format!("{}{}", b, suffix.clone().unwrap_or_default())),
+            };
+            FlavorApplicationId {
+                flavor: name.clone(),
+                suffix,
+                effective,
+            }
+        })
+        .collect()
+}
+
+fn duplicate_effective_ids(ids: &[FlavorApplicationId]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut dups = Vec::new();
+    for id in ids {
+        if let Some(effective) = &id.effective {
+            if !seen.insert(effective.clone()) && !dups.contains(effective) {
+                dups.push(effective.clone());
+            }
+        }
+    }
+    dups
+}
+
 
 fn pascal_case(part: &str) -> String {
     let mut chars = part.chars();
@@ -444,8 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_flavors_ignoring_comments_and_nested_braces() {
-        let src = r#"
+    fn parses_flavors_ignoring_comments_and_nested_braces() {        let src = r#"
             android {
                 // productFlavors { decoy { dimension "x" } }
                 /* productFlavors { commented { } } */
@@ -483,6 +645,121 @@ mod tests {
             }
         "#;
         assert_eq!(parse_build_types(src), vec!["release", "debug", "qa"]);
+    }
+
+    #[test]
+    fn detect_resolves_application_ids_in_groovy_project() {
+        let project = detect(&fixture("rn-groovy")).unwrap();
+        assert_eq!(project.application_id.as_deref(), Some("com.rninspector.groovy"));
+        assert_eq!(
+            project.flavor_ids,
+            vec![
+                FlavorApplicationId {
+                    flavor: "dev".into(),
+                    suffix: Some(".dev".into()),
+                    effective: Some("com.rninspector.groovy.dev".into()),
+                },
+                FlavorApplicationId {
+                    flavor: "prod".into(),
+                    suffix: None,
+                    effective: Some("com.rninspector.groovy".into()),
+                },
+            ]
+        );
+        assert!(project.duplicate_ids.is_empty());
+    }
+
+    #[test]
+    fn detect_resolves_application_ids_in_kotlin_project() {
+        let project = detect(&fixture("rn-kotlin")).unwrap();
+        assert_eq!(project.application_id.as_deref(), Some("com.rninspector.kotlin"));
+        assert_eq!(
+            project.flavor_ids,
+            vec![
+                FlavorApplicationId {
+                    flavor: "dev".into(),
+                    suffix: Some(".dev".into()),
+                    effective: Some("com.rninspector.kotlin.dev".into()),
+                },
+                FlavorApplicationId {
+                    flavor: "prod".into(),
+                    suffix: None,
+                    effective: Some("com.rninspector.kotlin".into()),
+                },
+            ]
+        );
+        assert!(project.duplicate_ids.is_empty());
+    }
+
+    #[test]
+    fn detect_flags_duplicate_effective_ids_and_flavor_override() {
+        let project = detect(&fixture("rn-dup")).unwrap();
+        assert_eq!(project.flavors, vec!["first", "second", "third"]);
+        assert_eq!(project.duplicate_ids, vec!["com.dup.app.s"]);
+        let third = project
+            .flavor_ids
+            .iter()
+            .find(|f| f.flavor == "third")
+            .unwrap();
+        assert_eq!(third.effective.as_deref(), Some("com.dup.other"));
+        assert_eq!(third.suffix, None);
+    }
+
+    #[test]
+    fn detect_leaves_effective_ids_unresolved_when_base_is_missing() {
+        let project = detect(&fixture("rn-no-id")).unwrap();
+        assert_eq!(project.application_id, None);
+        assert!(project.flavor_ids.iter().all(|f| f.effective.is_none()));
+        assert!(project.flavor_ids[0].suffix.as_deref() == Some(".dev"));
+        assert!(project.duplicate_ids.is_empty());
+    }
+
+    #[test]
+    fn parses_assignment_value_in_groovy_and_kotlin_styles() {
+        assert_eq!(
+            assignment_value("applicationId \"com.a.b\"\nother \"x\"", "applicationId").as_deref(),
+            Some("com.a.b")
+        );
+        assert_eq!(
+            assignment_value("applicationId = \"com.c.d\"", "applicationId").as_deref(),
+            Some("com.c.d")
+        );
+        assert_eq!(
+            assignment_value("applicationIdSuffix '.s'", "applicationIdSuffix").as_deref(),
+            Some(".s")
+        );
+        assert_eq!(assignment_value("minifyEnabled false", "applicationId"), None);
+        assert_eq!(
+            assignment_value("someApplicationId \"x\"", "applicationId"),
+            None
+        );
+        assert_eq!(
+            assignment_value("applicationIdSuffix \"x\"", "applicationId"),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_flavor_level_override_blocks() {
+        let src = r#"
+            android {
+                productFlavors {
+                    create("dev") {
+                        dimension = "tier"
+                        applicationIdSuffix = ".dev"
+                    }
+                    current {
+                        applicationId "com.over.app"
+                    }
+                }
+            }
+        "#;
+        let parsed = parse_flavor_config(src);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].name, "dev");
+        assert_eq!(parsed[0].application_id_suffix.as_deref(), Some(".dev"));
+        assert_eq!(parsed[0].application_id, None);
+        assert_eq!(parsed[1].application_id.as_deref(), Some("com.over.app"));
     }
 
     #[test]

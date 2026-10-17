@@ -1,0 +1,11 @@
+apply plugin: "com.android.application"
+
+android {
+    productFlavors {
+        dev {
+            applicationIdSuffix ".dev"
+        }
+        prod {
+        }
+    }
+}

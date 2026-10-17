@@ -1,0 +1,21 @@
+apply plugin: "com.android.application"
+
+android {
+    defaultConfig {
+        applicationId "com.dup.app"
+    }
+
+    productFlavors {
+        first {
+            applicationIdSuffix ".s"
+        }
+
+        second {
+            applicationIdSuffix ".s"
+        }
+
+        third {
+            applicationId "com.dup.other"
+        }
+    }
+}

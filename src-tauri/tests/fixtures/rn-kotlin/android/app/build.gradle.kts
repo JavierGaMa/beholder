@@ -3,6 +3,10 @@ import com.android.build.gradle.internal.dsl.BaseFlavor
 android {
     namespace = "com.rninspector.kotlin"
 
+    defaultConfig {
+        applicationId = "com.rninspector.kotlin"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -18,6 +22,7 @@ android {
     productFlavors {
         create("dev") {
             dimension = "tier"
+            applicationIdSuffix = ".dev"
         }
         create("prod") {
             dimension = "tier"
