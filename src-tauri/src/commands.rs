@@ -89,6 +89,7 @@ pub async fn install_apk(state: State<'_, AppState>, serial: String, path: Strin
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RnVariantsInfo {
     pub project_root: String,
     pub gradle_file: String,
@@ -1806,5 +1807,29 @@ mod tests {
         .await
         .unwrap();
         assert!(stderr.contains("license not accepted"));
+    }
+}
+
+#[cfg(test)]
+mod buildrun_payload_tests {
+    use super::*;
+
+    #[test]
+    fn list_rn_variants_payload_is_camel_case() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rn-groovy");
+        let info: RnVariantsInfo = list_rn_variants(path.to_string()).unwrap();
+        let json = serde_json::to_value(&info).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in ["projectRoot", "gradleFile", "applicationId", "flavorIds", "duplicateIds"] {
+            assert!(
+                obj.contains_key(key),
+                "missing camelCase key {key}, got: {:?}",
+                obj.keys().collect::<Vec<_>>()
+            );
+        }
+        let first = obj.get("flavorIds").unwrap().get(0).unwrap();
+        for key in ["flavor", "suffix", "effective"] {
+            assert!(first.get(key).is_some(), "missing flavorIds[*].{key}");
+        }
     }
 }

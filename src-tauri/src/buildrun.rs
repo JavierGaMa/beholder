@@ -19,6 +19,7 @@ pub struct RnProject {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FlavorApplicationId {
     pub flavor: String,
     pub suffix: Option<String>,
