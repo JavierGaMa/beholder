@@ -35,6 +35,7 @@ const VIEW_LABELS: Record<View, string> = {
   websockets: "WebSockets",
   emulators: "Emulators",
   apks: "APKs",
+  buildrun: "Build & Run",
   database: "Databases",
   console: "Console",
 };

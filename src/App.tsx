@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   ArrowLeftRight,
   Database,
+  Hammer,
   MonitorSmartphone,
   Package,
   SquareTerminal,
@@ -33,6 +34,7 @@ import { ApksView } from "./features/apks/ApksView";
 import { DatabasesView } from "./features/database/DatabasesView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { ConsoleView } from "./features/console/ConsoleView";
+import { BuildRunView } from "./features/buildrun/BuildRunView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
@@ -54,6 +56,7 @@ const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeo
     items: [
       { id: "emulators", label: "Emulators", icon: MonitorSmartphone },
       { id: "apks", label: "APKs", icon: Package },
+      { id: "buildrun", label: "Build & Run", icon: Hammer },
       { id: "database", label: "Databases", icon: Database },
       { id: "console", label: "Console", icon: SquareTerminal },
     ],
@@ -284,6 +287,7 @@ export default function App() {
             {activeView === "websockets" && <WebSocketsView />}
             {activeView === "emulators" && <EmulatorsView />}
             {activeView === "apks" && <ApksView />}
+            {activeView === "buildrun" && <BuildRunView />}
             {activeView === "database" && <DatabasesView />}
             {activeView === "console" && <ConsoleView />}
           </div>
