@@ -160,6 +160,7 @@ pub struct AgentStore {
     console: Mutex<VecDeque<LogLine>>,
     session: Mutex<SessionTotals>,
     snapshots: Mutex<Vec<Value>>,
+    databases: Mutex<Vec<Value>>,
 }
 
 impl AgentStore {
@@ -173,7 +174,60 @@ impl AgentStore {
             console: Mutex::new(VecDeque::new()),
             session: Mutex::new(SessionTotals::default()),
             snapshots: Mutex::new(Vec::new()),
+            databases: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn register_database(&self, serial: &str, pkg: &str, db: &str, path: &str) {
+        let mut list = self.databases.lock().unwrap();
+        list.retain(|v| {
+            !(v.get("serial").and_then(Value::as_str) == Some(serial)
+                && v.get("pkg").and_then(Value::as_str) == Some(pkg)
+                && v.get("db").and_then(Value::as_str) == Some(db))
+        });
+        list.push(serde_json::json!({
+            "serial": serial,
+            "pkg": pkg,
+            "db": db,
+            "path": path,
+        }));
+    }
+
+    pub fn unregister_database(&self, serial: &str, pkg: &str, db: &str) {
+        self.databases.lock().unwrap().retain(|v| {
+            !(v.get("serial").and_then(Value::as_str) == Some(serial)
+                && v.get("pkg").and_then(Value::as_str) == Some(pkg)
+                && v.get("db").and_then(Value::as_str) == Some(db))
+        });
+    }
+
+    pub fn database_path(&self, serial: &str, pkg: &str, db: &str) -> Option<String> {
+        self.databases
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v.get("serial").and_then(Value::as_str) == Some(serial)
+                    && v.get("pkg").and_then(Value::as_str) == Some(pkg)
+                    && v.get("db").and_then(Value::as_str) == Some(db)
+            })
+            .and_then(|v| v.get("path").and_then(Value::as_str))
+            .map(|p| p.to_string())
+    }
+
+    pub fn databases_json(&self) -> Value {
+        let list = self.databases.lock().unwrap();
+        let rows: Vec<Value> = list
+            .iter()
+            .map(|v| {
+                serde_json::json!({
+                    "serial": v.get("serial").cloned().unwrap_or(Value::Null),
+                    "pkg": v.get("pkg").cloned().unwrap_or(Value::Null),
+                    "db": v.get("db").cloned().unwrap_or(Value::Null),
+                })
+            })
+            .collect();
+        serde_json::json!({ "databases": rows })
     }
 
     pub fn set_snapshots(&self, list: Value) {
@@ -548,6 +602,28 @@ mod tests {
         let detail = s.snapshot_detail("s2").unwrap();
         assert_eq!(detail["label"], "M");
         assert!(s.snapshot_detail("nope").is_none());
+    }
+
+    #[test]
+    fn database_registry_roundtrip() {
+        let s = AgentStore::new(AgentLimits::default());
+        assert_eq!(s.databases_json()["databases"].as_array().unwrap().len(), 0);
+        s.register_database("emu-1", "com.app", "cache.db", "/tmp/one.db");
+        s.register_database("emu-1", "com.app", "users.db", "/tmp/two.db");
+        s.register_database("emu-1", "com.app", "cache.db", "/tmp/new.db");
+        let rows = s.databases_json()["databases"].as_array().unwrap().clone();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.get("path").is_none()));
+        assert_eq!(
+            s.database_path("emu-1", "com.app", "cache.db").as_deref(),
+            Some("/tmp/new.db")
+        );
+        s.unregister_database("emu-1", "com.app", "cache.db");
+        assert!(s.database_path("emu-1", "com.app", "cache.db").is_none());
+        assert_eq!(
+            s.database_path("emu-1", "com.app", "users.db").as_deref(),
+            Some("/tmp/two.db")
+        );
     }
 
     #[test]
