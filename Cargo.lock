@@ -351,6 +351,8 @@ version = "0.4.0"
 dependencies = [
  "bh-console",
  "bh-core",
+ "bh-db",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",
