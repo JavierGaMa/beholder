@@ -49,6 +49,9 @@ interface TrafficState {
   capturePort: number | null;
   metro: MetroStatus | null;
   requestCount: number;
+  sessionBytesIn: number;
+  sessionBytesOut: number;
+  sessionFailed: number;
   installLog: string | null;
   uiConfig: UiConfig | null;
   settingsOpen: boolean;
@@ -82,6 +85,9 @@ export const useTraffic = create<TrafficState>((set) => ({
   capturePort: null,
   metro: null,
   requestCount: 0,
+  sessionBytesIn: 0,
+  sessionBytesOut: 0,
+  sessionFailed: 0,
   installLog: null,
   uiConfig: null,
   settingsOpen: false,
@@ -109,6 +115,9 @@ export const useTraffic = create<TrafficState>((set) => ({
       wsConnections: new Map(),
       seen: new Set(),
       requestCount: 0,
+      sessionBytesIn: 0,
+      sessionBytesOut: 0,
+      sessionFailed: 0,
     }),
   ingest: (events) =>
     set((s) => {
@@ -117,6 +126,9 @@ export const useTraffic = create<TrafficState>((set) => ({
       let orderChanged = false;
       let wsConnections = s.wsConnections;
       let count = s.requestCount;
+      let sessionBytesIn = s.sessionBytesIn;
+      let sessionBytesOut = s.sessionBytesOut;
+      let sessionFailed = s.sessionFailed;
       const seen = s.seen;
       for (const ev of events) {
         switch (ev.type) {
@@ -137,6 +149,7 @@ export const useTraffic = create<TrafficState>((set) => ({
               }
               seen.add(ev.id);
               order.push(ev.id);
+              sessionBytesOut += ev.request.body?.size ?? 0;
             }
             count += 1;
             break;
@@ -145,6 +158,11 @@ export const useTraffic = create<TrafficState>((set) => ({
             const ex = exchanges.get(ev.id);
             if (ex) {
               if (exchanges === s.exchanges) exchanges = new Map(s.exchanges);
+              if (ex.response == null) {
+                sessionBytesIn +=
+                  ev.response.body?.wire_size ?? ev.response.body?.size ?? 0;
+                if (ev.response.status >= 400) sessionFailed += 1;
+              }
               exchanges.set(ev.id, {
                 ...ex,
                 response: ev.response,
@@ -158,6 +176,7 @@ export const useTraffic = create<TrafficState>((set) => ({
             const ex = exchanges.get(ev.id);
             if (ex) {
               if (exchanges === s.exchanges) exchanges = new Map(s.exchanges);
+              if (ex.error == null) sessionFailed += 1;
               exchanges.set(ev.id, { ...ex, error: ev.error });
             }
             break;
@@ -177,10 +196,26 @@ export const useTraffic = create<TrafficState>((set) => ({
           seen.delete(id);
         }
       }
-      if (exchanges === s.exchanges && !orderChanged && wsConnections === s.wsConnections && count === s.requestCount) {
+      if (
+        exchanges === s.exchanges &&
+        !orderChanged &&
+        wsConnections === s.wsConnections &&
+        count === s.requestCount &&
+        sessionBytesIn === s.sessionBytesIn &&
+        sessionBytesOut === s.sessionBytesOut &&
+        sessionFailed === s.sessionFailed
+      ) {
         return s;
       }
-      return { exchanges, order, wsConnections, requestCount: count };
+      return {
+        exchanges,
+        order,
+        wsConnections,
+        requestCount: count,
+        sessionBytesIn,
+        sessionBytesOut,
+        sessionFailed,
+      };
     }),
 }));
 

@@ -53,10 +53,15 @@ function StatCard({
 
 export function MetricsView() {
   const exchanges = useTraffic((s) => s.exchanges);
+  const requestCount = useTraffic((s) => s.requestCount);
+  const sessionBytesIn = useTraffic((s) => s.sessionBytesIn);
+  const sessionBytesOut = useTraffic((s) => s.sessionBytesOut);
+  const sessionFailed = useTraffic((s) => s.sessionFailed);
   const metrics = useMemo(() => computeMetrics([...exchanges.values()]), [exchanges]);
-  const { totals, byDomain, buckets, slowest } = metrics;
+  const { byDomain, buckets, slowest } = metrics;
+  const windowTruncated = requestCount > exchanges.size;
 
-  if (totals.count === 0) {
+  if (requestCount === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
         <Inbox size={28} className="text-muted/60" />
@@ -77,34 +82,41 @@ export function MetricsView() {
       <div className="flex flex-wrap gap-3">
         <StatCard
           label="Downloaded"
-          value={formatBytes(totals.wireBytesIn)}
+          value={formatBytes(sessionBytesIn)}
           sub={
-            totals.wireBytesIn === totals.bytesIn
+            sessionBytesIn === metrics.totals.bytesIn
               ? "response bodies"
-              : `decoded ${formatBytes(totals.bytesIn)}`
+              : `decoded ${formatBytes(metrics.totals.bytesIn)}`
           }
           icon={ArrowDownToLine}
         />
         <StatCard
           label="Uploaded"
-          value={formatBytes(totals.bytesOut)}
+          value={formatBytes(sessionBytesOut)}
           sub="request bodies"
           icon={ArrowUpFromLine}
         />
-        <StatCard label="Requests" value={String(totals.count)} icon={Activity} />
+        <StatCard label="Requests" value={String(requestCount)} icon={Activity} />
         <StatCard
           label="Failed"
-          value={String(totals.failed)}
+          value={String(sessionFailed)}
           icon={AlertTriangle}
-          warn={totals.failed > 0}
+          warn={sessionFailed > 0}
         />
         <StatCard
           label="P95 latency"
-          value={formatMs(totals.p95Ms)}
-          sub={`p50 ${formatMs(totals.p50Ms)} · ttfb ${formatMs(totals.avgTtfbMs)}`}
+          value={formatMs(metrics.totals.p95Ms)}
+          sub={`p50 ${formatMs(metrics.totals.p50Ms)} · ttfb ${formatMs(metrics.totals.avgTtfbMs)}`}
           icon={Timer}
         />
       </div>
+
+      {windowTruncated && (
+        <p className="rounded-md border border-line bg-surface px-3 py-2 text-[11px] text-muted">
+          Showing the last {exchanges.size} of {requestCount} requests. Totals above cover
+          the whole session; domain and latency breakdowns cover the visible window only.
+        </p>
+      )}
 
       <section aria-label="Throughput" className="rounded-lg border border-line bg-surface p-3.5">
         <div className="flex items-baseline justify-between pb-2">

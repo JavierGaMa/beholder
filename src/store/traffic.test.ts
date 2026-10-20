@@ -132,3 +132,76 @@ describe("traffic store metro status", () => {
     expect(useTraffic.getState().metro).toBeNull();
   });
 });
+
+const completedWithBody = (id: number, size = 10, wire: number | null = 4, status = 200): TrafficEvent => ({
+  type: "ExchangeCompleted",
+  id,
+  response: {
+    status,
+    headers: [],
+    body: { mime: null, size, wire_size: wire, truncated: false, text: "", is_binary: false },
+    ended_at: 2,
+  },
+  timing: { ttfb_ms: 5, download_ms: 3, total_ms: 8 },
+  protocol: "HTTP/1.1",
+});
+
+const startedWithBody = (id: number, size: number): TrafficEvent => ({
+  type: "ExchangeStarted",
+  id,
+  request: {
+    method: "POST",
+    url: `https://a.dev/${id}`,
+    host: "a.dev",
+    path: `/${id}`,
+    headers: [],
+    body: { mime: null, size, truncated: false, text: "", is_binary: false },
+    started_at: 1,
+  },
+});
+
+describe("traffic store session totals", () => {
+  it("accumulates wire bytes and failures beyond eviction", () => {
+    useTraffic.getState().clear();
+    const events: TrafficEvent[] = [];
+    const total = MAX_EXCHANGES + 5;
+    for (let id = 1; id <= total; id++) {
+      events.push(started(id));
+      events.push(completedWithBody(id, 10, 4, id % 2 === 0 ? 500 : 200));
+    }
+    useTraffic.getState().ingest(events);
+    const st = useTraffic.getState();
+    expect(st.exchanges.size).toBe(MAX_EXCHANGES);
+    expect(st.requestCount).toBe(total);
+    expect(st.sessionBytesIn).toBe(total * 4);
+    expect(st.sessionFailed).toBe(Math.floor(total / 2));
+  });
+
+  it("counts request body bytes once per unique start", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([startedWithBody(1, 25), startedWithBody(1, 25)]);
+    expect(useTraffic.getState().sessionBytesOut).toBe(25);
+  });
+
+  it("does not double count repeated completions", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([started(1), completedWithBody(1), completedWithBody(1)]);
+    expect(useTraffic.getState().sessionBytesIn).toBe(4);
+  });
+
+  it("counts failed events into sessionFailed", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([started(7), { type: "ExchangeFailed", id: 7, error: "x" }]);
+    expect(useTraffic.getState().sessionFailed).toBe(1);
+  });
+
+  it("resets session totals on clear", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([started(1), completedWithBody(1)]);
+    useTraffic.getState().clear();
+    const st = useTraffic.getState();
+    expect(st.sessionBytesIn).toBe(0);
+    expect(st.sessionBytesOut).toBe(0);
+    expect(st.sessionFailed).toBe(0);
+  });
+});
