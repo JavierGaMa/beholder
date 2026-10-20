@@ -285,6 +285,21 @@ export function CommandBar({
                 {captureOn ? "Stop" : "Capture"}
               </Button>
 
+              {captureOn && (
+                <Tooltip label="Restart capture">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    disabled={busy || !targetSerial}
+                    onClick={restartCapture}
+                    aria-label="Restart capture"
+                  >
+                    <RotateCcw size={15} />
+                  </Button>
+                </Tooltip>
+              )}
+
               <div className="hidden shrink-0 items-center gap-3 font-mono text-[11px] text-muted lg:flex">
                 {captureOn && (
                   <CaptureDoctor
