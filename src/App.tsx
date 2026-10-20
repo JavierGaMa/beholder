@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   ArrowLeftRight,
   Database,
+  Gauge,
   MonitorSmartphone,
   Package,
   SquareTerminal,
@@ -28,6 +29,7 @@ import { CommandBar } from "./features/capture/CommandBar";
 import type { Filters } from "./features/requests/filters";
 import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
+import { MetricsView } from "./features/metrics/MetricsView";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
 import { DatabasesView } from "./features/database/DatabasesView";
@@ -47,6 +49,7 @@ const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeo
     items: [
       { id: "requests", label: "Requests", icon: ArrowLeftRight },
       { id: "websockets", label: "WebSockets", icon: Waves },
+      { id: "metrics", label: "Metrics", icon: Gauge },
     ],
   },
   {
@@ -282,6 +285,7 @@ export default function App() {
               />
             )}
             {activeView === "websockets" && <WebSocketsView />}
+            {activeView === "metrics" && <MetricsView />}
             {activeView === "emulators" && <EmulatorsView />}
             {activeView === "apks" && <ApksView />}
             {activeView === "database" && <DatabasesView />}

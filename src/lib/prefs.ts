@@ -11,6 +11,8 @@ import {
   serializeTabs,
   type SqlTabs,
 } from "../features/database/tabs";
+import { parseSnapshots, serializeSnapshots } from "../features/metrics/snapshots";
+import type { MetricSnapshot } from "../features/metrics/snapshots";
 
 export const DEFAULT_FILTERS: Filters = {
   text: "",
@@ -114,4 +116,16 @@ export function loadSqlHistory(): string[] {
 
 export function saveSqlHistory(history: string[]) {
   localStorage.setItem("beholder.dbSqlHistory", JSON.stringify(history));
+}
+
+export function loadMetricSnapshots(): MetricSnapshot[] {
+  try {
+    return parseSnapshots(localStorage.getItem("beholder.metricSnapshots"));
+  } catch {
+    return [];
+  }
+}
+
+export function saveMetricSnapshots(list: MetricSnapshot[]) {
+  localStorage.setItem("beholder.metricSnapshots", serializeSnapshots(list));
 }

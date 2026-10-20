@@ -33,6 +33,7 @@ import { Tooltip } from "../../components/ui/Tooltip";
 const VIEW_LABELS: Record<View, string> = {
   requests: "Requests",
   websockets: "WebSockets",
+  metrics: "Metrics",
   emulators: "Emulators",
   apks: "APKs",
   database: "Databases",

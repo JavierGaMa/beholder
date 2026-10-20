@@ -279,7 +279,10 @@ impl HttpHandler for RecordingHttpHandler {
                     }
                 }
                 let capture = match decode_content_encoding(&prefix, encoding.as_deref()) {
-                    Some(decoded) => BodyCapture::from_prefix(&decoded, mime, cap, decoded.len()),
+                    Some(decoded) => {
+                        BodyCapture::from_prefix(&decoded, mime, cap, decoded.len())
+                            .with_wire_size(total)
+                    }
                     None => BodyCapture::from_prefix(&prefix, mime, cap, total),
                 };
                 let total_ms = start.map(|s| s.elapsed().as_millis() as u64);
@@ -308,7 +311,8 @@ impl HttpHandler for RecordingHttpHandler {
                 let bytes = collected.to_bytes();
                 let decoded = decode_content_encoding(&bytes, encoding.as_deref())
                     .unwrap_or_else(|| bytes.to_vec());
-                let capture = BodyCapture::from_bytes(&decoded, mime, self.shared.cap);
+                let capture =
+                    BodyCapture::from_bytes(&decoded, mime, self.shared.cap).with_wire_size(bytes.len());
                 let rebuilt = rebuild_body(&mut parts.headers, bytes);
                 (Some(capture), rebuilt)
             }
