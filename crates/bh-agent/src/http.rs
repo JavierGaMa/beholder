@@ -119,8 +119,13 @@ async fn handle(mut stream: TcpStream, store: Arc<AgentStore>, token: String) ->
             break;
         }
     }
-    let text = String::from_utf8_lossy(&buf);
-    let mut lines = text.split("\r\n");
+    let header_end = buf
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4)
+        .unwrap_or(buf.len());
+    let head_text = String::from_utf8_lossy(&buf[..header_end]);
+    let mut lines = head_text.split("\r\n");
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
@@ -131,14 +136,77 @@ async fn handle(mut stream: TcpStream, store: Arc<AgentStore>, token: String) ->
             .map(|(k, v)| k.trim().eq_ignore_ascii_case("authorization") && v.trim() == expected)
             .unwrap_or(false)
     });
-    let (status, body) = if method != "GET" {
-        (405, json!({ "error": "method_not_allowed" }))
-    } else if !auth_ok {
+    let content_length = head_text
+        .lines()
+        .find_map(|l| {
+            l.split_once(':').and_then(|(k, v)| {
+                k.trim()
+                    .eq_ignore_ascii_case("content-length")
+                    .then(|| v.trim().parse::<usize>().ok())?
+            })
+        })
+        .unwrap_or(0);
+    let mut body_bytes = buf[header_end..].to_vec();
+    let capped = content_length.min(64 * 1024);
+    while body_bytes.len() < capped {
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            break;
+        }
+        body_bytes.extend_from_slice(&chunk[..n]);
+    }
+    body_bytes.truncate(capped);
+    let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
+    let (status, body) = if !auth_ok {
         (401, json!({ "error": "unauthorized" }))
-    } else {
+    } else if method == "GET" {
         route(&store, &target)
+    } else if method == "POST" {
+        route_post(&store, &target, &body_text).await
+    } else {
+        (405, json!({ "error": "method_not_allowed" }))
     };
     respond(stream, status, &body).await
+}
+
+async fn route_post(store: &Arc<AgentStore>, target: &str, body: &str) -> (u16, Value) {
+    let path = target.split('?').next().unwrap_or(&target);
+    match path {
+        "/db/query" => {
+            let store = store.clone();
+            let body = body.to_string();
+            tokio::task::spawn_blocking(move || route_db_query(&store, &body))
+                .await
+                .unwrap_or_else(|_| (500, json!({ "error": "internal" })))
+        }
+        _ => (404, json!({ "error": "not_found" })),
+    }
+}
+
+fn route_db_query(store: &AgentStore, body: &str) -> (u16, Value) {
+    let parsed: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return (400, json!({ "error": "invalid_json" })),
+    };
+    let field = |name: &str| -> Option<&str> { parsed.get(name).and_then(Value::as_str) };
+    let (Some(serial), Some(pkg), Some(db), Some(sql)) =
+        (field("serial"), field("pkg"), field("db"), field("sql"))
+    else {
+        return (400, json!({ "error": "missing_field" }));
+    };
+    let Some(path) = store.database_path(serial, pkg, db) else {
+        return (404, json!({ "error": "unknown_database" }));
+    };
+    match bh_db::open_snapshot(std::path::Path::new(&path)) {
+        Ok(conn) => match bh_db::run_query(&conn, sql) {
+            Ok(result) => (
+                200,
+                serde_json::to_value(result).unwrap_or(Value::Null),
+            ),
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        },
+        Err(e) => (500, json!({ "error": e.to_string() })),
+    }
 }
 
 async fn respond(mut stream: TcpStream, status: u16, body: &Value) -> std::io::Result<()> {
@@ -168,6 +236,15 @@ fn route(store: &AgentStore, target: &str) -> (u16, Value) {
     };
     match path {
         "/focus" => (200, store.focus()),
+        "/metrics" => (200, store.metrics_json()),
+        "/snapshots" => (200, store.snapshots_json()),
+        p if p.starts_with("/snapshots/") => {
+            let id = p.trim_start_matches("/snapshots/");
+            match (id.is_empty(), store.snapshot_detail(id)) {
+                (false, Some(detail)) => (200, detail),
+                _ => (404, json!({ "error": "not_found" })),
+            }
+        }
         "/requests" => {
             let q = ReqQuery {
                 status: StatusFilter::parse(query.get("status").map(|s| s.as_str())),
@@ -331,6 +408,101 @@ mod tests {
         assert_eq!(status, 200);
         assert_eq!(body["target"], "emu");
         assert_eq!(body["requests"], 1);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn metrics_route_reports_session_and_window() {
+        let store = store_with_one();
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = get(server.port, "tok", "/metrics").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["session"]["count"], 1);
+        assert_eq!(body["window"]["count"], 1);
+        assert!(body["window"]["domains"].is_array());
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn snapshots_routes_list_and_detail() {
+        let store = store_with_one();
+        store.set_snapshots(serde_json::json!([
+            {"id":"s1","label":"L","createdAt":5,"totals":{"wireBytesIn":10,"count":1},"domains":[],"coverage":{"captured":1,"total":1}}
+        ]));
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = get(server.port, "tok", "/snapshots").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["snapshots"][0]["id"], "s1");
+        let (status, body) = get(server.port, "tok", "/snapshots/s1").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["label"], "L");
+        let (status, _) = get(server.port, "tok", "/snapshots/zz").await;
+        assert_eq!(status, 404);
+        server.shutdown().await;
+    }
+
+    fn temp_db(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bh-agent-test-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        let _ = std::fs::remove_file(&path);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE t(a INTEGER); INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);",
+        )
+        .unwrap();
+        path
+    }
+
+    async fn post(port: u16, token: &str, path: &str, body: &str) -> (u16, Value) {
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let req = format!(
+            "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        let text = String::from_utf8_lossy(&buf);
+        let status: u16 = text.split_whitespace().nth(1).unwrap().parse().unwrap();
+        let body = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+        (status, serde_json::from_str(body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn db_query_route_runs_select_and_rejects_writes() {
+        let path = temp_db("agent-query.db");
+        let store = store_with_one();
+        store.register_database("emu-1", "com.app", "q.db", path.to_str().unwrap());
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = post(
+            server.port,
+            "tok",
+            "/db/query",
+            r#"{"serial":"emu-1","pkg":"com.app","db":"q.db","sql":"SELECT * FROM t"}"#,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(body["columns"][0], "a");
+        assert_eq!(body["row_count"], 2);
+        let (status, body) = post(
+            server.port,
+            "tok",
+            "/db/query",
+            r#"{"serial":"emu-1","pkg":"com.app","db":"q.db","sql":"DELETE FROM t"}"#,
+        )
+        .await;
+        assert_eq!(status, 400);
+        assert!(body["error"].is_string());
+        let (status, _) = post(
+            server.port,
+            "tok",
+            "/db/query",
+            r#"{"serial":"emu-1","pkg":"com.app","db":"nope.db","sql":"SELECT 1"}"#,
+        )
+        .await;
+        assert_eq!(status, 404);
         server.shutdown().await;
     }
 

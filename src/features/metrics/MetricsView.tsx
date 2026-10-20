@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
+import { invoke, isTauri } from "../../lib/tauri";
 import { Button } from "../../components/ui/Button";
 import { formatBytes, formatMs, formatTime, methodClass } from "../../lib/format";
 import { loadMetricSnapshots, saveMetricSnapshots } from "../../lib/prefs";
@@ -69,12 +70,18 @@ export function MetricsView() {
   const sessionBytesIn = useTraffic((s) => s.sessionBytesIn);
   const sessionBytesOut = useTraffic((s) => s.sessionBytesOut);
   const sessionFailed = useTraffic((s) => s.sessionFailed);
+  const requestSelect = useTraffic((s) => s.requestSelect);
   const metrics = useMemo(() => computeMetrics([...exchanges.values()]), [exchanges]);
   const { byDomain, buckets, slowest } = metrics;
   const windowTruncated = requestCount > exchanges.size;
   const [snapshots, setSnapshots] = useState<MetricSnapshot[]>(() => loadMetricSnapshots());
   const [compareA, setCompareA] = useState(CURRENT_OPTION);
   const [compareB, setCompareB] = useState("");
+
+  useEffect(() => {
+    if (!isTauri || snapshots.length === 0) return;
+    void invoke("agent_sync_snapshots", { list: JSON.stringify(snapshots) }).catch(() => {});
+  }, [snapshots]);
 
   const currentSnapshot = useMemo(
     () =>
@@ -242,25 +249,29 @@ export function MetricsView() {
         <h2 className="px-3.5 pb-1 pt-3 text-[12px] font-medium text-txt">Slowest requests</h2>
         <ul className="pb-1.5">
           {slowest.map((exchange) => (
-            <li
-              key={exchange.id}
-              className="flex items-center gap-2 px-3.5 py-1 text-[12px]"
-            >
-              <span
-                className={clsx(
-                  "w-11 shrink-0 rounded px-1 py-px text-center font-mono text-[10px] font-medium",
-                  methodClass(exchange.request.method),
-                )}
+            <li key={exchange.id}>
+              <button
+                type="button"
+                onClick={() => requestSelect(exchange.id)}
+                title="Open in Requests"
+                className="focus-ring flex w-full items-center gap-2 px-3.5 py-1 text-left text-[12px] transition-colors hover:bg-surface-2/60"
               >
-                {exchange.request.method}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-txt/90">
-                {exchange.request.path}
-                <span className="ml-1.5 text-muted">{exchange.request.host}</span>
-              </span>
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
-                {formatMs(exchange.timing.total_ms)}
-              </span>
+                <span
+                  className={clsx(
+                    "w-11 shrink-0 rounded px-1 py-px text-center font-mono text-[10px] font-medium",
+                    methodClass(exchange.request.method),
+                  )}
+                >
+                  {exchange.request.method}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-txt/90">
+                  {exchange.request.path}
+                  <span className="ml-1.5 text-muted">{exchange.request.host}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+                  {formatMs(exchange.timing.total_ms)}
+                </span>
+              </button>
             </li>
           ))}
         </ul>

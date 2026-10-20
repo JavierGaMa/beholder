@@ -67,6 +67,39 @@ fn tools_descriptor() -> Value {
                     "properties": { "id": { "type": "integer" } },
                     "required": ["id"]
                 }
+            },
+            {
+                "name": "beholder_metrics",
+                "description": "Session traffic metrics: lifetime totals (requests, failures, downloaded/uploaded wire bytes) plus top domains in the visible window with p95 latency. Call to answer data-usage or slowness questions.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "beholder_snapshots",
+                "description": "List saved metric snapshots (id, label, request count, downloaded bytes). Compare two via beholder_snapshot detail.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "beholder_snapshot",
+                "description": "Full detail of one saved metric snapshot by id: totals and per-domain breakdown.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": { "id": { "type": "string" } },
+                    "required": ["id"]
+                }
+            },
+            {
+                "name": "beholder_db_query",
+                "description": "Run a read-only SQL query (SELECT only; writes rejected) against a pulled device-DB snapshot. Only databases pulled while Beholder ran the agent bridge are available.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "serial": { "type": "string" },
+                        "pkg": { "type": "string" },
+                        "db": { "type": "string" },
+                        "sql": { "type": "string", "description": "SELECT statement" }
+                    },
+                    "required": ["serial", "pkg", "db", "sql"]
+                }
             }
         ]
     })
@@ -141,6 +174,32 @@ async fn tool_call(name: &str, args: &Value) -> Result<String, String> {
         }
         "beholder_to_curl" => api_get(&format!("/curl?id={id}")).await.map(|v| v.to_string()),
         "beholder_locate" => locate(id).await.map(|v| v.to_string()),
+        "beholder_metrics" => api_get("/metrics").await.map(|v| v.to_string()),
+        "beholder_snapshots" => api_get("/snapshots").await.map(|v| v.to_string()),
+        "beholder_snapshot" => {
+            let sid = args.get("id").and_then(Value::as_str).unwrap_or("");
+            if sid.is_empty() {
+                return Err("missing id".to_string());
+            }
+            api_get(&format!("/snapshots/{}", encode(sid)))
+                .await
+                .map(|v| v.to_string())
+        }
+        "beholder_db_query" => {
+            let field = |name: &str| -> Result<&str, String> {
+                args.get(name)
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| format!("missing field: {name}"))
+            };
+            let payload = serde_json::json!({
+                "serial": field("serial")?,
+                "pkg": field("pkg")?,
+                "db": field("db")?,
+                "sql": field("sql")?,
+            });
+            api_post("/db/query", &payload).await.map(|v| v.to_string())
+        }
         _ => Err(format!("unknown tool: {name}")),
     }
 }
@@ -179,6 +238,20 @@ async fn api_get(path_and_query: &str) -> Result<Value, String> {
     request(port, &token, path_and_query).await
 }
 
+async fn api_post(path: &str, body: &Value) -> Result<Value, String> {
+    let (port, token) = read_discovery()?;
+    let payload = serde_json::to_string(body).map_err(|e| e.to_string())?;
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .map_err(|_| "Beholder is not running. Start Beholder and retry.".to_string())?;
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
+    );
+    stream.write_all(req.as_bytes()).await.map_err(|e| e.to_string())?;
+    read_response(stream).await
+}
+
 async fn request(port: u16, token: &str, path_and_query: &str) -> Result<Value, String> {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
@@ -187,6 +260,12 @@ async fn request(port: u16, token: &str, path_and_query: &str) -> Result<Value, 
         "GET {path_and_query} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
     );
     stream.write_all(req.as_bytes()).await.map_err(|e| e.to_string())?;
+    read_response(stream).await
+}
+
+async fn read_response(
+    mut stream: tokio::net::TcpStream,
+) -> Result<Value, String> {
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).await.map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&buf);
@@ -305,10 +384,38 @@ mod tests {
     async fn tools_list_has_six_tools() {
         let res = handle_message("tools/list", None).await.unwrap();
         let tools = res["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 6);
-        for t in tools {
-            assert!(t["inputSchema"].is_object());
+        assert_eq!(tools.len(), 10);
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(Value::as_str))
+            .collect();
+        for expected in [
+            "beholder_focus",
+            "beholder_requests",
+            "beholder_request",
+            "beholder_console",
+            "beholder_to_curl",
+            "beholder_locate",
+            "beholder_metrics",
+            "beholder_snapshots",
+            "beholder_snapshot",
+            "beholder_db_query",
+        ] {
+            assert!(names.contains(&expected), "missing tool: {expected}");
         }
+    }
+
+    #[tokio::test]
+    async fn db_query_tool_requires_all_fields() {
+        let res = handle_message(
+            "tools/call",
+            Some(json!({ "name": "beholder_db_query", "arguments": { "sql": "SELECT 1" } })),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res["isError"], true);
+        let text = res["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("missing field: serial"));
     }
 
     #[tokio::test]

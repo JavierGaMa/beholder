@@ -618,12 +618,21 @@ pub async fn pull_database_snapshot(
 ) -> Result<bh_db::SnapshotInfo, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let root = snapshot_root(&app)?;
-    tokio::task::spawn_blocking(move || {
-        bh_db::pull_snapshot(runner.as_ref(), &serial, &package, &db_name, &root)
+    let pull_serial = serial.clone();
+    let pull_package = package.clone();
+    let pull_db = db_name.clone();
+    let info = tokio::task::spawn_blocking(move || {
+        bh_db::pull_snapshot(runner.as_ref(), &pull_serial, &pull_package, &pull_db, &root)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    if let Some(agent) = app.try_state::<crate::state::AgentState>() {
+        agent
+            .store
+            .register_database(&serial, &package, &db_name, &info.local_path);
+    }
+    Ok(info)
 }
 
 #[tauri::command]
@@ -634,6 +643,9 @@ pub async fn delete_snapshot(
     db_name: String,
 ) -> Result<bool, String> {
     let root = snapshot_root(&app)?;
+    if let Some(agent) = app.try_state::<crate::state::AgentState>() {
+        agent.store.unregister_database(&serial, &package, &db_name);
+    }
     tokio::task::spawn_blocking(move || {
         bh_db::delete_snapshot(&serial, &package, &db_name, &root)
             .map_err(|e| e.to_string())
@@ -1110,6 +1122,17 @@ pub async fn capture_restart(
 #[tauri::command]
 pub fn agent_pin_request(agent: State<'_, crate::state::AgentState>, id: u64) -> Result<(), String> {
     agent.store.pin_request(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_sync_snapshots(
+    agent: State<'_, crate::state::AgentState>,
+    list: String,
+) -> Result<(), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(&list).map_err(|e| format!("invalid snapshots json: {e}"))?;
+    agent.store.set_snapshots(parsed);
     Ok(())
 }
 

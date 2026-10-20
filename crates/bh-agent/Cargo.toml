@@ -6,6 +6,10 @@ edition = "2021"
 [dependencies]
 bh-core = { workspace = true }
 bh-console = { workspace = true }
+bh-db = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
