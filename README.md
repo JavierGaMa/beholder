@@ -8,16 +8,19 @@ Non-invasive network traffic inspector for React Native apps on Android emulator
 
 ![Beholder hero screenshot](docs/public/screenshot.png)
 
-## Highlights
+## What it does
 
-- **Full HTTPS and WebSocket visibility** — bodies, headers, cookies, timing, and a JSON tree with click-to-copy paths
+- **HTTPS and WebSocket inspection** — bodies, headers, timing, JSON tree with click-to-copy paths, inline image previews
 - **Zero changes to your app** — the CA installs as an Android system certificate (Conscrypt apex on Android 14+); the emulator proxy is reverted on stop and quit
-- **Emulator management** — create Beholder-ready emulators (Google APIs + arm64), launch them, and repair broken ones with the built-in Doctor
-- **DevTools-grade UX** — follow mode, domain chips, body search, keyboard navigation, right-click actions
-- **Exports** — HAR, Postman collections, and Bruno collections with deterministic file names for git versioning
-- **Ghostty-style configuration** — one `config.toml` with live reload; fonts, sizes, and every color, defaulting to a high-contrast theme inspired by [Nicer High Contrast](https://github.com/rafmsou/nicer-high-contrast)
+- **Metrics** — downloaded/uploaded wire bytes per session and per domain, p50/p95 latency, slowest requests, media and download breakdowns, saved snapshots to compare runs
+- **SQL console** — pull any app database from the emulator and query it read-only with schema-aware autocomplete
+- **Agent bridge + MCP** — a local read-only API and an MCP server so coding agents can inspect traffic, metrics, and query databases without leaving the terminal
+- **Emulator management** — create Beholder-ready emulators (Google APIs + arm64) and repair broken ones with the built-in Doctor
+- **Exports and theming** — HAR, Postman, and Bruno collections; Ghostty-style `config.toml` with live reload
 
-## Quick start
+## Install
+
+Grab the latest dmg from [Releases](https://github.com/JavierGaMa/beholder/releases), or build from source:
 
 ```bash
 git clone https://github.com/JavierGaMa/beholder.git
@@ -30,11 +33,16 @@ npm run tauri dev
 2. Press **Capture**
 3. Open your React Native app on the emulator — traffic appears in real time
 
-See the [documentation](https://JavierGaMa.github.io/beholder/) for guides, configuration, and troubleshooting.
+## Coding agents
+
+With the agent bridge enabled, Beholder serves a token-protected local API and ships a
+`beholder-mcp` binary that any MCP client can spawn. Tools cover requests, console logs,
+traffic metrics, saved metric snapshots, and read-only SQL over pulled device databases.
+See the [agent bridge docs](https://JavierGaMa.github.io/beholder/) for setup.
 
 ## Requirements
 
-- macOS on Apple Silicon
+- macOS (Apple Silicon and Intel builds available)
 - Android Studio with platform-tools and a **Google APIs** emulator image (Google Play images refuse `adb root`)
 
 ## License
