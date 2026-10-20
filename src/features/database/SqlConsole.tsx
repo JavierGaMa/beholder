@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { History, Loader2, Play, Plus, X } from "lucide-react";
+import { History, Loader2, Play, Plus, Wand2, X } from "lucide-react";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
 import { pickRunText } from "./dbdisplay";
+import { formatSql } from "./sqlEditor/format";
 import { MAX_TABS, type SqlTab } from "./tabs";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
@@ -99,6 +100,16 @@ export function SqlConsole({
               </div>
             )}
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onTextChange(formatSql(text))}
+            disabled={text.trim() === ""}
+            title="Pretty-print the query"
+            aria-label="Format SQL"
+          >
+            <Wand2 size={14} />
+          </Button>
           <Button
             variant="primary"
             size="sm"
