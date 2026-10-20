@@ -6,6 +6,7 @@ export interface Header {
 export interface BodyCapture {
   mime: string | null;
   size: number;
+  wire_size?: number | null;
   truncated: boolean;
   text: string;
   is_binary: boolean;

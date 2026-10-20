@@ -16,6 +16,8 @@ pub enum WsDirection {
 pub struct BodyCapture {
     pub mime: Option<String>,
     pub size: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire_size: Option<usize>,
     pub truncated: bool,
     pub text: String,
     pub is_binary: bool,
@@ -26,6 +28,11 @@ impl BodyCapture {
         let size = bytes.len();
         let slice = if size > cap { &bytes[..cap] } else { bytes };
         Self::from_prefix(slice, mime, cap, size)
+    }
+
+    pub fn with_wire_size(mut self, wire: usize) -> Self {
+        self.wire_size = Some(wire);
+        self
     }
 
     pub fn from_prefix(prefix: &[u8], mime: Option<String>, cap: usize, total: usize) -> Self {
@@ -39,6 +46,7 @@ impl BodyCapture {
         BodyCapture {
             mime,
             size: total,
+            wire_size: None,
             truncated,
             text,
             is_binary: looks_binary,
@@ -167,6 +175,25 @@ mod tests {
         assert_eq!(b.text, "hello");
         assert!(!b.truncated);
         assert_eq!(b.size, 5);
+    }
+
+    #[test]
+    fn body_capture_wire_size_set_explicitly_and_serialized() {
+        let b = BodyCapture::from_bytes(b"hello", None, 10).with_wire_size(9);
+        assert_eq!(b.wire_size, Some(9));
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(json.contains(r#""wire_size":9"#));
+    }
+
+    #[test]
+    fn body_capture_wire_size_defaults_to_none_for_older_payloads() {
+        let b: BodyCapture = serde_json::from_str(
+            r#"{"mime":null,"size":3,"truncated":false,"text":"abc","is_binary":false}"#,
+        )
+        .unwrap();
+        assert_eq!(b.wire_size, None);
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(!json.contains("wire_size"));
     }
 
     #[test]

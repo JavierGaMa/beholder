@@ -11,6 +11,7 @@ interface Fixture {
   noResponse?: boolean;
   inBytes?: number;
   outBytes?: number;
+  wire?: number | null;
   startedAt?: number;
   ttfb?: number | null;
   total?: number | null;
@@ -42,7 +43,14 @@ function ex(f: Fixture = {}): HttpExchange {
             body:
               f.outBytes == null
                 ? undefined
-                : { mime: null, size: f.outBytes, truncated: false, text: "", is_binary: false },
+                : {
+                    mime: null,
+                    size: f.outBytes,
+                    wire_size: f.wire ?? null,
+                    truncated: false,
+                    text: "",
+                    is_binary: false,
+                  },
             ended_at: startedAt + (f.total ?? 10),
           },
     error: f.error,
@@ -58,6 +66,7 @@ describe("computeMetrics totals", () => {
         count: 0,
         failed: 0,
         bytesIn: 0,
+        wireBytesIn: 0,
         bytesOut: 0,
         p50Ms: null,
         p95Ms: null,
@@ -116,6 +125,17 @@ describe("computeMetrics totals", () => {
     expect(m.totals.p95Ms).toBeNull();
     expect(m.totals.avgTtfbMs).toBeNull();
   });
+
+  it("reports wire bytes separately with fallback to decoded size", () => {
+    const m = computeMetrics([
+      ex({ outBytes: 1000, wire: 200 }),
+      ex({ outBytes: 500 }),
+      ex({ inBytes: 30 }),
+    ]);
+    expect(m.totals.bytesIn).toBe(1500);
+    expect(m.totals.wireBytesIn).toBe(700);
+    expect(m.totals.bytesOut).toBe(30);
+  });
 });
 
 describe("computeMetrics byDomain", () => {
@@ -156,22 +176,32 @@ describe("computeMetrics byDomain", () => {
     expect(m.byDomain[0].failed).toBe(1);
     expect(m.byDomain[0].p95Ms).toBe(300);
   });
+
+  it("orders domains by wire bytes when wire sizes are present", () => {
+    const m = computeMetrics([
+      ex({ host: "decoded-big.com", outBytes: 5000, wire: 100, total: 5 }),
+      ex({ host: "wire-big.com", outBytes: 200, wire: 800, total: 5 }),
+    ]);
+    expect(m.byDomain[0].host).toBe("wire-big.com");
+    expect(m.byDomain[0].wireBytesIn).toBe(800);
+    expect(m.byDomain[1].wireBytesIn).toBe(100);
+  });
 });
 
 describe("computeMetrics buckets", () => {
   it("produces 60 buckets and clamps the max timestamp into the last one", () => {
     const m = computeMetrics([
-      ex({ startedAt: 0, outBytes: 10, total: 1 }),
-      ex({ startedAt: 1_500, outBytes: 20, total: 1 }),
-      ex({ startedAt: 60_000, outBytes: 40, total: 1 }),
+      ex({ startedAt: 0, outBytes: 10, wire: 4, total: 1 }),
+      ex({ startedAt: 1_500, outBytes: 20, wire: 8, total: 1 }),
+      ex({ startedAt: 60_000, outBytes: 40, wire: 16, total: 1 }),
     ]);
     expect(m.buckets).toHaveLength(60);
     expect(m.buckets[0].count).toBe(1);
-    expect(m.buckets[0].bytesIn).toBe(10);
+    expect(m.buckets[0].bytesIn).toBe(4);
     expect(m.buckets[1].count).toBe(1);
-    expect(m.buckets[1].bytesIn).toBe(20);
+    expect(m.buckets[1].bytesIn).toBe(8);
     expect(m.buckets[59].count).toBe(1);
-    expect(m.buckets[59].bytesIn).toBe(40);
+    expect(m.buckets[59].bytesIn).toBe(16);
   });
 
   it("collapses to the first bucket when all timestamps are equal", () => {

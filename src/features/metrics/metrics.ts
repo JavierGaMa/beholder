@@ -5,6 +5,7 @@ export interface MetricTotals {
   count: number;
   failed: number;
   bytesIn: number;
+  wireBytesIn: number;
   bytesOut: number;
   p50Ms: number | null;
   p95Ms: number | null;
@@ -16,6 +17,7 @@ export interface DomainStat {
   count: number;
   failed: number;
   bytesIn: number;
+  wireBytesIn: number;
   bytesOut: number;
   p95Ms: number | null;
 }
@@ -44,11 +46,16 @@ function percentile(sorted: number[], p: number): number | null {
   return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
 }
 
+function wireIn(exchange: HttpExchange): number {
+  return exchange.response?.body?.wire_size ?? exchange.response?.body?.size ?? 0;
+}
+
 function emptyTotals(): MetricTotals {
   return {
     count: 0,
     failed: 0,
     bytesIn: 0,
+    wireBytesIn: 0,
     bytesOut: 0,
     p50Ms: null,
     p95Ms: null,
@@ -60,6 +67,7 @@ interface HostAccumulator {
   count: number;
   failed: number;
   bytesIn: number;
+  wireBytesIn: number;
   bytesOut: number;
   ms: number[];
 }
@@ -70,6 +78,7 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
   }
 
   let bytesIn = 0;
+  let wireBytesIn = 0;
   let bytesOut = 0;
   let failed = 0;
   const totalsMs: number[] = [];
@@ -80,8 +89,10 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
 
   for (const exchange of exchanges) {
     const down = exchange.response?.body?.size ?? 0;
+    const downWire = wireIn(exchange);
     const up = exchange.request.body?.size ?? 0;
     bytesIn += down;
+    wireBytesIn += downWire;
     bytesOut += up;
     if (isFailed(exchange)) failed++;
     if (exchange.timing.total_ms != null) totalsMs.push(exchange.timing.total_ms);
@@ -89,11 +100,12 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
 
     let stat = hosts.get(exchange.request.host);
     if (stat == null) {
-      stat = { count: 0, failed: 0, bytesIn: 0, bytesOut: 0, ms: [] };
+      stat = { count: 0, failed: 0, bytesIn: 0, wireBytesIn: 0, bytesOut: 0, ms: [] };
       hosts.set(exchange.request.host, stat);
     }
     stat.count++;
     stat.bytesIn += down;
+    stat.wireBytesIn += downWire;
     stat.bytesOut += up;
     if (isFailed(exchange)) stat.failed++;
     if (exchange.timing.total_ms != null) stat.ms.push(exchange.timing.total_ms);
@@ -123,7 +135,7 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
         ? 0
         : Math.min(BUCKET_COUNT - 1, Math.floor((exchange.request.started_at - min) / width));
     const bucket = buckets[index];
-    bucket.bytesIn += exchange.response?.body?.size ?? 0;
+    bucket.bytesIn += wireIn(exchange);
     bucket.bytesOut += exchange.request.body?.size ?? 0;
     bucket.count++;
   }
@@ -136,11 +148,12 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
         count: stat.count,
         failed: stat.failed,
         bytesIn: stat.bytesIn,
+        wireBytesIn: stat.wireBytesIn,
         bytesOut: stat.bytesOut,
         p95Ms: percentile(stat.ms, 95),
       };
     })
-    .sort((a, b) => b.bytesIn - a.bytesIn || a.host.localeCompare(b.host))
+    .sort((a, b) => b.wireBytesIn - a.wireBytesIn || a.host.localeCompare(b.host))
     .slice(0, TOP_DOMAINS);
 
   const slowest = exchanges
@@ -153,6 +166,7 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
       count: exchanges.length,
       failed,
       bytesIn,
+      wireBytesIn,
       bytesOut,
       p50Ms: percentile(totalsMs, 50),
       p95Ms: percentile(totalsMs, 95),

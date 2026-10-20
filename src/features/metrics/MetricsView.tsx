@@ -77,8 +77,12 @@ export function MetricsView() {
       <div className="flex flex-wrap gap-3">
         <StatCard
           label="Downloaded"
-          value={formatBytes(totals.bytesIn)}
-          sub="response bodies"
+          value={formatBytes(totals.wireBytesIn)}
+          sub={
+            totals.wireBytesIn === totals.bytesIn
+              ? "response bodies"
+              : `decoded ${formatBytes(totals.bytesIn)}`
+          }
           icon={ArrowDownToLine}
         />
         <StatCard
@@ -149,7 +153,7 @@ export function MetricsView() {
                     {d.failed}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums text-txt">
-                    {formatBytes(d.bytesIn)}
+                    {formatBytes(d.wireBytesIn)}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums text-muted">
                     {formatBytes(d.bytesOut)}
