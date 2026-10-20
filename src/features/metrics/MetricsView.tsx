@@ -15,7 +15,7 @@ import { invoke, isTauri } from "../../lib/tauri";
 import { Button } from "../../components/ui/Button";
 import { formatBytes, formatMs, formatTime, methodClass } from "../../lib/format";
 import { loadMetricSnapshots, saveMetricSnapshots } from "../../lib/prefs";
-import { computeMetrics } from "./metrics";
+import { computeMetrics, mediaStats } from "./metrics";
 import { BucketBars } from "./charts";
 import {
   buildSnapshot,
@@ -72,6 +72,7 @@ export function MetricsView() {
   const sessionFailed = useTraffic((s) => s.sessionFailed);
   const requestSelect = useTraffic((s) => s.requestSelect);
   const metrics = useMemo(() => computeMetrics([...exchanges.values()]), [exchanges]);
+  const media = useMemo(() => mediaStats([...exchanges.values()]), [exchanges]);
   const { byDomain, buckets, slowest } = metrics;
   const windowTruncated = requestCount > exchanges.size;
   const [snapshots, setSnapshots] = useState<MetricSnapshot[]>(() => loadMetricSnapshots());
@@ -275,6 +276,59 @@ export function MetricsView() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section aria-label="Media and downloads" className="rounded-lg border border-line bg-surface">
+        <h2 className="px-3.5 pb-1 pt-3 text-[12px] font-medium text-txt">Media &amp; downloads</h2>
+        {media.categories.length === 0 ? (
+          <p className="px-3.5 pb-2.5 text-[11px] text-muted">
+            No image, video, audio or binary downloads captured in this window.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2 px-3.5 pb-1">
+              {media.categories.map((c) => (
+                <span
+                  key={c.category}
+                  className="rounded border border-line bg-surface-2 px-2 py-1 font-mono text-[11px] tabular-nums text-txt/90"
+                >
+                  {c.category} · {c.count} · {formatBytes(c.bytes)}
+                </span>
+              ))}
+            </div>
+            <ul className="pb-1.5">
+              {media.top.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => requestSelect(item.id)}
+                    title="Open in Requests"
+                    className="focus-ring flex w-full items-center gap-2 px-3.5 py-1 text-left text-[12px] transition-colors hover:bg-surface-2/60"
+                  >
+                    <span
+                      className={clsx(
+                        "w-11 shrink-0 rounded px-1 py-px text-center font-mono text-[10px] font-medium",
+                        methodClass(item.method),
+                      )}
+                    >
+                      {item.method}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-txt/90">
+                      {item.path}
+                      <span className="ml-1.5 text-muted">{item.host}</span>
+                    </span>
+                    <span className="shrink-0 rounded border border-line px-1.5 py-px font-mono text-[10px] text-muted">
+                      {item.mime}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+                      {formatBytes(item.size)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       <section aria-label="Snapshots" className="rounded-lg border border-line bg-surface">

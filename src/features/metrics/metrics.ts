@@ -71,6 +71,67 @@ interface HostAccumulator {
   ms: number[];
 }
 
+export interface MediaItem {
+  id: number;
+  mime: string;
+  size: number;
+  method: string;
+  path: string;
+  host: string;
+}
+
+export interface MediaCategory {
+  category: "image" | "video" | "audio" | "other";
+  count: number;
+  bytes: number;
+}
+
+export interface MediaStats {
+  categories: MediaCategory[];
+  top: MediaItem[];
+}
+
+const MEDIA_ORDER: MediaCategory["category"][] = ["image", "video", "audio", "other"];
+
+function mediaCategory(mime: string, isBinary: boolean): MediaCategory["category"] | null {
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.includes("octet-stream") || (isBinary && mime === "")) return "other";
+  return null;
+}
+
+export function mediaStats(exchanges: HttpExchange[]): MediaStats {
+  const acc = new Map<MediaCategory["category"], { count: number; bytes: number }>();
+  const items: MediaItem[] = [];
+  for (const exchange of exchanges) {
+    const body = exchange.response?.body;
+    if (body == null) continue;
+    const mime = (body.mime ?? "").toLowerCase();
+    const category = mediaCategory(mime, body.is_binary);
+    if (category == null) continue;
+    const entry = acc.get(category) ?? { count: 0, bytes: 0 };
+    entry.count += 1;
+    entry.bytes += body.size;
+    acc.set(category, entry);
+    items.push({
+      id: exchange.id,
+      mime: body.mime ?? "application/octet-stream",
+      size: body.size,
+      method: exchange.request.method,
+      path: exchange.request.path,
+      host: exchange.request.host,
+    });
+  }
+  const categories = MEDIA_ORDER.filter((c) => acc.has(c)).map((category) => ({
+    category,
+    count: acc.get(category)!.count,
+    bytes: acc.get(category)!.bytes,
+  }));
+  const top = items.sort((x, y) => y.size - x.size).slice(0, 5);
+  return { categories, top };
+}
+
 export function computeMetrics(
   exchanges: HttpExchange[],
   opts: { domainLimit?: number } = {},

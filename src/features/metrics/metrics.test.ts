@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HttpExchange } from "../../store/types";
-import { computeMetrics } from "./metrics";
+import { computeMetrics, mediaStats } from "./metrics";
 
 let nextId = 1;
 
@@ -12,6 +12,8 @@ interface Fixture {
   inBytes?: number;
   outBytes?: number;
   wire?: number | null;
+  mime?: string;
+  binary?: boolean;
   startedAt?: number;
   ttfb?: number | null;
   total?: number | null;
@@ -44,12 +46,12 @@ function ex(f: Fixture = {}): HttpExchange {
               f.outBytes == null
                 ? undefined
                 : {
-                    mime: null,
+                    mime: f.mime ?? null,
                     size: f.outBytes,
                     wire_size: f.wire ?? null,
                     truncated: false,
                     text: "",
-                    is_binary: false,
+                    is_binary: f.binary ?? false,
                   },
             ended_at: startedAt + (f.total ?? 10),
           },
@@ -239,5 +241,57 @@ describe("computeMetrics domainLimit", () => {
     expect(computeMetrics(build(), { domainLimit: 5 }).byDomain).toHaveLength(5);
     expect(computeMetrics(build(), { domainLimit: Infinity }).byDomain).toHaveLength(15);
     expect(computeMetrics(build()).byDomain).toHaveLength(10);
+  });
+});
+
+describe("mediaStats", () => {
+  it("categorizes bodies by mime with counts and byte sums", () => {
+    const m = mediaStats([
+      ex({ outBytes: 100, mime: "image/png", binary: true }),
+      ex({ outBytes: 200, mime: "image/jpeg", binary: true }),
+      ex({ outBytes: 3000, mime: "video/mp4", binary: true }),
+      ex({ outBytes: 40, mime: "audio/ogg", binary: true }),
+      ex({ outBytes: 50, mime: "application/octet-stream", binary: true }),
+      ex({ outBytes: 60, mime: "application/json" }),
+      ex({ outBytes: 70 }),
+    ]);
+    expect(m.categories).toEqual([
+      { category: "image", count: 2, bytes: 300 },
+      { category: "video", count: 1, bytes: 3000 },
+      { category: "audio", count: 1, bytes: 40 },
+      { category: "other", count: 1, bytes: 50 },
+    ]);
+  });
+
+  it("orders top items by size desc with request metadata", () => {
+    const m = mediaStats([
+      ex({ outBytes: 100, mime: "image/png", binary: true }),
+      ex({ outBytes: 900, mime: "video/mp4", binary: true, method: "POST", host: "cdn.com" }),
+      ex({ outBytes: 500, mime: "image/webp", binary: true }),
+    ]);
+    expect(m.top).toHaveLength(3);
+    expect(m.top[0].size).toBe(900);
+    expect(m.top[0].method).toBe("POST");
+    expect(m.top[0].host).toBe("cdn.com");
+    expect(m.top[0].mime).toBe("video/mp4");
+  });
+
+  it("treats svg and missing-mime binary as media", () => {
+    const m = mediaStats([
+      ex({ outBytes: 10, mime: "image/svg+xml" }),
+      ex({ outBytes: 20, binary: true }),
+    ]);
+    expect(m.categories).toEqual([
+      { category: "image", count: 1, bytes: 10 },
+      { category: "other", count: 1, bytes: 20 },
+    ]);
+  });
+
+  it("returns empty for no media traffic", () => {
+    expect(mediaStats([ex({ outBytes: 10, mime: "application/json" })])).toEqual({
+      categories: [],
+      top: [],
+    });
+    expect(mediaStats([])).toEqual({ categories: [], top: [] });
   });
 });
