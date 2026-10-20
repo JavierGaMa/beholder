@@ -7,6 +7,7 @@ import {
   formatRowCount,
   humanizeSize,
   joinExportPath,
+  pickRunText,
   prefillQuery,
   pushHistory,
   queryResultToPage,
@@ -210,6 +211,36 @@ describe("prefillQuery", () => {
     expect(prefillQuery('weird "quoted"', true)).toBe(
       'SELECT rowid, * FROM "weird ""quoted""" LIMIT 500',
     );
+  });
+});
+
+describe("pickRunText", () => {
+  it("returns the full text when nothing is selected", () => {
+    expect(pickRunText("SELECT 1", "")).toBe("SELECT 1");
+  });
+
+  it("falls back to the full text when the selection is whitespace only", () => {
+    expect(pickRunText("SELECT 1", " \n  ")).toBe("SELECT 1");
+  });
+
+  it("prefers a non-empty selection over the full text", () => {
+    expect(pickRunText("SELECT 1; SELECT 2;", "SELECT 2;")).toBe("SELECT 2;");
+  });
+
+  it("trims the selection it runs", () => {
+    expect(pickRunText("SELECT 1", "  SELECT 2  ")).toBe("SELECT 2");
+  });
+
+  it("keeps inner newlines of the selection intact", () => {
+    expect(pickRunText("SELECT a\nFROM t", "SELECT a\nFROM t")).toBe("SELECT a\nFROM t");
+  });
+
+  it("returns the full text without trimming it", () => {
+    expect(pickRunText("  SELECT 1  ", "")).toBe("  SELECT 1  ");
+  });
+
+  it("returns an empty string when both inputs are empty", () => {
+    expect(pickRunText("", "")).toBe("");
   });
 });
 

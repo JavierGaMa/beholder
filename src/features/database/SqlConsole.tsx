@@ -4,6 +4,7 @@ import { History, Loader2, Play, Plus, X } from "lucide-react";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
+import { pickRunText } from "./dbdisplay";
 import { MAX_TABS, type SqlTab } from "./tabs";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
@@ -36,11 +37,12 @@ export function SqlConsole({
   onAddTab: () => void;
   history: string[];
   running: boolean;
-  onRun: () => void;
+  onRun: (sql: string) => void;
   onClose: () => void;
 }) {
   const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const selectionRef = useRef<string>("");
   const { anchorRef, menuRef, style } = useDropdownPosition(historyOpen, {
     width: 420,
     estHeight: 220,
@@ -100,7 +102,7 @@ export function SqlConsole({
           <Button
             variant="primary"
             size="sm"
-            onClick={onRun}
+            onClick={() => onRun(pickRunText(text, selectionRef.current))}
             disabled={running || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
           >
@@ -178,6 +180,7 @@ export function SqlConsole({
             value={text}
             onChange={onTextChange}
             onRun={onRun}
+            selectionRef={selectionRef}
             schema={schemaQuery.data ?? []}
             placeholder='SELECT * FROM "table" LIMIT 50'
           />

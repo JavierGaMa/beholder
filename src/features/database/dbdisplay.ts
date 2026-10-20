@@ -80,6 +80,11 @@ export function prefillQuery(tableName: string | null, includeRowid = false): st
     : `SELECT * FROM ${quoted} LIMIT 50`;
 }
 
+export function pickRunText(fullText: string, selection: string): string {
+  const trimmed = selection.trim();
+  return trimmed === "" ? fullText : trimmed;
+}
+
 export function pushHistory(history: string[], sql: string, cap = 10): string[] {
   const trimmed = sql.trim();
   if (trimmed === "") return history;

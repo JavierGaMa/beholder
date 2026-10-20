@@ -260,10 +260,10 @@ export function DatabasesView() {
     }
   }
 
-  async function runSql(sqlArg?: string) {
-    const sql = (sqlArg ?? activeSql).trim();
+  async function runSql(sqlArg: string, opts: { manual: boolean }) {
+    const sql = sqlArg.trim();
     if (sql === "" || run.isPending || runMutation.isPending || !viewerReady) return;
-    if (sqlArg == null) setActiveTable(null);
+    if (opts.manual) setActiveTable(null);
     lastRunSqlRef.current = sql;
     setLastRunSql(sql);
     setPage(0);
@@ -368,7 +368,7 @@ export function DatabasesView() {
 
   async function refreshAfterWrite() {
     const sql = lastRunSqlRef.current;
-    if (sql != null) await runSql(sql);
+    if (sql != null) await runSql(sql, { manual: false });
   }
 
   async function commitCellEdit(
@@ -441,7 +441,7 @@ export function DatabasesView() {
     const sql = prefillQuery(name, includeRowid);
     setSqlTabs((cur) => setActiveTabSql(cur, sql));
     setSqlOpen(true);
-    void runSql(sql);
+    void runSql(sql, { manual: false });
   }
 
   function onSqlTextChange(next: string) {
@@ -854,7 +854,7 @@ export function DatabasesView() {
                         onAddTab={() => setSqlTabs((cur) => addTab(cur))}
                         history={sqlHistory}
                         running={run.isPending || runMutation.isPending}
-                        onRun={() => void runSql()}
+                        onRun={(sql) => void runSql(sql, { manual: true })}
                         onClose={() => setSqlOpen(false)}
                       />
                       <div

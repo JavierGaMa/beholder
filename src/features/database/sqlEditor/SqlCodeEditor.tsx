@@ -1,16 +1,19 @@
 import { useMemo, useRef } from "react";
-import CodeMirror, { keymap, Prec, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import type { RefObject } from "react";
+import CodeMirror, { EditorView, keymap, Prec, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { autocompletion } from "@codemirror/autocomplete";
 import { syntaxHighlighting } from "@codemirror/language";
 import { schemaCompletionSource, sql } from "@codemirror/lang-sql";
 import type { TableSchema } from "../../../queries/databases";
+import { pickRunText } from "../dbdisplay";
 import { buildSqlSchema, keywordSnippetSource } from "./completion";
 import { sqlEditorTheme, sqlHighlightStyle } from "./sqlTheme";
 
 export interface SqlCodeEditorProps {
   value: string;
   onChange: (next: string) => void;
-  onRun: () => void;
+  onRun: (sql: string) => void;
+  selectionRef: RefObject<string>;
   schema: TableSchema[];
   placeholder: string;
 }
@@ -19,6 +22,7 @@ export default function SqlCodeEditor({
   value,
   onChange,
   onRun,
+  selectionRef,
   schema,
   placeholder,
 }: SqlCodeEditorProps) {
@@ -32,14 +36,20 @@ export default function SqlCodeEditor({
         keymap.of([
           {
             key: "Mod-Enter",
-            run: () => {
-              onRunRef.current();
+            run: (view) => {
+              onRunRef.current(pickRunText(view.state.doc.toString(), selectionRef.current));
               return true;
             },
             preventDefault: true,
           },
         ]),
       ),
+      EditorView.updateListener.of((update) => {
+        selectionRef.current = update.state.sliceDoc(
+          update.state.selection.main.from,
+          update.state.selection.main.to,
+        );
+      }),
       sqlEditorTheme,
       syntaxHighlighting(sqlHighlightStyle),
       sql({ schema: sqlSchema, upperCaseKeywords: true }),
@@ -47,7 +57,7 @@ export default function SqlCodeEditor({
         override: [keywordSnippetSource, schemaCompletionSource({ schema: sqlSchema })],
       }),
     ],
-    [sqlSchema],
+    [sqlSchema, selectionRef],
   );
 
   return (
