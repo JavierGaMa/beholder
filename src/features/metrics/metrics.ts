@@ -37,7 +37,6 @@ export interface Metrics {
 }
 
 const BUCKET_COUNT = 60;
-const TOP_DOMAINS = 10;
 const SLOWEST_LIMIT = 5;
 
 function percentile(sorted: number[], p: number): number | null {
@@ -72,7 +71,11 @@ interface HostAccumulator {
   ms: number[];
 }
 
-export function computeMetrics(exchanges: HttpExchange[]): Metrics {
+export function computeMetrics(
+  exchanges: HttpExchange[],
+  opts: { domainLimit?: number } = {},
+): Metrics {
+  const domainLimit = opts.domainLimit ?? 10;
   if (exchanges.length === 0) {
     return { totals: emptyTotals(), byDomain: [], buckets: [], slowest: [] };
   }
@@ -154,7 +157,7 @@ export function computeMetrics(exchanges: HttpExchange[]): Metrics {
       };
     })
     .sort((a, b) => b.wireBytesIn - a.wireBytesIn || a.host.localeCompare(b.host))
-    .slice(0, TOP_DOMAINS);
+    .slice(0, domainLimit === Infinity ? Infinity : Math.max(0, domainLimit));
 
   const slowest = exchanges
     .filter((e) => e.timing.total_ms != null)

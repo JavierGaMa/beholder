@@ -5,6 +5,8 @@ import {
   serializeDbLayout,
 } from "../features/database/layout";
 import type { DbLayout } from "../features/database/layout";
+import { parseSnapshots, serializeSnapshots } from "../features/metrics/snapshots";
+import type { MetricSnapshot } from "../features/metrics/snapshots";
 
 export const DEFAULT_FILTERS: Filters = {
   text: "",
@@ -80,4 +82,16 @@ export function loadDbLayout(): DbLayout {
 
 export function saveDbLayout(l: DbLayout) {
   localStorage.setItem("beholder.dbLayout", serializeDbLayout(l));
+}
+
+export function loadMetricSnapshots(): MetricSnapshot[] {
+  try {
+    return parseSnapshots(localStorage.getItem("beholder.metricSnapshots"));
+  } catch {
+    return [];
+  }
+}
+
+export function saveMetricSnapshots(list: MetricSnapshot[]) {
+  localStorage.setItem("beholder.metricSnapshots", serializeSnapshots(list));
 }

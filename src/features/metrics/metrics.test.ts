@@ -231,3 +231,13 @@ describe("computeMetrics slowest", () => {
     expect(m.slowest.map((e) => e.timing.total_ms)).toEqual([500, 400, 300, 200, 100]);
   });
 });
+
+describe("computeMetrics domainLimit", () => {
+  it("caps the domain list at the requested limit", () => {
+    const hosts = Array.from({ length: 15 }, (_, i) => `h${i}.com`);
+    const build = () => hosts.map((host, i) => ex({ host, outBytes: 15 - i, total: 5 }));
+    expect(computeMetrics(build(), { domainLimit: 5 }).byDomain).toHaveLength(5);
+    expect(computeMetrics(build(), { domainLimit: Infinity }).byDomain).toHaveLength(15);
+    expect(computeMetrics(build()).byDomain).toHaveLength(10);
+  });
+});
