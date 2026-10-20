@@ -9,6 +9,35 @@ export function BodyView({ body }: { body: BodyCapture | null | undefined }) {
   if (!body) {
     return <p className="p-3 font-mono text-[12px] text-muted">No body</p>;
   }
+  const mime = body.mime?.toLowerCase() ?? "";
+  if (body.is_binary && body.data_b64 && mime.startsWith("image/")) {
+    return (
+      <div className="flex flex-col items-start gap-2 p-3">
+        <img
+          src={`data:${mime.split(";")[0]};base64,${body.data_b64}`}
+          alt="response preview"
+          className="max-h-72 max-w-full rounded border border-line bg-surface-2 object-contain"
+        />
+        <p className="font-mono text-[10px] text-muted/70">
+          {body.size} bytes{body.truncated ? " · preview truncated at capture cap" : ""}
+        </p>
+      </div>
+    );
+  }
+  if (!body.is_binary && mime.includes("svg")) {
+    return (
+      <div className="flex flex-col items-start gap-2 p-3">
+        <img
+          src={`data:image/svg+xml;utf8,${encodeURIComponent(body.text)}`}
+          alt="response preview"
+          className="max-h-72 max-w-full rounded border border-line bg-surface-2 object-contain"
+        />
+        <p className="font-mono text-[10px] text-muted/70">
+          {body.size} bytes{body.truncated ? " · preview truncated at capture cap" : ""}
+        </p>
+      </div>
+    );
+  }
   if (body.is_binary) {
     return (
       <p className="p-3 font-mono text-[12px] text-muted">
