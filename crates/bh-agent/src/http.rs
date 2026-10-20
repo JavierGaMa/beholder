@@ -168,6 +168,7 @@ fn route(store: &AgentStore, target: &str) -> (u16, Value) {
     };
     match path {
         "/focus" => (200, store.focus()),
+        "/metrics" => (200, store.metrics_json()),
         "/requests" => {
             let q = ReqQuery {
                 status: StatusFilter::parse(query.get("status").map(|s| s.as_str())),
@@ -331,6 +332,18 @@ mod tests {
         assert_eq!(status, 200);
         assert_eq!(body["target"], "emu");
         assert_eq!(body["requests"], 1);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn metrics_route_reports_session_and_window() {
+        let store = store_with_one();
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = get(server.port, "tok", "/metrics").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["session"]["count"], 1);
+        assert_eq!(body["window"]["count"], 1);
+        assert!(body["window"]["domains"].is_array());
         server.shutdown().await;
     }
 

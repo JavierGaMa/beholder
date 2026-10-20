@@ -80,6 +80,77 @@ pub fn is_failed(ex: &HttpExchange) -> bool {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize)]
+pub struct SessionTotals {
+    pub count: u64,
+    pub failed: u64,
+    pub wire_bytes_in: u64,
+    pub bytes_out: u64,
+}
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub struct DomainStat {
+    pub host: String,
+    pub count: u64,
+    pub failed: u64,
+    pub wire_bytes_in: u64,
+    pub bytes_out: u64,
+    pub p95_ms: Option<u64>,
+}
+
+fn wire_bytes_in(ex: &HttpExchange) -> u64 {
+    ex.response
+        .as_ref()
+        .and_then(|r| r.body.as_ref())
+        .map(|b| b.wire_size.unwrap_or(b.size) as u64)
+        .unwrap_or(0)
+}
+
+fn percentile(sorted: &[u64], p: u64) -> Option<u64> {
+    if sorted.is_empty() {
+        return None;
+    }
+    let rank = ((p as f64 / 100.0) * sorted.len() as f64).ceil() as usize;
+    Some(sorted[rank.saturating_sub(1).min(sorted.len() - 1)])
+}
+
+pub fn top_domains<'a>(
+    exchanges: impl IntoIterator<Item = &'a HttpExchange>,
+    limit: usize,
+) -> Vec<DomainStat> {
+    use std::collections::BTreeMap;
+    let mut acc: BTreeMap<String, (u64, u64, u64, u64, Vec<u64>)> = BTreeMap::new();
+    for ex in exchanges {
+        let entry = acc.entry(ex.request.host.clone()).or_default();
+        entry.0 += 1;
+        if is_failed(ex) {
+            entry.1 += 1;
+        }
+        entry.2 += wire_bytes_in(ex);
+        entry.3 += ex.request.body.as_ref().map(|b| b.size as u64).unwrap_or(0);
+        if let Some(t) = ex.timing.total_ms {
+            entry.4.push(t);
+        }
+    }
+    let mut rows: Vec<DomainStat> = acc
+        .into_iter()
+        .map(|(host, mut e)| {
+            e.4.sort_unstable();
+            DomainStat {
+                host,
+                count: e.0,
+                failed: e.1,
+                wire_bytes_in: e.2,
+                bytes_out: e.3,
+                p95_ms: percentile(&e.4, 95),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| b.wire_bytes_in.cmp(&a.wire_bytes_in).then(a.host.cmp(&b.host)));
+    rows.truncate(limit);
+    rows
+}
+
 pub struct AgentStore {
     pub limits: AgentLimits,
     focus: Mutex<Focus>,
@@ -87,6 +158,7 @@ pub struct AgentStore {
     pinned_req: Mutex<BTreeSet<u64>>,
     pinned_logs: Mutex<Vec<LogLine>>,
     console: Mutex<VecDeque<LogLine>>,
+    session: Mutex<SessionTotals>,
 }
 
 impl AgentStore {
@@ -98,6 +170,7 @@ impl AgentStore {
             pinned_req: Mutex::new(BTreeSet::new()),
             pinned_logs: Mutex::new(Vec::new()),
             console: Mutex::new(VecDeque::new()),
+            session: Mutex::new(SessionTotals::default()),
         }
     }
 
@@ -160,10 +233,21 @@ impl AgentStore {
                 while q.len() > self.limits.ring_requests {
                     q.pop_front();
                 }
+                let mut st = self.session.lock().unwrap();
+                st.count += 1;
+                st.bytes_out += request.body.as_ref().map(|b| b.size as u64).unwrap_or(0);
             }
             TrafficEvent::ExchangeCompleted { id, response, timing, protocol } => {
                 let mut q = self.exchanges.lock().unwrap();
                 if let Some(ex) = q.iter_mut().rev().find(|e| e.id == *id) {
+                    if ex.response.is_none() {
+                        let mut st = self.session.lock().unwrap();
+                        st.wire_bytes_in +=
+                            response.body.as_ref().map(|b| b.wire_size.unwrap_or(b.size) as u64).unwrap_or(0);
+                        if response.status >= 400 {
+                            st.failed += 1;
+                        }
+                    }
                     ex.response = Some(response.clone());
                     ex.timing = timing.clone();
                     ex.protocol = protocol.clone();
@@ -172,11 +256,35 @@ impl AgentStore {
             TrafficEvent::ExchangeFailed { id, error } => {
                 let mut q = self.exchanges.lock().unwrap();
                 if let Some(ex) = q.iter_mut().rev().find(|e| e.id == *id) {
+                    if ex.response.is_none() && ex.error.is_none() {
+                        self.session.lock().unwrap().failed += 1;
+                    }
                     ex.error = Some(error.clone());
                 }
             }
             TrafficEvent::Ws(_) => {}
         }
+    }
+
+    pub fn session_totals(&self) -> SessionTotals {
+        self.session.lock().unwrap().clone()
+    }
+
+    pub fn metrics_json(&self) -> Value {
+        let st = self.session.lock().unwrap();
+        let q = self.exchanges.lock().unwrap();
+        serde_json::json!({
+            "session": {
+                "count": st.count,
+                "failed": st.failed,
+                "wire_bytes_in": st.wire_bytes_in,
+                "bytes_out": st.bytes_out,
+            },
+            "window": {
+                "count": q.len(),
+                "domains": top_domains(q.iter(), 10),
+            }
+        })
     }
 
     pub fn ingest_console(&self, line: &LogLine) {
@@ -350,6 +458,81 @@ mod tests {
         let all = s.query_requests(&q);
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].response.as_ref().unwrap().status, 200);
+    }
+
+    fn started_with_body(id: u64, size: usize) -> TrafficEvent {
+        TrafficEvent::ExchangeStarted {
+            id,
+            request: HttpRequest {
+                body: Some(BodyCapture::from_bytes(&vec![b'a'; size], None, 4096)),
+                ..req(id, "/upload")
+            },
+        }
+    }
+
+    #[test]
+    fn session_totals_accumulate_with_idempotence() {
+        let s = AgentStore::new(AgentLimits::default());
+        s.ingest_traffic(&started_with_body(1, 25));
+        s.ingest_traffic(&started(2, "/ok"));
+        s.ingest_traffic(&completed(1, 200));
+        s.ingest_traffic(&completed(1, 200));
+        s.ingest_traffic(&completed(2, 500));
+        s.ingest_traffic(&TrafficEvent::ExchangeFailed { id: 2, error: "late".into() });
+        let st = s.session_totals();
+        assert_eq!(st.count, 2);
+        assert_eq!(st.failed, 1);
+        assert_eq!(st.wire_bytes_in, 4);
+        assert_eq!(st.bytes_out, 25);
+    }
+
+    #[test]
+    fn failed_event_counts_once_without_response() {
+        let s = AgentStore::new(AgentLimits::default());
+        s.ingest_traffic(&started(3, "/crash"));
+        s.ingest_traffic(&TrafficEvent::ExchangeFailed { id: 3, error: "reset".into() });
+        s.ingest_traffic(&TrafficEvent::ExchangeFailed { id: 3, error: "dup".into() });
+        assert_eq!(s.session_totals().failed, 1);
+    }
+
+    #[test]
+    fn top_domains_orders_by_wire_bytes_then_host() {
+        let mk = |host: &str, wire: u64, status: u16, total: u64| HttpExchange {
+            id: 0,
+            request: HttpRequest {
+                method: "GET".into(),
+                url: format!("https://{host}/p"),
+                host: host.into(),
+                path: "/p".into(),
+                headers: vec![],
+                body: None,
+                started_at: 0.0,
+            },
+            response: Some(bh_core::types::HttpResponse {
+                status,
+                headers: vec![],
+                body: Some(BodyCapture::from_bytes(&vec![b'x'; wire as usize], None, 4096)),
+                ended_at: 1.0,
+            }),
+            error: None,
+            timing: bh_core::types::Timing { ttfb_ms: None, download_ms: None, total_ms: Some(total) },
+            protocol: String::new(),
+        };
+        let rows = vec![
+            mk("big.com", 500, 200, 10),
+            mk("big.com", 100, 500, 300),
+            mk("small.com", 50, 200, 20),
+            mk("small.com", 50, 200, 40),
+        ];
+        let top = top_domains(rows.iter(), 10);
+        assert_eq!(top.len(), 2);
+        assert_eq!(top[0].host, "big.com");
+        assert_eq!(top[0].wire_bytes_in, 600);
+        assert_eq!(top[0].failed, 1);
+        assert_eq!(top[0].p95_ms, Some(300));
+        assert_eq!(top[1].host, "small.com");
+        assert_eq!(top[1].p95_ms, Some(40));
+        assert!(top_domains(rows.iter(), 1).len() == 1);
     }
 
     #[test]
