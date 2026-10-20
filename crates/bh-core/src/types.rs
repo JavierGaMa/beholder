@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -21,6 +22,8 @@ pub struct BodyCapture {
     pub truncated: bool,
     pub text: String,
     pub is_binary: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_b64: Option<String>,
 }
 
 impl BodyCapture {
@@ -43,6 +46,12 @@ impl BodyCapture {
         } else {
             decode_text(prefix)
         };
+        let is_image = mime
+            .as_deref()
+            .map(|m| m.to_ascii_lowercase().starts_with("image/"))
+            .unwrap_or(false);
+        let data_b64 = (looks_binary && is_image)
+            .then(|| base64::engine::general_purpose::STANDARD.encode(prefix));
         BodyCapture {
             mime,
             size: total,
@@ -50,6 +59,7 @@ impl BodyCapture {
             truncated,
             text,
             is_binary: looks_binary,
+            data_b64,
         }
     }
 }
@@ -194,6 +204,42 @@ mod tests {
         assert_eq!(b.wire_size, None);
         let json = serde_json::to_string(&b).unwrap();
         assert!(!json.contains("wire_size"));
+    }
+
+    #[test]
+    fn body_capture_binary_carries_base64_data_for_images() {
+        let bytes = vec![0u8, 1, 2, 3];
+        let b = BodyCapture::from_bytes(&bytes, Some("image/png".into()), 100);
+        assert!(b.is_binary);
+        let data = b.data_b64.expect("image capture keeps base64 data");
+        use base64::Engine as _;
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+            bytes
+        );
+    }
+
+    #[test]
+    fn body_capture_non_image_binary_has_no_base64_data() {
+        let bytes = vec![0u8, 1, 2, 3];
+        let b = BodyCapture::from_bytes(&bytes, Some("application/octet-stream".into()), 100);
+        assert!(b.is_binary);
+        assert!(b.data_b64.is_none());
+    }
+
+    #[test]
+    fn body_capture_text_has_no_base64_data() {
+        let b = BodyCapture::from_bytes(b"hello", Some("text/plain".into()), 10);
+        assert!(b.data_b64.is_none());
+    }
+
+    #[test]
+    fn body_capture_data_b64_back_compat() {
+        let b: BodyCapture = serde_json::from_str(
+            r#"{"mime":null,"size":3,"truncated":false,"text":"abc","is_binary":false}"#,
+        )
+        .unwrap();
+        assert_eq!(b.data_b64, None);
     }
 
     #[test]

@@ -10,6 +10,7 @@ export interface BodyCapture {
   truncated: boolean;
   text: string;
   is_binary: boolean;
+  data_b64?: string | null;
 }
 
 export interface HttpRequest {
