@@ -19,7 +19,14 @@ import {
 } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
-import { loadDbLayout, saveDbLayout } from "../../lib/prefs";
+import {
+  loadDbLayout,
+  loadSqlHistory,
+  loadSqlTabs,
+  saveDbLayout,
+  saveSqlHistory,
+  saveSqlTabs,
+} from "../../lib/prefs";
 import { EmptyState } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
@@ -56,6 +63,14 @@ import {
   resolvePaneWidth,
   type DbLayout,
 } from "./layout";
+import {
+  activeTab,
+  addTab,
+  closeTab,
+  setActiveTabSql,
+  switchTab,
+  type SqlTabs,
+} from "./tabs";
 import {
   filterTables,
   formatPulledAt,
@@ -101,8 +116,8 @@ export function DatabasesView() {
   const [exporting, setExporting] = useState(false);
   const [exportingResult, setExportingResult] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
-  const [sqlText, setSqlText] = useState("");
-  const [sqlHistory, setSqlHistory] = useState<string[]>([]);
+  const [sqlTabs, setSqlTabs] = useState<SqlTabs>(loadSqlTabs);
+  const [sqlHistory, setSqlHistory] = useState<string[]>(loadSqlHistory);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [lastRunSql, setLastRunSql] = useState<string | null>(null);
@@ -121,6 +136,16 @@ export function DatabasesView() {
   useEffect(() => {
     saveDbLayout(layout);
   }, [layout]);
+
+  useEffect(() => {
+    saveSqlTabs(sqlTabs);
+  }, [sqlTabs]);
+
+  useEffect(() => {
+    saveSqlHistory(sqlHistory);
+  }, [sqlHistory]);
+
+  const activeSql = activeTab(sqlTabs).sql;
 
   const dbsResize = usePaneResize({
     grow: "right",
@@ -236,7 +261,7 @@ export function DatabasesView() {
   }
 
   async function runSql(sqlArg?: string) {
-    const sql = (sqlArg ?? sqlText).trim();
+    const sql = (sqlArg ?? activeSql).trim();
     if (sql === "" || run.isPending || runMutation.isPending || !viewerReady) return;
     if (sqlArg == null) setActiveTable(null);
     lastRunSqlRef.current = sql;
@@ -414,9 +439,13 @@ export function DatabasesView() {
   function onTableClick(name: string, includeRowid = editMode) {
     setActiveTable(name);
     const sql = prefillQuery(name, includeRowid);
-    setSqlText(sql);
+    setSqlTabs((cur) => setActiveTabSql(cur, sql));
     setSqlOpen(true);
     void runSql(sql);
+  }
+
+  function onSqlTextChange(next: string) {
+    setSqlTabs((cur) => setActiveTabSql(cur, next));
   }
 
   function onToggleEditMode() {
@@ -816,8 +845,13 @@ export function DatabasesView() {
                         serial={serial}
                         pkg={pkg ?? ""}
                         dbName={selectedDb ?? ""}
-                        text={sqlText}
-                        onTextChange={setSqlText}
+                        text={activeSql}
+                        onTextChange={onSqlTextChange}
+                        tabs={sqlTabs.tabs}
+                        activeId={sqlTabs.activeId}
+                        onSwitchTab={(id) => setSqlTabs((cur) => switchTab(cur, id))}
+                        onCloseTab={(id) => setSqlTabs((cur) => closeTab(cur, id))}
+                        onAddTab={() => setSqlTabs((cur) => addTab(cur))}
                         history={sqlHistory}
                         running={run.isPending || runMutation.isPending}
                         onRun={() => void runSql()}

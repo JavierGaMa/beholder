@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { History, Loader2, Play, X } from "lucide-react";
+import clsx from "clsx";
+import { History, Loader2, Play, Plus, X } from "lucide-react";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
+import { MAX_TABS, type SqlTab } from "./tabs";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
 
@@ -12,6 +14,11 @@ export function SqlConsole({
   dbName,
   text,
   onTextChange,
+  tabs,
+  activeId,
+  onSwitchTab,
+  onCloseTab,
+  onAddTab,
   history,
   running,
   onRun,
@@ -22,6 +29,11 @@ export function SqlConsole({
   dbName: string;
   text: string;
   onTextChange: (next: string) => void;
+  tabs: SqlTab[];
+  activeId: string;
+  onSwitchTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
+  onAddTab: () => void;
   history: string[];
   running: boolean;
   onRun: () => void;
@@ -110,6 +122,50 @@ export function SqlConsole({
           </Button>
         </span>
       </header>
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line/50 px-3 py-1">
+        {tabs.map((tab, i) => {
+          const active = tab.id === activeId;
+          return (
+            <span key={tab.id} className="flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => onSwitchTab(tab.id)}
+                title={tab.sql}
+                aria-current={active ? "true" : undefined}
+                className={clsx(
+                  "focus-ring rounded px-2 py-0.5 font-mono text-[11px] transition-colors",
+                  active
+                    ? "bg-surface-2 font-medium text-txt"
+                    : "text-muted hover:bg-surface-2/60 hover:text-txt",
+                )}
+              >
+                Q{i + 1}
+              </button>
+              {tabs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onCloseTab(tab.id)}
+                  title={`Close query ${i + 1}`}
+                  aria-label={`Close query ${i + 1}`}
+                  className="focus-ring -ml-1 rounded p-0.5 text-muted/70 transition-colors hover:text-txt"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </span>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onAddTab}
+          disabled={tabs.length >= MAX_TABS}
+          title={tabs.length >= MAX_TABS ? `Up to ${MAX_TABS} queries` : "New query"}
+          aria-label="New query"
+          className="focus-ring shrink-0 rounded p-0.5 text-muted transition-colors hover:text-txt disabled:pointer-events-none disabled:opacity-40"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={

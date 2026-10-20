@@ -5,6 +5,12 @@ import {
   serializeDbLayout,
 } from "../features/database/layout";
 import type { DbLayout } from "../features/database/layout";
+import {
+  createInitialTabs,
+  parseTabs,
+  serializeTabs,
+  type SqlTabs,
+} from "../features/database/tabs";
 
 export const DEFAULT_FILTERS: Filters = {
   text: "",
@@ -80,4 +86,32 @@ export function loadDbLayout(): DbLayout {
 
 export function saveDbLayout(l: DbLayout) {
   localStorage.setItem("beholder.dbLayout", serializeDbLayout(l));
+}
+
+export function loadSqlTabs(): SqlTabs {
+  try {
+    return parseTabs(localStorage.getItem("beholder.dbSqlTabs"));
+  } catch {
+    return createInitialTabs();
+  }
+}
+
+export function saveSqlTabs(tabs: SqlTabs) {
+  localStorage.setItem("beholder.dbSqlTabs", serializeTabs(tabs));
+}
+
+export function loadSqlHistory(): string[] {
+  try {
+    const raw = localStorage.getItem("beholder.dbSqlHistory");
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((q): q is string => typeof q === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function saveSqlHistory(history: string[]) {
+  localStorage.setItem("beholder.dbSqlHistory", JSON.stringify(history));
 }
