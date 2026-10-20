@@ -1,6 +1,16 @@
-import { completeFromList, type Completion } from "@codemirror/autocomplete";
+import {
+  completeFromList,
+  snippetCompletion,
+  type Completion,
+} from "@codemirror/autocomplete";
 import type { TableSchema } from "../../../queries/databases";
 import { SQL_SNIPPETS } from "./snippets";
+
+export function toCmSnippet(template: string): string {
+  return template
+    .replace(/\{table\}/g, "${table}")
+    .replace(/<([^>]+)>/g, (_match, name: string) => `${"${"}${name}}`);
+}
 
 export function buildSqlSchema(schema: TableSchema[]): Record<string, string[]> {
   const byTable = new Map<string, Set<string>>();
@@ -87,14 +97,15 @@ const keywordCompletions: Completion[] = SQL_KEYWORDS.map((keyword) => ({
   type: "keyword",
 }));
 
-const snippetCompletions: Completion[] = SQL_SNIPPETS.map((snippet) => ({
-  label: snippet.label,
-  type: "text",
-  detail: "snippet",
-  apply: snippet.template,
-}));
+export const SQL_SNIPPET_COMPLETIONS: Completion[] = SQL_SNIPPETS.map((snippet) =>
+  snippetCompletion(toCmSnippet(snippet.template), {
+    label: snippet.label,
+    type: "snippet",
+    detail: "template",
+  }),
+);
 
 export const keywordSnippetSource: ReturnType<typeof completeFromList> = completeFromList([
   ...keywordCompletions,
-  ...snippetCompletions,
+  ...SQL_SNIPPET_COMPLETIONS,
 ]);

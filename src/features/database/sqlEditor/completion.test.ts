@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { TableSchema } from "../../../queries/databases";
-import { buildSqlSchema, keywordSnippetSource, SQL_KEYWORDS } from "./completion";
+import {
+  buildSqlSchema,
+  keywordSnippetSource,
+  SQL_KEYWORDS,
+  SQL_SNIPPET_COMPLETIONS,
+  toCmSnippet,
+} from "./completion";
 import { SQL_SNIPPETS } from "./snippets";
 
 function table(name: string, columns: string[]): TableSchema {
@@ -59,5 +65,51 @@ describe("keywordSnippetSource", () => {
   it("covers every keyword and every snippet label in the source list build", () => {
     expect(SQL_KEYWORDS.length + SQL_SNIPPETS.length).toBeGreaterThan(SQL_KEYWORDS.length);
     expect(SQL_SNIPPETS).toHaveLength(8);
+  });
+});
+
+describe("toCmSnippet", () => {
+  it("converts {table} markers into snippet fields", () => {
+    expect(toCmSnippet("SELECT * FROM {table} LIMIT 50")).toBe(
+      "SELECT * FROM ${table} LIMIT 50",
+    );
+  });
+
+  it("converts <placeholder> markers into snippet fields", () => {
+    expect(toCmSnippet("WHERE <condition>")).toBe("WHERE ${condition}");
+  });
+
+  it("links repeated {table} markers into one repeated field", () => {
+    expect(toCmSnippet("FROM {table} JOIN other ON {table}.<id> = other.<id>")).toBe(
+      "FROM ${table} JOIN other ON ${table}.${id} = other.${id}",
+    );
+  });
+
+  it("leaves templates without markers unchanged", () => {
+    expect(toCmSnippet("SELECT 1")).toBe("SELECT 1");
+  });
+
+  it("converts every shipped template without leaving legacy markers", () => {
+    for (const snippet of SQL_SNIPPETS) {
+      const cm = toCmSnippet(snippet.template);
+      expect(cm).not.toMatch(/(?<!\$)\{table\}|<[^>]+>/);
+    }
+  });
+});
+
+describe("SQL_SNIPPET_COMPLETIONS", () => {
+  it("has one snippet completion per shipped template with snippet expansion", () => {
+    expect(SQL_SNIPPET_COMPLETIONS).toHaveLength(SQL_SNIPPETS.length);
+    for (const completion of SQL_SNIPPET_COMPLETIONS) {
+      expect(typeof completion.apply).toBe("function");
+      expect(completion.type).toBe("snippet");
+      expect(completion.detail).toBe("template");
+    }
+  });
+
+  it("labels match the shipped snippet labels", () => {
+    expect(SQL_SNIPPET_COMPLETIONS.map((c) => c.label)).toEqual(
+      SQL_SNIPPETS.map((s) => s.label),
+    );
   });
 });
