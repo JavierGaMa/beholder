@@ -103,3 +103,14 @@ export function migrateLegacySql(sqlText: string | null): SqlTabs {
   const tab: SqlTab = { id: newTabId(), sql };
   return { tabs: [tab], activeId: tab.id };
 }
+
+const TAB_HINT_MAX = 32;
+
+export function tabLabel(sql: string, index: number): string {
+  const collapsed = sql.replace(/\s+/g, " ").trim();
+  const hint =
+    collapsed.length > TAB_HINT_MAX
+      ? `${collapsed.slice(0, TAB_HINT_MAX).trimEnd()}…`
+      : collapsed;
+  return `Q${index + 1} · ${hint === "" ? "Empty" : hint}`;
+}

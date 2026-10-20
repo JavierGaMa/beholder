@@ -11,6 +11,7 @@ import {
   serializeTabs,
   setActiveTabSql,
   switchTab,
+  tabLabel,
   type SqlTab,
   type SqlTabs,
 } from "./tabs";
@@ -317,5 +318,34 @@ describe("loadSqlHistory and saveSqlHistory", () => {
   it("drops entries that are not strings", () => {
     stubStorage({ "beholder.dbSqlHistory": '[1, "SELECT 1", null, true]' });
     expect(loadSqlHistory()).toEqual(["SELECT 1"]);
+  });
+});
+
+describe("tabLabel", () => {
+  it("shows the index and the first line of the query", () => {
+    expect(tabLabel("SELECT * FROM users", 0)).toBe("Q1 · SELECT * FROM users");
+  });
+
+  it("joins a multiline query into a single collapsed hint", () => {
+    expect(tabLabel("SELECT id,\n  name\nFROM users", 1)).toBe(
+      "Q2 · SELECT id, name FROM users",
+    );
+  });
+
+  it("skips leading blank lines before the hint", () => {
+    expect(tabLabel("\n\n  SELECT 1", 0)).toBe("Q1 · SELECT 1");
+  });
+
+  it("truncates long queries with an ellipsis", () => {
+    const long = `SELECT ${"a".repeat(100)}`;
+    const label = tabLabel(long, 0);
+    expect(label.startsWith("Q1 · ")).toBe(true);
+    expect(label.endsWith("…")).toBe(true);
+    expect(label.length).toBeLessThanOrEqual("Q1 · ".length + 32 + 1);
+  });
+
+  it("labels blank tabs as empty", () => {
+    expect(tabLabel("", 0)).toBe("Q1 · Empty");
+    expect(tabLabel("   \n  ", 2)).toBe("Q3 · Empty");
   });
 });

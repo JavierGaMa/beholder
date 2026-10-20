@@ -6,7 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
 import { pickRunText } from "./dbdisplay";
 import { formatSql } from "./sqlEditor/format";
-import { MAX_TABS, type SqlTab } from "./tabs";
+import { MAX_TABS, tabLabel, type SqlTab } from "./tabs";
 
 const SqlCodeEditor = lazy(() => import("./sqlEditor/SqlCodeEditor"));
 
@@ -44,6 +44,7 @@ export function SqlConsole({
   const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const selectionRef = useRef<string>("");
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const { anchorRef, menuRef, style } = useDropdownPosition(historyOpen, {
     width: 420,
     estHeight: 220,
@@ -58,6 +59,17 @@ export function SqlConsole({
     window.addEventListener("mousedown", onClickOutside);
     return () => window.removeEventListener("mousedown", onClickOutside);
   }, [historyOpen]);
+
+  function onTablistKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const index = tabs.findIndex((t) => t.id === activeId);
+    const delta = e.key === "ArrowRight" ? 1 : -1;
+    const next = tabs[(index + delta + tabs.length) % tabs.length];
+    if (next == null) return;
+    onSwitchTab(next.id);
+    tabRefs.current.get(next.id)?.focus();
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
@@ -135,24 +147,36 @@ export function SqlConsole({
           </Button>
         </span>
       </header>
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line/50 px-3 py-1">
+      <div
+        role="tablist"
+        aria-label="SQL queries"
+        onKeyDown={onTablistKeyDown}
+        className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line/50 px-2 py-1"
+      >
         {tabs.map((tab, i) => {
           const active = tab.id === activeId;
+          const empty = tab.sql.trim() === "";
           return (
-            <span key={tab.id} className="flex shrink-0 items-center">
+            <span key={tab.id} className="flex shrink-0 items-center gap-0.5">
               <button
+                ref={(el) => {
+                  if (el != null) tabRefs.current.set(tab.id, el);
+                  else tabRefs.current.delete(tab.id);
+                }}
                 type="button"
+                role="tab"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 onClick={() => onSwitchTab(tab.id)}
-                title={tab.sql}
-                aria-current={active ? "true" : undefined}
+                title={empty ? "Empty query" : tab.sql}
                 className={clsx(
-                  "focus-ring rounded px-2 py-0.5 font-mono text-[11px] transition-colors",
+                  "focus-ring flex h-7 items-center rounded px-2.5 text-xs transition-colors",
                   active
-                    ? "bg-surface-2 font-medium text-txt"
-                    : "text-muted hover:bg-surface-2/60 hover:text-txt",
+                    ? "bg-surface-2 font-medium text-txt shadow-[inset_0_-2px_0_0_var(--accent)]"
+                    : "border-b-2 border-transparent text-muted hover:bg-surface-2/60 hover:text-txt",
                 )}
               >
-                Q{i + 1}
+                <span className="max-w-[240px] truncate">{tabLabel(tab.sql, i)}</span>
               </button>
               {tabs.length > 1 && (
                 <button
@@ -160,9 +184,9 @@ export function SqlConsole({
                   onClick={() => onCloseTab(tab.id)}
                   title={`Close query ${i + 1}`}
                   aria-label={`Close query ${i + 1}`}
-                  className="focus-ring -ml-1 rounded p-0.5 text-muted/70 transition-colors hover:text-txt"
+                  className="focus-ring grid h-6 w-6 place-items-center rounded text-muted transition-colors hover:bg-surface-2/60 hover:text-txt"
                 >
-                  <X size={10} />
+                  <X size={12} />
                 </button>
               )}
             </span>
@@ -174,12 +198,12 @@ export function SqlConsole({
           disabled={tabs.length >= MAX_TABS}
           title={tabs.length >= MAX_TABS ? `Up to ${MAX_TABS} queries` : "New query"}
           aria-label="New query"
-          className="focus-ring shrink-0 rounded p-0.5 text-muted transition-colors hover:text-txt disabled:pointer-events-none disabled:opacity-40"
+          className="focus-ring grid h-7 w-7 shrink-0 place-items-center rounded text-muted transition-colors hover:bg-surface-2/60 hover:text-txt disabled:pointer-events-none disabled:opacity-40"
         >
-          <Plus size={12} />
+          <Plus size={14} />
         </button>
       </div>
-      <div className="min-h-0 flex-1">
+      <div role="tabpanel" aria-label="SQL editor" className="min-h-0 flex-1">
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center">
