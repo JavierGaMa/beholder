@@ -149,6 +149,7 @@ pub fn run() {
             commands::agent_unpin_request,
             commands::agent_pin_log,
             commands::agent_clear_pins,
+            commands::agent_sync_snapshots,
             commands::agent_set_focus_app,
             commands::agent_set_enabled,
             commands::agent_bridge_status,

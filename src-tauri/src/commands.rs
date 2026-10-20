@@ -1114,6 +1114,17 @@ pub fn agent_pin_request(agent: State<'_, crate::state::AgentState>, id: u64) ->
 }
 
 #[tauri::command]
+pub fn agent_sync_snapshots(
+    agent: State<'_, crate::state::AgentState>,
+    list: String,
+) -> Result<(), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(&list).map_err(|e| format!("invalid snapshots json: {e}"))?;
+    agent.store.set_snapshots(parsed);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn agent_unpin_request(
     agent: State<'_, crate::state::AgentState>,
     id: u64,

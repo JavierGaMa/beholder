@@ -169,6 +169,14 @@ fn route(store: &AgentStore, target: &str) -> (u16, Value) {
     match path {
         "/focus" => (200, store.focus()),
         "/metrics" => (200, store.metrics_json()),
+        "/snapshots" => (200, store.snapshots_json()),
+        p if p.starts_with("/snapshots/") => {
+            let id = p.trim_start_matches("/snapshots/");
+            match (id.is_empty(), store.snapshot_detail(id)) {
+                (false, Some(detail)) => (200, detail),
+                _ => (404, json!({ "error": "not_found" })),
+            }
+        }
         "/requests" => {
             let q = ReqQuery {
                 status: StatusFilter::parse(query.get("status").map(|s| s.as_str())),
@@ -344,6 +352,24 @@ mod tests {
         assert_eq!(body["session"]["count"], 1);
         assert_eq!(body["window"]["count"], 1);
         assert!(body["window"]["domains"].is_array());
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn snapshots_routes_list_and_detail() {
+        let store = store_with_one();
+        store.set_snapshots(serde_json::json!([
+            {"id":"s1","label":"L","createdAt":5,"totals":{"wireBytesIn":10,"count":1},"domains":[],"coverage":{"captured":1,"total":1}}
+        ]));
+        let server = serve_with(store, "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, body) = get(server.port, "tok", "/snapshots").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["snapshots"][0]["id"], "s1");
+        let (status, body) = get(server.port, "tok", "/snapshots/s1").await;
+        assert_eq!(status, 200);
+        assert_eq!(body["label"], "L");
+        let (status, _) = get(server.port, "tok", "/snapshots/zz").await;
+        assert_eq!(status, 404);
         server.shutdown().await;
     }
 

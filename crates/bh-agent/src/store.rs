@@ -159,6 +159,7 @@ pub struct AgentStore {
     pinned_logs: Mutex<Vec<LogLine>>,
     console: Mutex<VecDeque<LogLine>>,
     session: Mutex<SessionTotals>,
+    snapshots: Mutex<Vec<Value>>,
 }
 
 impl AgentStore {
@@ -171,7 +172,43 @@ impl AgentStore {
             pinned_logs: Mutex::new(Vec::new()),
             console: Mutex::new(VecDeque::new()),
             session: Mutex::new(SessionTotals::default()),
+            snapshots: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn set_snapshots(&self, list: Value) {
+        let list = match list {
+            Value::Array(items) => items,
+            _ => Vec::new(),
+        };
+        *self.snapshots.lock().unwrap() = list;
+    }
+
+    pub fn snapshots_json(&self) -> Value {
+        let list = self.snapshots.lock().unwrap();
+        let rows: Vec<Value> = list
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": s.get("id").cloned().unwrap_or(Value::Null),
+                    "label": s.get("label").cloned().unwrap_or(Value::Null),
+                    "created_at": s.get("createdAt").cloned().unwrap_or(Value::Null),
+                    "count": s.get("totals").and_then(|t| t.get("count")).cloned().unwrap_or(Value::Null),
+                    "wire_bytes_in": s.get("totals").and_then(|t| t.get("wireBytesIn")).cloned().unwrap_or(Value::Null),
+                    "coverage": s.get("coverage").cloned().unwrap_or(Value::Null),
+                })
+            })
+            .collect();
+        serde_json::json!({ "snapshots": rows })
+    }
+
+    pub fn snapshot_detail(&self, id: &str) -> Option<Value> {
+        self.snapshots
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.get("id").and_then(Value::as_str) == Some(id))
+            .cloned()
     }
 
     pub fn set_target(&self, serial: Option<String>, avd: Option<String>) {
@@ -493,6 +530,24 @@ mod tests {
         s.ingest_traffic(&TrafficEvent::ExchangeFailed { id: 3, error: "reset".into() });
         s.ingest_traffic(&TrafficEvent::ExchangeFailed { id: 3, error: "dup".into() });
         assert_eq!(s.session_totals().failed, 1);
+    }
+
+    #[test]
+    fn snapshots_roundtrip_and_compact() {
+        let s = AgentStore::new(AgentLimits::default());
+        assert_eq!(s.snapshots_json()["snapshots"].as_array().unwrap().len(), 0);
+        s.set_snapshots(serde_json::json!([
+            {"id":"s1","label":"L","createdAt":5,"totals":{"wireBytesIn":10,"count":2},"domains":[],"coverage":{"captured":2,"total":2}},
+            {"id":"s2","label":"M","createdAt":6,"totals":{"wireBytesIn":20,"count":3},"domains":[],"coverage":{"captured":3,"total":3}}
+        ]));
+        let arr = s.snapshots_json()["snapshots"].as_array().unwrap().clone();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["id"], "s1");
+        assert_eq!(arr[0]["wire_bytes_in"], 10);
+        assert_eq!(arr[0]["count"], 2);
+        let detail = s.snapshot_detail("s2").unwrap();
+        assert_eq!(detail["label"], "M");
+        assert!(s.snapshot_detail("nope").is_none());
     }
 
     #[test]

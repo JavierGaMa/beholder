@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTraffic } from "../../store/traffic";
+import { invoke, isTauri } from "../../lib/tauri";
 import { Button } from "../../components/ui/Button";
 import { formatBytes, formatMs, formatTime, methodClass } from "../../lib/format";
 import { loadMetricSnapshots, saveMetricSnapshots } from "../../lib/prefs";
@@ -76,6 +77,11 @@ export function MetricsView() {
   const [snapshots, setSnapshots] = useState<MetricSnapshot[]>(() => loadMetricSnapshots());
   const [compareA, setCompareA] = useState(CURRENT_OPTION);
   const [compareB, setCompareB] = useState("");
+
+  useEffect(() => {
+    if (!isTauri || snapshots.length === 0) return;
+    void invoke("agent_sync_snapshots", { list: JSON.stringify(snapshots) }).catch(() => {});
+  }, [snapshots]);
 
   const currentSnapshot = useMemo(
     () =>
