@@ -321,6 +321,7 @@ dependencies = [
  "bh-proxy",
  "futures-util",
  "notify",
+ "objc2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

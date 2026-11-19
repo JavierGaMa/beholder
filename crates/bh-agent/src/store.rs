@@ -151,6 +151,20 @@ pub fn top_domains<'a>(
     rows
 }
 
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize)]
+pub struct AgentConnections {
+    pub active: u64,
+    pub last_seen_ms: Option<u64>,
+    pub total: u64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 pub struct AgentStore {
     pub limits: AgentLimits,
     focus: Mutex<Focus>,
@@ -161,6 +175,7 @@ pub struct AgentStore {
     session: Mutex<SessionTotals>,
     snapshots: Mutex<Vec<Value>>,
     databases: Mutex<Vec<Value>>,
+    connections: Mutex<AgentConnections>,
 }
 
 impl AgentStore {
@@ -175,7 +190,24 @@ impl AgentStore {
             session: Mutex::new(SessionTotals::default()),
             snapshots: Mutex::new(Vec::new()),
             databases: Mutex::new(Vec::new()),
+            connections: Mutex::new(AgentConnections::default()),
         }
+    }
+
+    pub fn agent_conn_open(&self) {
+        let mut c = self.connections.lock().unwrap();
+        c.active += 1;
+        c.total += 1;
+        c.last_seen_ms = Some(now_ms());
+    }
+
+    pub fn agent_conn_close(&self) {
+        let mut c = self.connections.lock().unwrap();
+        c.active = c.active.saturating_sub(1);
+    }
+
+    pub fn connections(&self) -> AgentConnections {
+        self.connections.lock().unwrap().clone()
     }
 
     pub fn register_database(&self, serial: &str, pkg: &str, db: &str, path: &str) {
@@ -745,5 +777,38 @@ mod tests {
         s.clear_pins();
         let f = s.focus();
         assert_eq!(f["pinned_requests"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn connection_tracker_counts_active_and_total() {
+        let s = AgentStore::new(AgentLimits::default());
+        assert_eq!(s.connections(), AgentConnections::default());
+        let before = now_ms();
+        s.agent_conn_open();
+        s.agent_conn_open();
+        let c = s.connections();
+        assert_eq!(c.active, 2);
+        assert_eq!(c.total, 2);
+        assert!(c.last_seen_ms.unwrap() >= before);
+        s.agent_conn_close();
+        assert_eq!(s.connections().active, 1);
+        assert_eq!(s.connections().total, 2);
+    }
+
+    #[test]
+    fn connection_close_never_underflows() {
+        let s = AgentStore::new(AgentLimits::default());
+        s.agent_conn_close();
+        s.agent_conn_close();
+        assert_eq!(s.connections().active, 0);
+    }
+
+    #[test]
+    fn last_seen_updates_on_each_connection() {
+        let s = AgentStore::new(AgentLimits::default());
+        let first = s.connections().last_seen_ms;
+        s.agent_conn_open();
+        let second = s.connections().last_seen_ms;
+        assert!(second >= first);
     }
 }

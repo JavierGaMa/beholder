@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeftRight,
@@ -34,10 +34,20 @@ import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
 import { DatabasesView } from "./features/database/DatabasesView";
 import { SettingsView } from "./features/settings/SettingsView";
+import {
+  isAgentClientActive,
+  type AgentConnections,
+} from "./features/settings/agentBridge";
+import { rememberActiveSection } from "./features/settings/sections";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
+import { Palette } from "./features/palette/Palette";
+import { buildPaletteCommands } from "./features/palette/commands";
+import { usePalette } from "./features/palette/store";
+import { ShortcutsOverlay } from "./features/shortcuts/ShortcutsOverlay";
+import { useShortcuts } from "./features/shortcuts/store";
 import { Toaster } from "./components/ui/toast";
 import { Modal } from "./components/ui/Modal";
 import { Tooltip } from "./components/ui/Tooltip";
@@ -78,8 +88,25 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [follow, setFollow] = useState<boolean>(loadFollow);
+  const [agentConnections, setAgentConnections] = useState<AgentConnections | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const settingsCloseRef = useRef<HTMLButtonElement>(null);
+
+  const paletteCommands = useMemo(
+    () =>
+      buildPaletteCommands({
+        toggleSidebar: () => setSidebarCollapsed((c) => !c),
+        toggleFollow: () => setFollow((f) => !f),
+        focusSearch: () => {
+          setActiveView("requests");
+          requestAnimationFrame(() => {
+            searchRef.current?.focus();
+            searchRef.current?.select();
+          });
+        },
+      }),
+    [setActiveView],
+  );
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -87,7 +114,9 @@ export default function App() {
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     settingsCloseRef.current?.focus();
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSettingsOpen(false);
+      if (e.key === "Escape" && !useShortcuts.getState().open && !usePalette.getState().open) {
+        setSettingsOpen(false);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -123,6 +152,9 @@ export default function App() {
           }
         })
         .catch(() => {});
+      invoke<{ connections: AgentConnections }>("agent_bridge_status")
+        .then((s) => setAgentConnections(s.connections))
+        .catch(() => {});
     }
   }, []);
 
@@ -132,6 +164,7 @@ export default function App() {
     let disposeConfig: (() => void) | undefined;
     let disposeConsole: (() => void) | undefined;
     let disposeMetro: (() => void) | undefined;
+    let disposeAgent: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
@@ -161,6 +194,11 @@ export default function App() {
         }).then((un) => {
           disposeMetro = un;
         });
+        listen<AgentConnections>("agent-connections", (e) => {
+          setAgentConnections(e.payload);
+        }).then((un) => {
+          disposeAgent = un;
+        });
       });
     }
     return () => {
@@ -169,15 +207,29 @@ export default function App() {
       disposeConfig?.();
       disposeConsole?.();
       disposeMetro?.();
+      disposeAgent?.();
       stopMockFn?.();
     };
   }, [ingest]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      const typing = Boolean(
+        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable),
+      );
+      if (e.key === "?" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        useShortcuts.getState().setOpen(true);
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        usePalette.getState().toggle();
+        return;
+      }
+      if (typing) return;
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         setSidebarCollapsed((c) => !c);
@@ -191,6 +243,17 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setActiveView]);
+
+  const agentConnected = isAgentClientActive(agentConnections);
+  const badgeVisible = Boolean(agentConnections?.enabled);
+  const agentBadgeLabel = agentConnected
+    ? "Agent bridge: agent client connected, open Agent Bridge settings"
+    : "Agent bridge enabled, no agent client connected, open Agent Bridge settings";
+
+  function openAgentBridgeSettings() {
+    rememberActiveSection("agent-bridge");
+    setSettingsOpen(true);
+  }
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden text-txt">
@@ -273,6 +336,34 @@ export default function App() {
               </div>
             ))}
           </nav>
+          <div className="mt-auto p-2 pt-1">
+            <button
+              type="button"
+              onClick={openAgentBridgeSettings}
+              aria-label={agentBadgeLabel}
+              style={{ visibility: badgeVisible ? "visible" : "hidden" }}
+              className={clsx(
+                "press focus-ring flex w-full items-center gap-2 rounded-md py-1.5 text-[11px] font-medium",
+                sidebarCollapsed ? "justify-center" : "px-2.5",
+                agentConnected
+                  ? "text-accent hover:bg-accent/10"
+                  : "text-muted hover:bg-surface-2 hover:text-txt",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={clsx(
+                  "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
+                  agentConnected ? "bg-accent" : "bg-muted/50",
+                )}
+              />
+              {!sidebarCollapsed && (
+                <span className="truncate">
+                  {agentConnected ? "Agent connected" : "Agent bridge"}
+                </span>
+              )}
+            </button>
+          </div>
         </aside>
         <main className="min-h-0 min-w-0 flex-1 bg-bg">
           <div key={activeView} className="anim-view-enter h-full min-h-0">
@@ -313,12 +404,16 @@ export default function App() {
                 </Button>
               </Tooltip>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1">
               <SettingsView />
             </div>
           </div>
         )}
       </div>
+
+      <Palette commands={paletteCommands} />
+
+      <ShortcutsOverlay />
 
       <Toaster />
 

@@ -5,6 +5,7 @@ mod config;
 mod console;
 mod metro;
 mod state;
+mod window_blur;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -58,6 +59,7 @@ pub fn run() {
                 server: tokio::sync::Mutex::new(agent_server),
                 token: agent_token,
             });
+            commands::spawn_agent_connections_task(app.handle().clone());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -66,18 +68,29 @@ pub fn run() {
                 }
             });
 
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            let window_cfg = app
+                .path()
+                .app_local_data_dir()
+                .ok()
+                .and_then(|dir| config::load(&dir).ok())
+                .map(|c| c.window)
+                .unwrap_or_default();
+
             #[cfg(target_os = "macos")]
             {
-                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_title("");
-                    if let Err(e) = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::Sidebar,
-                        Some(NSVisualEffectState::Active),
-                        None,
-                    ) {
-                        eprintln!("window vibrancy unavailable: {e}");
+                    let radius = if window_cfg.sidebar_opacity.unwrap_or(100) < 100 {
+                        window_cfg
+                            .blur_radius
+                            .unwrap_or(0)
+                            .min(window_blur::MAX_RADIUS)
+                    } else {
+                        0
+                    };
+                    if let Err(e) = window_blur::set_window_blur(window, radius) {
+                        eprintln!("window blur unavailable: {e}");
                     }
                 }
             }
@@ -86,8 +99,10 @@ pub fn run() {
             {
                 use window_vibrancy::apply_acrylic;
                 if let Some(window) = app.get_webview_window("main") {
-                    if let Err(e) = apply_acrylic(&window, None) {
-                        eprintln!("window acrylic unavailable: {e}");
+                    if window_cfg.sidebar_opacity.unwrap_or(100) < 100 {
+                        if let Err(e) = apply_acrylic(&window, None) {
+                            eprintln!("window acrylic unavailable: {e}");
+                        }
                     }
                 }
             }
@@ -134,6 +149,7 @@ pub fn run() {
             commands::export_bruno_folder,
             commands::get_config,
             commands::set_config,
+            commands::set_accent_color,
             commands::reveal_config,
             commands::console_start,
             commands::console_stop,
@@ -165,7 +181,8 @@ pub fn run() {
             commands::apply_db_to_device,
             commands::reveal_snapshot,
             commands::export_snapshot,
-            commands::export_query_text
+            commands::export_query_text,
+            window_blur::set_window_blur
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

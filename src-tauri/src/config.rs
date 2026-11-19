@@ -130,6 +130,16 @@ impl Default for MetroConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct WindowConfig {
+    #[serde(default)]
+    pub sidebar_opacity: Option<u32>,
+    #[serde(default)]
+    pub main_pane_glass: Option<bool>,
+    #[serde(default)]
+    pub blur_radius: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProxyConfig {
     #[serde(default = "default_tls_bypass_hosts")]
@@ -178,6 +188,8 @@ pub struct UiConfig {
     pub metro: MetroConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default)]
+    pub window: WindowConfig,
 }
 
 fn default_theme() -> String {
@@ -211,8 +223,33 @@ impl Default for UiConfig {
             apks: ApksConfig::default(),
             metro: MetroConfig::default(),
             proxy: ProxyConfig::default(),
+            window: WindowConfig::default(),
         }
     }
+}
+
+pub fn normalize_accent_color(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let hex = trimmed
+        .strip_prefix('#')
+        .ok_or_else(|| format!("invalid accent color: {raw}"))?;
+    let expanded: String = if hex.len() == 3 {
+        hex.chars().flat_map(|c| [c, c]).collect()
+    } else if hex.len() == 6 {
+        hex.to_string()
+    } else {
+        return Err(format!("invalid accent color: {raw}"));
+    };
+    if !expanded.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("invalid accent color: {raw}"));
+    }
+    Ok(Some(format!("#{expanded}").to_lowercase()))
 }
 
 #[derive(Debug, Error)]
@@ -229,6 +266,8 @@ const METRO_CAPTURE_DOC: &str = "# capture = true also records Metro traffic to 
 
 const PROXY_TLS_BYPASS_DOC: &str = "# tls_bypass_hosts = CONNECT tunnels to these hosts are relayed without TLS\n# interception so Android network validation probes see the real certificates;\n# set to an empty list to intercept everything\n";
 
+const WINDOW_OVERRIDE_DOC: &str = "# keys are optional per-field overrides; unset fields follow the theme's\n# curated look, so delete the section to return to it\n# sidebar_opacity = 86      # 0-100, 100 = solid\n# main_pane_glass = false   # also glaze the request panes\n# blur_radius = 30          # 0-64, desktop blur behind the glaze\n";
+
 pub fn config_path(app_data: &std::path::Path) -> PathBuf {
     app_data.join("config.toml")
 }
@@ -241,7 +280,14 @@ pub fn load(dir: &std::path::Path) -> Result<UiConfig, ConfigError> {
         return Ok(config);
     }
     let raw = std::fs::read_to_string(&path)?;
-    toml::from_str::<UiConfig>(&raw).map_err(|e| ConfigError::Parse(e.to_string()))
+    let mut config =
+        toml::from_str::<UiConfig>(&raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
+    config.window.sidebar_opacity = config.window.sidebar_opacity.map(|v| v.min(100));
+    config.window.blur_radius = config
+        .window
+        .blur_radius
+        .map(|v| v.min(crate::window_blur::MAX_RADIUS));
+    Ok(config)
 }
 
 pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), ConfigError> {
@@ -249,6 +295,7 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
     let body = toml::to_string_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let body = body.replacen("[metro]", &format!("[metro]\n{METRO_CAPTURE_DOC}"), 1);
     let body = body.replacen("[proxy]", &format!("[proxy]\n{PROXY_TLS_BYPASS_DOC}"), 1);
+    let body = body.replacen("[window]", &format!("[window]\n{WINDOW_OVERRIDE_DOC}"), 1);
     std::fs::write(config_path(dir), format!("{}{}", TEMPLATE_HEADER, body))
         .map_err(ConfigError::Io)
 }
@@ -256,6 +303,52 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_accent_color_accepts_none_and_blank() {
+        assert_eq!(normalize_accent_color(None).unwrap(), None);
+        assert_eq!(normalize_accent_color(Some("")).unwrap(), None);
+        assert_eq!(normalize_accent_color(Some("   ")).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_accent_color_lowercases_six_digit_hex() {
+        assert_eq!(
+            normalize_accent_color(Some("#FF00AA")).unwrap(),
+            Some("#ff00aa".into())
+        );
+    }
+
+    #[test]
+    fn normalize_accent_color_expands_three_digit_hex() {
+        assert_eq!(
+            normalize_accent_color(Some("#F0a")).unwrap(),
+            Some("#ff00aa".into())
+        );
+    }
+
+    #[test]
+    fn normalize_accent_color_rejects_non_hex_shapes() {
+        assert!(normalize_accent_color(Some("ff00aa")).is_err());
+        assert!(normalize_accent_color(Some("#GGGGGG")).is_err());
+        assert!(normalize_accent_color(Some("#12345")).is_err());
+        assert!(normalize_accent_color(Some("#1234567")).is_err());
+        assert!(normalize_accent_color(Some("red")).is_err());
+    }
+
+    #[test]
+    fn roundtrip_toml_with_custom_accent_command_shape() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-accent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.colors.accent = normalize_accent_color(Some("#22D3EE")).unwrap();
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.colors.accent, Some("#22d3ee".into()));
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("accent = \"#22d3ee\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn roundtrip_toml_with_overrides() {
@@ -496,6 +589,73 @@ mod tests {
         assert!(raw.contains("www.google.com"));
         assert!(raw.contains("connectivitycheck.gstatic.com"));
         assert!(raw.contains("play.googleapis.com"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_window_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.window.sidebar_opacity = Some(72);
+        config.window.main_pane_glass = Some(true);
+        config.window.blur_radius = Some(40);
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        assert_eq!(loaded.window.sidebar_opacity, Some(72));
+        assert_eq!(loaded.window.main_pane_glass, Some(true));
+        assert_eq!(loaded.window.blur_radius, Some(40));
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[window]"));
+        assert!(raw.contains("sidebar_opacity = 72"));
+        assert!(raw.contains("main_pane_glass = true"));
+        assert!(raw.contains("blur_radius = 40"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.window, WindowConfig::default());
+        assert_eq!(loaded.window.sidebar_opacity, None);
+        assert_eq!(loaded.window.main_pane_glass, None);
+        assert_eq!(loaded.window.blur_radius, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_values_clamped_on_load() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-cl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            config_path(&dir),
+            "[window]\nsidebar_opacity = 140\nblur_radius = 99\n",
+        )
+        .unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.window.sidebar_opacity, Some(100));
+        assert_eq!(loaded.window.blur_radius, Some(64));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_override_doc_in_written_template() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-doc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = UiConfig::default();
+        write_config(&dir, &config).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[window]"));
+        assert!(raw.contains("# sidebar_opacity = 86"));
+        assert!(!raw.contains("sidebar_opacity = 86\n"));
+        let reloaded = load(&dir).unwrap();
+        assert_eq!(reloaded, config);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -40,6 +40,15 @@ const VIEW_LABELS: Record<View, string> = {
   console: "Console",
 };
 
+const MACOS_WINDOW_CONTROLS_INSET = 76;
+
+function macOSWindowControlsInset(): number {
+  if (!isTauri || typeof document === "undefined") return 0;
+  return document.documentElement.dataset.platform === "macos"
+    ? MACOS_WINDOW_CONTROLS_INSET
+    : 0;
+}
+
 export function isTrafficView(view: View): boolean {
   return view === "requests" || view === "websockets";
 }
@@ -204,6 +213,7 @@ export function CommandBar({
   return (
     <header
       data-tauri-drag-region
+      style={{ paddingLeft: macOSWindowControlsInset() }}
       className="app-toolbar relative z-30 h-11 shrink-0 border-b border-line bg-surface"
     >
       <div className="flex h-full flex-nowrap items-center gap-2 overflow-hidden px-2">

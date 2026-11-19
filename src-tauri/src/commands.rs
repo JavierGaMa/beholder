@@ -566,6 +566,20 @@ pub async fn set_config(
 }
 
 #[tauri::command]
+pub async fn set_accent_color(app: tauri::AppHandle, color: Option<String>) -> Result<(), String> {
+    let normalized = crate::config::normalize_accent_color(color.as_deref())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if cfg.colors.accent != normalized {
+        let mut next = cfg.clone();
+        next.colors.accent = normalized;
+        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+        let _ = app.emit("config-changed", &next);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn reveal_config(app: tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let path = crate::config::config_path(&dir);
@@ -1169,6 +1183,15 @@ pub fn agent_set_focus_app(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AgentConnectionsStatus {
+    pub enabled: bool,
+    pub active: u64,
+    pub last_seen_ms: Option<u64>,
+    pub total: u64,
+    pub recent: bool,
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct AgentBridgeStatus {
     pub enabled: bool,
@@ -1176,6 +1199,37 @@ pub struct AgentBridgeStatus {
     pub discovery_path: String,
     pub focus_app: Option<String>,
     pub pins_count: u64,
+    pub mcp_command: String,
+    pub tools: Vec<bh_agent::ToolSpec>,
+    pub connections: AgentConnectionsStatus,
+}
+
+const AGENT_RECENT_WINDOW_MS: u64 = 60_000;
+
+fn host_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn connections_status(
+    conn: bh_agent::AgentConnections,
+    enabled: bool,
+    now_ms: u64,
+) -> AgentConnectionsStatus {
+    let recent = enabled
+        && (conn.active > 0
+            || conn
+                .last_seen_ms
+                .map_or(false, |seen| now_ms.saturating_sub(seen) < AGENT_RECENT_WINDOW_MS));
+    AgentConnectionsStatus {
+        enabled,
+        active: conn.active,
+        last_seen_ms: conn.last_seen_ms,
+        total: conn.total,
+        recent,
+    }
 }
 
 #[tauri::command]
@@ -1219,13 +1273,39 @@ pub async fn agent_bridge_status(
     agent: State<'_, crate::state::AgentState>,
 ) -> Result<AgentBridgeStatus, String> {
     let server = agent.server.lock().await;
+    let enabled = server.is_some();
     Ok(AgentBridgeStatus {
-        enabled: server.is_some(),
+        enabled,
         port: server.as_ref().map(|h| h.port),
         discovery_path: bh_agent::discovery_path().display().to_string(),
         focus_app: agent.store.focus_app(),
         pins_count: agent.store.pins_count() as u64,
+        mcp_command: resolve_mcp_binary(),
+        tools: bh_agent::catalog().to_vec(),
+        connections: connections_status(agent.store.connections(), enabled, host_now_ms()),
     })
+}
+
+pub fn spawn_agent_connections_task(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(agent_connections_loop(app));
+}
+
+async fn agent_connections_loop(app: tauri::AppHandle) {
+    let mut last: Option<AgentConnectionsStatus> = None;
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        let Some(agent) = app.try_state::<crate::state::AgentState>() else {
+            continue;
+        };
+        let enabled = agent.server.lock().await.is_some();
+        let status = connections_status(agent.store.connections(), enabled, host_now_ms());
+        if last.as_ref() != Some(&status) {
+            let _ = app.emit("agent-connections", &status);
+            last = Some(status);
+        }
+    }
 }
 
 fn resolve_mcp_binary() -> String {
@@ -1598,7 +1678,8 @@ pub async fn preview_shell_env() -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{stream_process, write_query_text};
+    use super::{connections_status, stream_process, write_query_text, AgentConnectionsStatus};
+    use bh_agent::AgentConnections;
     use std::sync::Mutex;
 
     fn query_text_temp_dir(tag: &str) -> std::path::PathBuf {
@@ -1672,5 +1753,50 @@ mod tests {
         .await
         .unwrap();
         assert!(stderr.contains("license not accepted"));
+    }
+
+    #[test]
+    fn connections_status_marks_in_flight_and_recent_activity() {
+        let now = 10_000_000;
+        let in_flight = AgentConnections {
+            active: 2,
+            last_seen_ms: Some(now - 500),
+            total: 7,
+        };
+        assert_eq!(
+            connections_status(in_flight, true, now),
+            AgentConnectionsStatus {
+                enabled: true,
+                active: 2,
+                last_seen_ms: Some(now - 500),
+                total: 7,
+                recent: true,
+            }
+        );
+        let fresh = AgentConnections { active: 0, last_seen_ms: Some(now - 30_000), total: 7 };
+        assert!(connections_status(fresh, true, now).recent);
+    }
+
+    #[test]
+    fn connections_status_expires_stale_activity() {
+        let now = 10_000_000;
+        let stale = AgentConnections { active: 0, last_seen_ms: Some(now - 61_000), total: 7 };
+        let status = connections_status(stale, true, now);
+        assert!(!status.recent);
+        assert_eq!(status.total, 7);
+    }
+
+    #[test]
+    fn connections_status_never_reports_recent_when_disabled() {
+        let now = 10_000_000;
+        let live = AgentConnections { active: 1, last_seen_ms: Some(now), total: 1 };
+        assert!(!connections_status(live, false, now).recent);
+    }
+
+    #[test]
+    fn connections_status_defaults_to_not_recent_without_activity() {
+        let status = connections_status(AgentConnections::default(), true, 10_000_000);
+        assert!(!status.recent);
+        assert_eq!(status.last_seen_ms, None);
     }
 }
