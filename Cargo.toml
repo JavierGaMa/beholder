@@ -1,5 +1,6 @@
 [workspace]
 members = ["src-tauri", "crates/bh-core", "crates/bh-ca", "crates/bh-device", "crates/bh-proxy", "crates/bh-console", "crates/bh-db", "crates/bh-agent", "crates/beholder-mcp"]
+default-members = ["src-tauri", "crates/bh-core", "crates/bh-ca", "crates/bh-device", "crates/bh-proxy", "crates/bh-console", "crates/bh-db", "crates/bh-agent"]
 resolver = "2"
 
 [workspace.dependencies]
