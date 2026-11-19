@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,4 +64,5 @@ const outDir = join(root, "src-tauri", "binaries");
 mkdirSync(outDir, { recursive: true });
 const dest = join(outDir, `beholder-mcp-${triple}${exeSuffix}`);
 copyFileSync(source, dest);
+rmSync(source, { force: true });
 console.log(`build-sidecar: wrote ${dest}`);
