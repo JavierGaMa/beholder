@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  bridgeStatusLine,
+  bridgeDetailsLine,
   connectionsLine,
-  formatBridgeInfo,
   isAgentClientActive,
   lastSeenLabel,
   type AgentBridgeStatus,
@@ -41,37 +40,21 @@ function status(over: Partial<AgentBridgeStatus> = {}): AgentBridgeStatus {
   };
 }
 
-describe("bridgeStatusLine", () => {
-  it("describes the active bridge with its port", () => {
-    expect(bridgeStatusLine(status())).toBe(
-      "Active — agents can connect on port 41234",
-    );
-  });
-
-  it("describes the disabled bridge", () => {
-    expect(bridgeStatusLine(status({ enabled: false, port: null }))).toBe(
-      "Disabled — no MCP client can connect",
-    );
-  });
-});
-
-describe("formatBridgeInfo", () => {
-  it("counts the tools exposed by the backend catalog", () => {
+describe("bridgeDetailsLine", () => {
+  it("lists the port, focus app and pin count", () => {
     expect(
-      formatBridgeInfo(status({ focus_app: "com.example.app", pins_count: 3 })),
-    ).toBe("3 tools · focus: com.example.app · 3 pins");
-  });
-
-  it("reflects a longer catalog without frontend hardcoding", () => {
-    const ten: AgentToolInfo[] = Array.from({ length: 10 }, (_, i) => ({
-      name: `beholder_tool_${i}`,
-      description: `Tool ${i}`,
-    }));
-    expect(formatBridgeInfo(status({ tools: ten }))).toContain("10 tools");
+      bridgeDetailsLine(status({ focus_app: "com.example.app", pins_count: 3 })),
+    ).toBe("port 41234 · focus com.example.app · 3 pins");
   });
 
   it("falls back to none when no app is focused", () => {
-    expect(formatBridgeInfo(status())).toBe("3 tools · focus: none · 0 pins");
+    expect(bridgeDetailsLine(status())).toBe("port 41234 · focus none · 0 pins");
+  });
+
+  it("marks an unassigned port", () => {
+    expect(bridgeDetailsLine(status({ port: null }))).toBe(
+      "port unassigned · focus none · 0 pins",
+    );
   });
 });
 

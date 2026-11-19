@@ -22,15 +22,9 @@ export interface AgentBridgeStatus {
   connections: AgentConnections;
 }
 
-export function bridgeStatusLine(status: AgentBridgeStatus): string {
-  if (!status.enabled) return "Disabled — no MCP client can connect";
-  return status.port != null
-    ? `Active — agents can connect on port ${status.port}`
-    : "Active";
-}
-
-export function formatBridgeInfo(status: AgentBridgeStatus): string {
-  return `${status.tools.length} tools · focus: ${status.focus_app ?? "none"} · ${status.pins_count} pins`;
+export function bridgeDetailsLine(status: AgentBridgeStatus): string {
+  const port = status.port != null ? String(status.port) : "unassigned";
+  return `port ${port} · focus ${status.focus_app ?? "none"} · ${status.pins_count} pins`;
 }
 
 export function lastSeenLabel(ms: number, now: number): string {
