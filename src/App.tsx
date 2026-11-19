@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeftRight,
@@ -38,6 +38,9 @@ import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
+import { Palette } from "./features/palette/Palette";
+import { buildPaletteCommands } from "./features/palette/commands";
+import { usePalette } from "./features/palette/store";
 import { Toaster } from "./components/ui/toast";
 import { Modal } from "./components/ui/Modal";
 import { Tooltip } from "./components/ui/Tooltip";
@@ -80,6 +83,22 @@ export default function App() {
   const [follow, setFollow] = useState<boolean>(loadFollow);
   const searchRef = useRef<HTMLInputElement>(null);
   const settingsCloseRef = useRef<HTMLButtonElement>(null);
+
+  const paletteCommands = useMemo(
+    () =>
+      buildPaletteCommands({
+        toggleSidebar: () => setSidebarCollapsed((c) => !c),
+        toggleFollow: () => setFollow((f) => !f),
+        focusSearch: () => {
+          setActiveView("requests");
+          requestAnimationFrame(() => {
+            searchRef.current?.focus();
+            searchRef.current?.select();
+          });
+        },
+      }),
+    [setActiveView],
+  );
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -176,6 +195,11 @@ export default function App() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        usePalette.getState().toggle();
+        return;
+      }
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       if (e.key.toLowerCase() === "b") {
@@ -319,6 +343,8 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <Palette commands={paletteCommands} />
 
       <Toaster />
 
