@@ -215,6 +215,30 @@ impl Default for UiConfig {
     }
 }
 
+pub fn normalize_accent_color(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let hex = trimmed
+        .strip_prefix('#')
+        .ok_or_else(|| format!("invalid accent color: {raw}"))?;
+    let expanded: String = if hex.len() == 3 {
+        hex.chars().flat_map(|c| [c, c]).collect()
+    } else if hex.len() == 6 {
+        hex.to_string()
+    } else {
+        return Err(format!("invalid accent color: {raw}"));
+    };
+    if !expanded.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("invalid accent color: {raw}"));
+    }
+    Ok(Some(format!("#{expanded}").to_lowercase()))
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("io error: {0}")]
@@ -256,6 +280,52 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_accent_color_accepts_none_and_blank() {
+        assert_eq!(normalize_accent_color(None).unwrap(), None);
+        assert_eq!(normalize_accent_color(Some("")).unwrap(), None);
+        assert_eq!(normalize_accent_color(Some("   ")).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_accent_color_lowercases_six_digit_hex() {
+        assert_eq!(
+            normalize_accent_color(Some("#FF00AA")).unwrap(),
+            Some("#ff00aa".into())
+        );
+    }
+
+    #[test]
+    fn normalize_accent_color_expands_three_digit_hex() {
+        assert_eq!(
+            normalize_accent_color(Some("#F0a")).unwrap(),
+            Some("#ff00aa".into())
+        );
+    }
+
+    #[test]
+    fn normalize_accent_color_rejects_non_hex_shapes() {
+        assert!(normalize_accent_color(Some("ff00aa")).is_err());
+        assert!(normalize_accent_color(Some("#GGGGGG")).is_err());
+        assert!(normalize_accent_color(Some("#12345")).is_err());
+        assert!(normalize_accent_color(Some("#1234567")).is_err());
+        assert!(normalize_accent_color(Some("red")).is_err());
+    }
+
+    #[test]
+    fn roundtrip_toml_with_custom_accent_command_shape() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-accent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.colors.accent = normalize_accent_color(Some("#22D3EE")).unwrap();
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.colors.accent, Some("#22d3ee".into()));
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("accent = \"#22d3ee\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn roundtrip_toml_with_overrides() {

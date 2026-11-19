@@ -566,6 +566,20 @@ pub async fn set_config(
 }
 
 #[tauri::command]
+pub async fn set_accent_color(app: tauri::AppHandle, color: Option<String>) -> Result<(), String> {
+    let normalized = crate::config::normalize_accent_color(color.as_deref())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
+    if cfg.colors.accent != normalized {
+        let mut next = cfg.clone();
+        next.colors.accent = normalized;
+        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+        let _ = app.emit("config-changed", &next);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn reveal_config(app: tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let path = crate::config::config_path(&dir);

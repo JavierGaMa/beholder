@@ -134,6 +134,7 @@ pub fn run() {
             commands::export_bruno_folder,
             commands::get_config,
             commands::set_config,
+            commands::set_accent_color,
             commands::reveal_config,
             commands::console_start,
             commands::console_stop,

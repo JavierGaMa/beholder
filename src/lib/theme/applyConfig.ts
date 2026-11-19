@@ -1,4 +1,7 @@
 import type { UiConfig } from "./config-types";
+import { createSystemSchemeWatch, type SchemeMediaQuery } from "./systemScheme";
+import { resolveThemeName } from "./themes";
+import { syncWindowTheme } from "./windowTheme";
 
 const TOKEN_MAP: Record<string, string> = {
   bg: "--bg",
@@ -13,9 +16,20 @@ const TOKEN_MAP: Record<string, string> = {
   danger: "--danger",
 };
 
+let activeConfig: UiConfig | null = null;
+
+const schemeWatch = createSystemSchemeWatch(
+  (query): SchemeMediaQuery => window.matchMedia(query),
+);
+
 export function applyUiConfig(config: UiConfig) {
+  activeConfig = config;
   const root = document.documentElement;
   applyThemeVars(config.theme, config.accent);
+  schemeWatch.update(config.theme, () => {
+    if (activeConfig) applyUiConfig(activeConfig);
+  });
+  void syncWindowTheme(config.theme);
 
   root.style.setProperty("--ui-size", `${config.ui_font_size}px`);
   root.style.setProperty("--mono-size", `${config.mono_font_size}px`);
@@ -41,8 +55,13 @@ export function applyUiConfig(config: UiConfig) {
 }
 
 function applyThemeVars(theme: string, accent: string) {
-  root.dataset.theme = theme;
+  root.dataset.theme = resolveThemeName(theme, currentSchemePrefersDark());
   root.dataset.accent = accent;
+}
+
+function currentSchemePrefersDark(): boolean | null {
+  if (typeof window.matchMedia !== "function") return null;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 const root = document.documentElement;

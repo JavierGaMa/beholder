@@ -1,7 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { Copy, FileCode2, RefreshCw } from "lucide-react";
-import { ACCENTS, ACCENT_SWATCHES, THEMES, THEME_LABELS } from "../../lib/theme/themes";
+import {
+  ACCENTS,
+  ACCENT_SWATCHES,
+  customAccentSeed,
+  persistThemeChoice,
+  THEME_MODES,
+  THEME_MODE_LABELS,
+  type AccentName,
+} from "../../lib/theme/themes";
 import { loadBodyCapMb, loadSlowMs, saveBodyCapMb, saveSlowMs } from "../../lib/prefs";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import { applyUiConfig } from "../../lib/theme/applyConfig";
@@ -23,8 +31,21 @@ export function SettingsView() {
   const uiConfig = useTraffic((s) => s.uiConfig);
   const [slowMs, setSlowMs] = useState<number>(loadSlowMs);
   const [bodyCapMb, setBodyCapMb] = useState<number>(loadBodyCapMb);
+  const commitTimer = useRef<number | null>(null);
 
   const config: UiConfig = uiConfig ?? DEFAULT_CONFIG;
+  const customAccentActive = Boolean(config.colors?.accent?.trim());
+  const [customAccent, setCustomAccent] = useState<string>(() => customAccentSeed(config));
+
+  useEffect(() => {
+    setCustomAccent(customAccentSeed(config));
+  }, [config.colors?.accent, config.accent]);
+
+  useEffect(() => {
+    return () => {
+      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    };
+  }, []);
 
   function changeSlow(ms: number) {
     if (Number.isNaN(ms) || ms < 50) return;
@@ -43,7 +64,26 @@ export function SettingsView() {
     applyUiConfig(next);
     if (isTauri) {
       await invoke("set_config", { config: next }).catch(() => {});
+    } else {
+      persistThemeChoice(next.theme, next.accent);
     }
+  }
+
+  function chooseNamedAccent(accent: AccentName) {
+    void save({ ...config, accent, colors: { ...config.colors, accent: null } });
+  }
+
+  function changeCustomAccent(hex: string) {
+    setCustomAccent(hex);
+    const next = { ...config, colors: { ...config.colors, accent: hex } };
+    useTraffic.getState().setUiConfig(next);
+    applyUiConfig(next);
+    if (!isTauri) return;
+    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => {
+      commitTimer.current = null;
+      invoke("set_accent_color", { color: hex }).catch(() => {});
+    }, 250);
   }
 
   return (
@@ -53,41 +93,73 @@ export function SettingsView() {
       <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Theme</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          {THEMES.map((t) => (
+          {THEME_MODES.map((t) => (
             <button
               key={t}
               type="button"
-              onClick={() => save({ ...config, theme: t })}
+              onClick={() => void save({ ...config, theme: t })}
+              aria-pressed={config.theme === t}
               className={clsx(
                 "press focus-ring rounded-md border p-2.5 text-left transition-colors",
                 config.theme === t ? "border-accent" : "border-line hover:border-muted/40",
               )}
-              data-theme={t}
+              data-theme={t === "system" ? undefined : t}
             >
-              <div className="mb-1.5 flex gap-1 rounded border border-line" style={{ background: "var(--bg)" }}>
-                <div className="h-6 flex-1" style={{ background: "var(--surface)" }} />
-                <div className="h-6 w-3" style={{ background: "var(--accent)" }} />
-              </div>
-              <span className="text-[11px] text-txt">{THEME_LABELS[t]}</span>
+              {t === "system" ? (
+                <div
+                  className="mb-1.5 flex gap-1 rounded border border-line"
+                  style={{ background: "var(--bg)" }}
+                >
+                  <div data-theme="paper" className="h-6 flex-1" style={{ background: "var(--surface)" }} />
+                  <div data-theme="obsidian" className="h-6 flex-1" style={{ background: "var(--surface)" }} />
+                  <div className="h-6 w-3" style={{ background: "var(--accent)" }} />
+                </div>
+              ) : (
+                <div className="mb-1.5 flex gap-1 rounded border border-line" style={{ background: "var(--bg)" }}>
+                  <div className="h-6 flex-1" style={{ background: "var(--surface)" }} />
+                  <div className="h-6 w-3" style={{ background: "var(--accent)" }} />
+                </div>
+              )}
+              <span className="text-[11px] text-txt">{THEME_MODE_LABELS[t]}</span>
             </button>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <span className="text-[11px] text-muted">Accent</span>
           {ACCENTS.map((a) => (
             <button
               key={a}
               type="button"
-              onClick={() => save({ ...config, accent: a })}
+              onClick={() => chooseNamedAccent(a)}
+              aria-label={`${a} accent`}
+              aria-pressed={!customAccentActive && config.accent === a}
               className={clsx(
                 "press focus-ring flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors",
-                config.accent === a ? "border-txt" : "border-transparent hover:border-line",
+                !customAccentActive && config.accent === a
+                  ? "border-txt"
+                  : "border-transparent hover:border-line",
               )}
               title={a}
             >
               <span className="block h-3.5 w-3.5 rounded-full" style={{ background: ACCENT_SWATCHES[a] }} />
             </button>
           ))}
+          <span className="h-5 w-px bg-line" aria-hidden="true" />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              aria-label="Custom accent color"
+              title="Custom accent color"
+              value={customAccent}
+              onChange={(e) => changeCustomAccent(e.target.value)}
+              className={clsx(
+                "focus-ring h-6 w-6 shrink-0 cursor-pointer rounded-full border-2 bg-transparent p-0 transition-colors",
+                "[&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-none",
+                customAccentActive ? "border-txt" : "border-transparent hover:border-line",
+              )}
+            />
+            {customAccentActive && <span className="text-[11px] text-muted">Custom</span>}
+          </div>
         </div>
       </Panel>
 
@@ -110,7 +182,7 @@ export function SettingsView() {
             </Button>
           )}
         </div>
-        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse
+        <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse | system
 accent = "lime"             # lime | cyan | amber | violet
 ui-font-size = 13           # px, general UI text
 mono-font-size = 12         # px, requests and payloads
