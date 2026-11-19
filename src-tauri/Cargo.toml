@@ -33,6 +33,5 @@ notify = "8.2.0"
 thiserror.workspace = true
 reqwest = { workspace = true }
 futures-util = { workspace = true }
-window-vibrancy = "0.6"
 objc2 = "0.6"
 

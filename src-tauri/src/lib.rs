@@ -68,7 +68,7 @@ pub fn run() {
                 }
             });
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(target_os = "macos")]
             let window_cfg = app
                 .path()
                 .app_local_data_dir()
@@ -91,18 +91,6 @@ pub fn run() {
                     };
                     if let Err(e) = window_blur::set_window_blur(window, radius) {
                         eprintln!("window blur unavailable: {e}");
-                    }
-                }
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                use window_vibrancy::apply_acrylic;
-                if let Some(window) = app.get_webview_window("main") {
-                    if window_cfg.sidebar_opacity.unwrap_or(100) < 100 {
-                        if let Err(e) = apply_acrylic(&window, None) {
-                            eprintln!("window acrylic unavailable: {e}");
-                        }
                     }
                 }
             }
