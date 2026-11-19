@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   ArrowLeftRight,
+  Bot,
   Database,
   FileCode2,
   Gauge,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useTraffic, type View } from "../../store/traffic";
 import { useShortcuts } from "../shortcuts/store";
+import { toast } from "../../components/ui/toast";
 import { fuzzyScore } from "./fuzzy";
 
 export type PaletteSection = "Navigate" | "Actions";
@@ -82,6 +84,19 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
       shortcut: "?",
       icon: Keyboard,
       run: () => useShortcuts.getState().setOpen(true),
+    },
+    {
+      id: "copy-mcp-config",
+      label: "Copy MCP Config",
+      section: "Actions",
+      icon: Bot,
+      run: () => {
+        import("../../lib/tauri")
+          .then(({ invoke }) => invoke<string>("agent_mcp_config"))
+          .then((snippet) => navigator.clipboard.writeText(snippet))
+          .then(() => toast("MCP config copied to clipboard"))
+          .catch(() => toast("Clipboard unavailable", "danger"));
+      },
     },
     {
       id: "reveal-config",

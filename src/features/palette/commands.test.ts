@@ -80,6 +80,12 @@ describe("palette command registry", () => {
     expect(useTraffic.getState().settingsOpen).toBe(true);
   });
 
+  it("registers an MCP config copy action", () => {
+    const cmd = buildPaletteCommands(handlers()).find((c) => c.id === "copy-mcp-config");
+    expect(cmd?.section).toBe("Actions");
+    expect(cmd?.label).toBe("Copy MCP Config");
+  });
+
   it("clears captured requests on run", () => {
     useTraffic.getState().ingest([started(1)]);
     expect(useTraffic.getState().order.length).toBe(1);

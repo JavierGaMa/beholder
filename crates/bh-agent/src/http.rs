@@ -136,6 +136,9 @@ async fn handle(mut stream: TcpStream, store: Arc<AgentStore>, token: String) ->
             .map(|(k, v)| k.trim().eq_ignore_ascii_case("authorization") && v.trim() == expected)
             .unwrap_or(false)
     });
+    if auth_ok {
+        store.agent_conn_open();
+    }
     let content_length = head_text
         .lines()
         .find_map(|l| {
@@ -166,7 +169,11 @@ async fn handle(mut stream: TcpStream, store: Arc<AgentStore>, token: String) ->
     } else {
         (405, json!({ "error": "method_not_allowed" }))
     };
-    respond(stream, status, &body).await
+    let result = respond(stream, status, &body).await;
+    if auth_ok {
+        store.agent_conn_close();
+    }
+    result
 }
 
 async fn route_post(store: &Arc<AgentStore>, target: &str, body: &str) -> (u16, Value) {
@@ -533,6 +540,40 @@ mod tests {
         server.shutdown().await;
         let attempted = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
         assert!(attempted.is_err());
+    }
+
+    #[tokio::test]
+    async fn authorized_connections_are_tracked() {
+        let store = store_with_one();
+        let server = serve_with(store.clone(), "127.0.0.1:0", "tok", None).await.unwrap();
+        let (status, _) = get(server.port, "tok", "/focus").await;
+        assert_eq!(status, 200);
+        let (status, _) = get(server.port, "tok", "/metrics").await;
+        assert_eq!(status, 200);
+        let c = store.connections();
+        assert_eq!(c.total, 2);
+        assert_eq!(c.active, 0);
+        assert!(c.last_seen_ms.is_some());
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn unauthorized_probes_are_not_counted_as_agents() {
+        let store = store_with_one();
+        let server = serve_with(store.clone(), "127.0.0.1:0", "tok", None).await.unwrap();
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", server.port)).await.unwrap();
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        stream
+            .write_all(b"GET /focus HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wrong\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        let c = store.connections();
+        assert_eq!(c.total, 0);
+        assert_eq!(c.active, 0);
+        assert!(c.last_seen_ms.is_none());
+        server.shutdown().await;
     }
 
     #[tokio::test]

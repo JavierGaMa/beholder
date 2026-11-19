@@ -34,6 +34,11 @@ import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
 import { DatabasesView } from "./features/database/DatabasesView";
 import { SettingsView } from "./features/settings/SettingsView";
+import {
+  isAgentClientActive,
+  type AgentConnections,
+} from "./features/settings/agentBridge";
+import { rememberActiveSection } from "./features/settings/sections";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
@@ -83,6 +88,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [follow, setFollow] = useState<boolean>(loadFollow);
+  const [agentConnections, setAgentConnections] = useState<AgentConnections | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const settingsCloseRef = useRef<HTMLButtonElement>(null);
 
@@ -146,6 +152,9 @@ export default function App() {
           }
         })
         .catch(() => {});
+      invoke<{ connections: AgentConnections }>("agent_bridge_status")
+        .then((s) => setAgentConnections(s.connections))
+        .catch(() => {});
     }
   }, []);
 
@@ -155,6 +164,7 @@ export default function App() {
     let disposeConfig: (() => void) | undefined;
     let disposeConsole: (() => void) | undefined;
     let disposeMetro: (() => void) | undefined;
+    let disposeAgent: (() => void) | undefined;
     let stopMockFn: (() => void) | undefined;
     listenTraffic((events) => ingest(events as never)).then((un) => {
       dispose = un;
@@ -184,6 +194,11 @@ export default function App() {
         }).then((un) => {
           disposeMetro = un;
         });
+        listen<AgentConnections>("agent-connections", (e) => {
+          setAgentConnections(e.payload);
+        }).then((un) => {
+          disposeAgent = un;
+        });
       });
     }
     return () => {
@@ -192,6 +207,7 @@ export default function App() {
       disposeConfig?.();
       disposeConsole?.();
       disposeMetro?.();
+      disposeAgent?.();
       stopMockFn?.();
     };
   }, [ingest]);
@@ -227,6 +243,17 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setActiveView]);
+
+  const agentConnected = isAgentClientActive(agentConnections);
+  const badgeVisible = Boolean(agentConnections?.enabled);
+  const agentBadgeLabel = agentConnected
+    ? "Agent bridge: agent client connected, open Agent Bridge settings"
+    : "Agent bridge enabled, no agent client connected, open Agent Bridge settings";
+
+  function openAgentBridgeSettings() {
+    rememberActiveSection("agent-bridge");
+    setSettingsOpen(true);
+  }
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden text-txt">
@@ -309,6 +336,34 @@ export default function App() {
               </div>
             ))}
           </nav>
+          <div className="mt-auto p-2 pt-1">
+            <button
+              type="button"
+              onClick={openAgentBridgeSettings}
+              aria-label={agentBadgeLabel}
+              style={{ visibility: badgeVisible ? "visible" : "hidden" }}
+              className={clsx(
+                "press focus-ring flex w-full items-center gap-2 rounded-md py-1.5 text-[11px] font-medium",
+                sidebarCollapsed ? "justify-center" : "px-2.5",
+                agentConnected
+                  ? "text-accent hover:bg-accent/10"
+                  : "text-muted hover:bg-surface-2 hover:text-txt",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={clsx(
+                  "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
+                  agentConnected ? "bg-accent" : "bg-muted/50",
+                )}
+              />
+              {!sidebarCollapsed && (
+                <span className="truncate">
+                  {agentConnected ? "Agent connected" : "Agent bridge"}
+                </span>
+              )}
+            </button>
+          </div>
         </aside>
         <main className="min-h-0 min-w-0 flex-1 bg-bg">
           <div key={activeView} className="anim-view-enter h-full min-h-0">

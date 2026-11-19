@@ -58,6 +58,7 @@ pub fn run() {
                 server: tokio::sync::Mutex::new(agent_server),
                 token: agent_token,
             });
+            commands::spawn_agent_connections_task(app.handle().clone());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {

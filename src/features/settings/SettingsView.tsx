@@ -32,11 +32,6 @@ import { Input } from "../../components/ui/Input";
 import { Toggle } from "../../components/ui/Toggle";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import {
-  bridgeStatusLine,
-  formatBridgeInfo,
-  type AgentBridgeStatus,
-} from "./agentBridge";
-import {
   DEFAULT_CONSOLE_CONFIG,
   resolveConfigPath,
   withConsolePatch,
@@ -44,6 +39,7 @@ import {
   withNamedAccent,
   withTheme,
 } from "./configControls";
+import { AgentBridgePanel } from "./AgentBridgePanel";
 import {
   lastActiveSection,
   nextSectionId,
@@ -535,91 +531,6 @@ function UpdatesPanel() {
         >
           {result}
         </p>
-      )}
-    </Panel>
-  );
-}
-
-function AgentBridgePanel() {
-  const [status, setStatus] = useState<AgentBridgeStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!isTauri) return;
-    invoke<AgentBridgeStatus>("agent_bridge_status")
-      .then(setStatus)
-      .catch(() => setStatus(null));
-  }, []);
-
-  async function refreshStatus() {
-    const next = await invoke<AgentBridgeStatus>("agent_bridge_status");
-    setStatus(next);
-  }
-
-  async function toggleEnabled() {
-    if (!status || busy) return;
-    setBusy(true);
-    try {
-      await invoke("agent_set_enabled", { enabled: !status.enabled });
-      await refreshStatus();
-    } catch (e) {
-      toast(String(e), "danger");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function copyMcpConfig() {
-    try {
-      const snippet = await invoke<string>("agent_mcp_config");
-      navigator.clipboard.writeText(snippet).then(
-        () => toast("MCP config copied to clipboard"),
-        () => toast("Clipboard unavailable", "danger"),
-      );
-    } catch (e) {
-      toast(String(e), "danger");
-    }
-  }
-
-  const enabled = status?.enabled ?? false;
-
-  return (
-    <Panel className="p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-medium text-txt">Agent bridge</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted">
-            Lets MCP agents query captured traffic and console logs over a local
-            HTTP API.
-          </p>
-        </div>
-        <Toggle
-          checked={enabled}
-          onChange={() => void toggleEnabled()}
-          disabled={busy || !status}
-          label="Enable agent bridge"
-        />
-      </div>
-      {status && (
-        <>
-          <p className={clsx("mt-2 text-[11px]", enabled ? "text-ok" : "text-muted")}>
-            {bridgeStatusLine(status)}
-          </p>
-          <div className="mt-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={Copy}
-              disabled={!enabled}
-              onClick={copyMcpConfig}
-            >
-              Copy MCP config
-            </Button>
-            <p className="mt-2 font-mono text-[11px] text-muted">
-              {formatBridgeInfo(status)}
-            </p>
-          </div>
-        </>
       )}
     </Panel>
   );
