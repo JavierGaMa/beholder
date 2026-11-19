@@ -81,8 +81,11 @@ pub fn run() {
             {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_title("");
-                    let radius = if window_cfg.sidebar_opacity < 100 {
-                        window_cfg.blur_radius.min(window_blur::MAX_RADIUS)
+                    let radius = if window_cfg.sidebar_opacity.unwrap_or(100) < 100 {
+                        window_cfg
+                            .blur_radius
+                            .unwrap_or(0)
+                            .min(window_blur::MAX_RADIUS)
                     } else {
                         0
                     };
@@ -96,7 +99,7 @@ pub fn run() {
             {
                 use window_vibrancy::apply_acrylic;
                 if let Some(window) = app.get_webview_window("main") {
-                    if window_cfg.sidebar_opacity < 100 {
+                    if window_cfg.sidebar_opacity.unwrap_or(100) < 100 {
                         if let Err(e) = apply_acrylic(&window, None) {
                             eprintln!("window acrylic unavailable: {e}");
                         }

@@ -28,13 +28,13 @@ import {
 } from "./windowTheme";
 
 function withWindow(
-  window: Partial<NonNullable<UiConfig["window"]>>,
+  window: Partial<NonNullable<UiConfig["window"]>> = {},
   config: Partial<UiConfig> = {},
 ): UiConfig {
   return {
     ...DEFAULT_CONFIG,
     ...config,
-    window: { sidebar_opacity: 100, main_pane_glass: false, blur_radius: 24, ...window },
+    window: { sidebar_opacity: null, main_pane_glass: null, blur_radius: null, ...window },
   };
 }
 
@@ -63,23 +63,30 @@ describe("nativeThemeFor", () => {
 });
 
 describe("nativeBlurFor", () => {
-  it("sends zero when the window is solid", () => {
-    expect(nativeBlurFor(withWindow({ sidebar_opacity: 100, blur_radius: 40 }))).toBe(0);
+  it("sends zero when an explicit override makes the window solid", () => {
+    expect(nativeBlurFor(withWindow({ sidebar_opacity: 100, blur_radius: 40 }, { theme: "obsidian" }))).toBe(0);
   });
 
-  it("sends the configured radius when translucent", () => {
-    expect(nativeBlurFor(withWindow({ sidebar_opacity: 72, blur_radius: 40 }))).toBe(40);
+  it("sends the override radius when translucent", () => {
+    expect(nativeBlurFor(withWindow({ sidebar_opacity: 72, blur_radius: 40 }, { theme: "paper" }))).toBe(40);
   });
 
-  it("clamps the radius to the window server ceiling", () => {
-    expect(nativeBlurFor(withWindow({ sidebar_opacity: 72, blur_radius: 99 }))).toBe(64);
+  it("clamps the override radius to the window server ceiling", () => {
+    expect(nativeBlurFor(withWindow({ sidebar_opacity: 72, blur_radius: 99 }, { theme: "paper" }))).toBe(64);
   });
 
-  it("defaults the radius when the window section is missing", () => {
+  it("sends the curated radius of a glass theme when nothing is overridden", () => {
+    expect(nativeBlurFor(withWindow({}, { theme: "obsidian" }))).toBe(30);
+    expect(nativeBlurFor(withWindow({}, { theme: "eclipse" }))).toBe(32);
+  });
+
+  it("sends zero when the curated look is solid and nothing is overridden", () => {
+    expect(nativeBlurFor(withWindow({}, { theme: "paper" }))).toBe(0);
+    expect(nativeBlurFor(withWindow({}, { theme: "contrast" }))).toBe(0);
+  });
+
+  it("sends zero for the default config", () => {
     expect(nativeBlurFor(DEFAULT_CONFIG)).toBe(0);
-    expect(nativeBlurFor(withWindow({ sidebar_opacity: 90 })).valueOf()).toBe(
-      withWindow({ sidebar_opacity: 90 }).window?.blur_radius,
-    );
   });
 });
 
@@ -111,8 +118,8 @@ describe("createWindowAppearanceSync", () => {
   it("resends the theme alone when only the theme changes", async () => {
     mocks.tauri = true;
     const sync = createWindowAppearanceSync();
-    await sync(withWindow({ sidebar_opacity: 80 }, { theme: "paper" }));
-    await sync(withWindow({ sidebar_opacity: 80 }, { theme: "carbon" }));
+    await sync(withWindow({ sidebar_opacity: 80, blur_radius: 30 }, { theme: "paper" }));
+    await sync(withWindow({ sidebar_opacity: 80, blur_radius: 30 }, { theme: "carbon" }));
     expect(mocks.setTheme).toHaveBeenCalledTimes(2);
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });

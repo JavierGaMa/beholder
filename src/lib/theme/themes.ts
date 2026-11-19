@@ -33,6 +33,20 @@ export const THEME_SCHEMES: Record<ThemeName, "light" | "dark"> = {
   eclipse: "dark",
 };
 
+export interface ThemeWindowValues {
+  sidebar_opacity: number;
+  main_pane_glass: boolean;
+  blur_radius: number;
+}
+
+export const THEME_WINDOW_VALUES: Record<ThemeName, ThemeWindowValues> = {
+  paper: { sidebar_opacity: 100, main_pane_glass: false, blur_radius: 0 },
+  contrast: { sidebar_opacity: 100, main_pane_glass: false, blur_radius: 0 },
+  obsidian: { sidebar_opacity: 86, main_pane_glass: false, blur_radius: 30 },
+  carbon: { sidebar_opacity: 90, main_pane_glass: false, blur_radius: 24 },
+  eclipse: { sidebar_opacity: 84, main_pane_glass: false, blur_radius: 32 },
+};
+
 export const SYSTEM_DARK_THEME: ThemeName = "obsidian";
 
 export const ACCENT_SWATCHES: Record<AccentName, string> = {

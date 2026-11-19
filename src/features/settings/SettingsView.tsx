@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import clsx from "clsx";
 import {
@@ -23,7 +23,6 @@ import {
 import { loadBodyCapMb, loadSlowMs, saveBodyCapMb, saveSlowMs } from "../../lib/prefs";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import { applyUiConfig } from "../../lib/theme/applyConfig";
-import { BLUR_RADIUS_MAX, SIDEBAR_OPACITY_SLIDER_MIN } from "../../lib/theme/surfaces";
 import { invoke, isTauri } from "../../lib/tauri";
 import { useTraffic } from "../../store/traffic";
 import { toast } from "../../components/ui/toast";
@@ -34,13 +33,11 @@ import { Toggle } from "../../components/ui/Toggle";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import {
   DEFAULT_CONSOLE_CONFIG,
-  DEFAULT_WINDOW_CONFIG,
   resolveConfigPath,
   withConsolePatch,
   withCustomAccent,
   withNamedAccent,
   withTheme,
-  withWindowPatch,
 } from "./configControls";
 import { AgentBridgePanel } from "./AgentBridgePanel";
 import {
@@ -181,12 +178,9 @@ function AppearanceSection() {
   const [bodyCapMb, setBodyCapMb] = useState<number>(loadBodyCapMb);
   const [configPath, setConfigPath] = useState<string | null>(null);
   const commitTimer = useRef<number | null>(null);
-  const windowCfg = config.window ?? DEFAULT_WINDOW_CONFIG;
 
   const customAccentActive = Boolean(config.colors?.accent?.trim());
   const [customAccent, setCustomAccent] = useState<string>(() => customAccentSeed(config));
-  const opacityId = useId();
-  const blurId = useId();
 
   useEffect(() => {
     setCustomAccent(customAccentSeed(config));
@@ -229,22 +223,6 @@ function AppearanceSection() {
       commitTimer.current = null;
       invoke("set_accent_color", { color: hex }).catch(() => {});
     }, 250);
-  }
-
-  function scheduleWindowCommit(next: UiConfig) {
-    if (!isTauri) return;
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    commitTimer.current = window.setTimeout(() => {
-      commitTimer.current = null;
-      invoke("set_config", { config: next }).catch(() => {});
-    }, 250);
-  }
-
-  function previewWindow(patch: Parameters<typeof withWindowPatch>[1]) {
-    const next = withWindowPatch(config, patch);
-    useTraffic.getState().setUiConfig(next);
-    applyUiConfig(next);
-    scheduleWindowCommit(next);
   }
 
   function copyConfigPath() {
@@ -331,62 +309,6 @@ function AppearanceSection() {
       </Panel>
 
       <Panel className="p-4">
-        <p className="text-[12px] font-medium text-txt">Window</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted">
-          Below 100% the sidebar and toolbar glaze in the theme's own colors over a desktop blur.
-        </p>
-        <div className="mt-3 flex items-center gap-3">
-          <label htmlFor={opacityId} className="w-24 shrink-0 text-[11px] text-muted">
-            Sidebar opacity
-          </label>
-          <input
-            id={opacityId}
-            type="range"
-            min={SIDEBAR_OPACITY_SLIDER_MIN}
-            max={100}
-            step={1}
-            value={windowCfg.sidebar_opacity}
-            onChange={(e) => previewWindow({ sidebar_opacity: Number(e.target.value) })}
-            className="focus-ring h-1.5 w-full cursor-pointer accent-[var(--accent)]"
-          />
-          <span className="w-9 shrink-0 text-right font-mono text-[11px] text-txt">
-            {windowCfg.sidebar_opacity}%
-          </span>
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <label htmlFor={blurId} className="w-24 shrink-0 text-[11px] text-muted">
-            Blur radius
-          </label>
-          <input
-            id={blurId}
-            type="range"
-            min={0}
-            max={BLUR_RADIUS_MAX}
-            step={1}
-            value={windowCfg.blur_radius}
-            onChange={(e) => previewWindow({ blur_radius: Number(e.target.value) })}
-            className="focus-ring h-1.5 w-full cursor-pointer accent-[var(--accent)]"
-          />
-          <span className="w-9 shrink-0 text-right font-mono text-[11px] text-txt">
-            {windowCfg.blur_radius}
-          </span>
-        </div>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[12px] font-medium text-txt">Main pane glass</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted">
-              Also glaze the request panes; cards stay raised for legibility.
-            </p>
-          </div>
-          <Toggle
-            checked={windowCfg.main_pane_glass}
-            onChange={(v) => void save(withWindowPatch(config, { main_pane_glass: v }))}
-            label="Main pane glass"
-          />
-        </div>
-      </Panel>
-
-      <Panel className="p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[12px] font-medium text-txt">config.toml</p>
@@ -424,10 +346,10 @@ function AppearanceSection() {
         )}
         <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse | system
 accent = "lime"             # lime | cyan | amber | violet
-ui-font-size = 13           # px, general UI text
-mono-font-size = 12         # px, requests and payloads
-row-height = 34             # px, request list rows
-mono-font-family = ""       # e.g. "JetBrains Mono"
+ui_font_size = 13           # px, general UI text
+mono_font_size = 12         # px, requests and payloads
+row_height = 34             # px, request list rows
+mono_font_family = ""       # e.g. "JetBrains Mono"
 
 [colors]                    # optional overrides, empty = theme value
 # bg = "#000000"
@@ -439,7 +361,12 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
 # accent = "#c6fd00"
 # ok = "#89d185"
 # warn = "#ffcc00"
-# danger = "#f44747"`}</pre>
+# danger = "#f44747"
+
+[window]                    # optional overrides; unset fields follow the theme
+# sidebar_opacity = 86      # 0-100, 100 = solid; delete section for theme look
+# main_pane_glass = false   # also glaze the request panes
+# blur_radius = 30          # 0-64, desktop blur behind the glaze`}</pre>
       </Panel>
 
       <Panel className="p-4">

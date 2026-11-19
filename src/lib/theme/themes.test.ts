@@ -21,6 +21,7 @@ import {
   THEME_MODES,
   THEME_MODE_LABELS,
   THEME_SCHEMES,
+  THEME_WINDOW_VALUES,
 } from "./themes";
 
 function stubStorage(entries: Record<string, string>) {
@@ -98,6 +99,45 @@ describe("resolveThemeName", () => {
 
   it("falls back to paper for unknown modes", () => {
     expect(resolveThemeName("neon", true)).toBe("paper");
+  });
+});
+
+describe("THEME_WINDOW_VALUES", () => {
+  it("carries a curated window look for every theme", () => {
+    expect(Object.keys(THEME_WINDOW_VALUES)).toEqual([...THEMES]);
+    expect(THEME_WINDOW_VALUES.paper).toEqual({
+      sidebar_opacity: 100,
+      main_pane_glass: false,
+      blur_radius: 0,
+    });
+    expect(THEME_WINDOW_VALUES.contrast).toEqual({
+      sidebar_opacity: 100,
+      main_pane_glass: false,
+      blur_radius: 0,
+    });
+    expect(THEME_WINDOW_VALUES.obsidian).toEqual({
+      sidebar_opacity: 86,
+      main_pane_glass: false,
+      blur_radius: 30,
+    });
+    expect(THEME_WINDOW_VALUES.carbon).toEqual({
+      sidebar_opacity: 90,
+      main_pane_glass: false,
+      blur_radius: 24,
+    });
+    expect(THEME_WINDOW_VALUES.eclipse).toEqual({
+      sidebar_opacity: 84,
+      main_pane_glass: false,
+      blur_radius: 32,
+    });
+  });
+
+  it("keeps the light and high-contrast themes fully solid", () => {
+    for (const theme of ["paper", "contrast"] as const) {
+      expect(THEME_WINDOW_VALUES[theme].sidebar_opacity).toBe(100);
+      expect(THEME_WINDOW_VALUES[theme].blur_radius).toBe(0);
+      expect(THEME_WINDOW_VALUES[theme].main_pane_glass).toBe(false);
+    }
   });
 });
 

@@ -282,10 +282,6 @@ body {
   animation: toast-in var(--dur-base) var(--ease-out) both;
 }
 
-[data-platform="macos"] .app-toolbar {
-  padding-left: 76px;
-}
-
 .anim-view-enter {
   animation: view-enter 240ms var(--ease-out) backwards;
 }

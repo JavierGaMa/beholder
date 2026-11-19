@@ -130,34 +130,14 @@ impl Default for MetroConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct WindowConfig {
-    #[serde(default = "default_sidebar_opacity")]
-    pub sidebar_opacity: u32,
-    #[serde(default = "default_main_pane_glass")]
-    pub main_pane_glass: bool,
-    #[serde(default = "default_blur_radius")]
-    pub blur_radius: u32,
-}
-
-fn default_sidebar_opacity() -> u32 {
-    100
-}
-fn default_main_pane_glass() -> bool {
-    false
-}
-fn default_blur_radius() -> u32 {
-    24
-}
-
-impl Default for WindowConfig {
-    fn default() -> Self {
-        WindowConfig {
-            sidebar_opacity: default_sidebar_opacity(),
-            main_pane_glass: default_main_pane_glass(),
-            blur_radius: default_blur_radius(),
-        }
-    }
+    #[serde(default)]
+    pub sidebar_opacity: Option<u32>,
+    #[serde(default)]
+    pub main_pane_glass: Option<bool>,
+    #[serde(default)]
+    pub blur_radius: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -286,6 +266,8 @@ const METRO_CAPTURE_DOC: &str = "# capture = true also records Metro traffic to 
 
 const PROXY_TLS_BYPASS_DOC: &str = "# tls_bypass_hosts = CONNECT tunnels to these hosts are relayed without TLS\n# interception so Android network validation probes see the real certificates;\n# set to an empty list to intercept everything\n";
 
+const WINDOW_OVERRIDE_DOC: &str = "# keys are optional per-field overrides; unset fields follow the theme's\n# curated look, so delete the section to return to it\n# sidebar_opacity = 86      # 0-100, 100 = solid\n# main_pane_glass = false   # also glaze the request panes\n# blur_radius = 30          # 0-64, desktop blur behind the glaze\n";
+
 pub fn config_path(app_data: &std::path::Path) -> PathBuf {
     app_data.join("config.toml")
 }
@@ -300,8 +282,11 @@ pub fn load(dir: &std::path::Path) -> Result<UiConfig, ConfigError> {
     let raw = std::fs::read_to_string(&path)?;
     let mut config =
         toml::from_str::<UiConfig>(&raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
-    config.window.sidebar_opacity = config.window.sidebar_opacity.min(100);
-    config.window.blur_radius = config.window.blur_radius.min(crate::window_blur::MAX_RADIUS);
+    config.window.sidebar_opacity = config.window.sidebar_opacity.map(|v| v.min(100));
+    config.window.blur_radius = config
+        .window
+        .blur_radius
+        .map(|v| v.min(crate::window_blur::MAX_RADIUS));
     Ok(config)
 }
 
@@ -310,6 +295,7 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
     let body = toml::to_string_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let body = body.replacen("[metro]", &format!("[metro]\n{METRO_CAPTURE_DOC}"), 1);
     let body = body.replacen("[proxy]", &format!("[proxy]\n{PROXY_TLS_BYPASS_DOC}"), 1);
+    let body = body.replacen("[window]", &format!("[window]\n{WINDOW_OVERRIDE_DOC}"), 1);
     std::fs::write(config_path(dir), format!("{}{}", TEMPLATE_HEADER, body))
         .map_err(ConfigError::Io)
 }
@@ -611,15 +597,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bh-cfg-window-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut config = UiConfig::default();
-        config.window.sidebar_opacity = 72;
-        config.window.main_pane_glass = true;
-        config.window.blur_radius = 40;
+        config.window.sidebar_opacity = Some(72);
+        config.window.main_pane_glass = Some(true);
+        config.window.blur_radius = Some(40);
         write_config(&dir, &config).unwrap();
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded, config);
-        assert_eq!(loaded.window.sidebar_opacity, 72);
-        assert!(loaded.window.main_pane_glass);
-        assert_eq!(loaded.window.blur_radius, 40);
+        assert_eq!(loaded.window.sidebar_opacity, Some(72));
+        assert_eq!(loaded.window.main_pane_glass, Some(true));
+        assert_eq!(loaded.window.blur_radius, Some(40));
         let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
         assert!(raw.contains("[window]"));
         assert!(raw.contains("sidebar_opacity = 72"));
@@ -636,9 +622,9 @@ mod tests {
         std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
         let loaded = load(&dir).unwrap();
         assert_eq!(loaded.window, WindowConfig::default());
-        assert_eq!(loaded.window.sidebar_opacity, 100);
-        assert!(!loaded.window.main_pane_glass);
-        assert_eq!(loaded.window.blur_radius, 24);
+        assert_eq!(loaded.window.sidebar_opacity, None);
+        assert_eq!(loaded.window.main_pane_glass, None);
+        assert_eq!(loaded.window.blur_radius, None);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -653,8 +639,23 @@ mod tests {
         )
         .unwrap();
         let loaded = load(&dir).unwrap();
-        assert_eq!(loaded.window.sidebar_opacity, 100);
-        assert_eq!(loaded.window.blur_radius, 64);
+        assert_eq!(loaded.window.sidebar_opacity, Some(100));
+        assert_eq!(loaded.window.blur_radius, Some(64));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_override_doc_in_written_template() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-doc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = UiConfig::default();
+        write_config(&dir, &config).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[window]"));
+        assert!(raw.contains("# sidebar_opacity = 86"));
+        assert!(!raw.contains("sidebar_opacity = 86\n"));
+        let reloaded = load(&dir).unwrap();
+        assert_eq!(reloaded, config);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

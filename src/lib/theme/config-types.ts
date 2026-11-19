@@ -27,9 +27,9 @@ export interface MetroConfig {
 }
 
 export interface WindowConfig {
-  sidebar_opacity: number;
-  main_pane_glass: boolean;
-  blur_radius: number;
+  sidebar_opacity?: number | null;
+  main_pane_glass?: boolean | null;
+  blur_radius?: number | null;
 }
 
 export interface UiConfig {
@@ -60,5 +60,5 @@ export const DEFAULT_CONFIG: UiConfig = {
     download_dir: null,
   },
   metro: { port: 8081 },
-  window: { sidebar_opacity: 100, main_pane_glass: false, blur_radius: 24 },
+  window: { sidebar_opacity: null, main_pane_glass: null, blur_radius: null },
 };
