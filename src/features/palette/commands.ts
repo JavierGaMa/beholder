@@ -2,7 +2,9 @@ import type { ComponentType } from "react";
 import {
   ArrowLeftRight,
   Database,
+  FileCode2,
   Gauge,
+  Keyboard,
   MonitorSmartphone,
   Package,
   PanelLeft,
@@ -14,6 +16,7 @@ import {
   Waves,
 } from "lucide-react";
 import { useTraffic, type View } from "../../store/traffic";
+import { useShortcuts } from "../shortcuts/store";
 import { fuzzyScore } from "./fuzzy";
 
 export type PaletteSection = "Navigate" | "Actions";
@@ -71,6 +74,25 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
       shortcut: "B",
       icon: PanelLeft,
       run: handlers.toggleSidebar,
+    },
+    {
+      id: "keyboard-shortcuts",
+      label: "Keyboard Shortcuts",
+      section: "Actions",
+      shortcut: "?",
+      icon: Keyboard,
+      run: () => useShortcuts.getState().setOpen(true),
+    },
+    {
+      id: "reveal-config",
+      label: "Reveal config.toml",
+      section: "Actions",
+      icon: FileCode2,
+      run: () => {
+        import("../../lib/tauri")
+          .then(({ invoke }) => invoke("reveal_config"))
+          .catch(() => {});
+      },
     },
     {
       id: "toggle-follow",

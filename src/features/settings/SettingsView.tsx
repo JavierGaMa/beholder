@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import clsx from "clsx";
-import { Copy, FileCode2, RefreshCw } from "lucide-react";
+import {
+  Bot,
+  Copy,
+  FileCode2,
+  Info,
+  MonitorSmartphone,
+  Palette,
+  RefreshCw,
+  SquareTerminal,
+} from "lucide-react";
 import {
   ACCENTS,
   ACCENT_SWATCHES,
@@ -20,26 +30,169 @@ import { Panel } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Toggle } from "../../components/ui/Toggle";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import {
   bridgeStatusLine,
   formatBridgeInfo,
   type AgentBridgeStatus,
 } from "./agentBridge";
+import {
+  DEFAULT_CONSOLE_CONFIG,
+  resolveConfigPath,
+  withConsolePatch,
+  withCustomAccent,
+  withNamedAccent,
+  withTheme,
+} from "./configControls";
+import {
+  lastActiveSection,
+  nextSectionId,
+  rememberActiveSection,
+  SETTINGS_SECTIONS,
+  type SettingsSectionId,
+} from "./sections";
 import { useUpdater } from "../updater/useUpdater";
 
+const SECTION_ICONS: Record<SettingsSectionId, typeof Palette> = {
+  appearance: Palette,
+  "agent-bridge": Bot,
+  console: SquareTerminal,
+  devices: MonitorSmartphone,
+  about: Info,
+};
+
+const BUFFER_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "main", label: "Main" },
+  { value: "system", label: "System" },
+  { value: "crash", label: "Crash" },
+];
+
+const TAB_NAV_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+]);
+
 export function SettingsView() {
+  const [active, setActive] = useState<SettingsSectionId>(
+    () => lastActiveSection() ?? "appearance",
+  );
+
+  useEffect(() => {
+    rememberActiveSection(active);
+  }, [active]);
+
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  function selectSection(id: SettingsSectionId) {
+    setActive(id);
+  }
+
+  function onTabKeyDown(e: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!TAB_NAV_KEYS.has(e.key)) return;
+    e.preventDefault();
+    const next = nextSectionId(active, e.key);
+    setActive(next);
+    tabRefs.current[next]?.focus();
+  }
+
+  return (
+    <div className="flex h-full min-h-0 w-full">
+      <h1 className="sr-only">Settings</h1>
+      <nav
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="Settings sections"
+        className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line bg-surface p-2"
+      >
+        {SETTINGS_SECTIONS.map((section) => {
+          const Icon = SECTION_ICONS[section.id];
+          const selected = section.id === active;
+          return (
+            <button
+              key={section.id}
+              ref={(el) => {
+                tabRefs.current[section.id] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`settings-tab-${section.id}`}
+              aria-selected={selected}
+              aria-controls={`settings-panel-${section.id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectSection(section.id)}
+              onKeyDown={onTabKeyDown}
+              className={clsx(
+                "press focus-ring relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium",
+                selected ? "bg-accent/10 text-accent" : "text-muted hover:bg-surface-2 hover:text-txt",
+              )}
+            >
+              {selected && (
+                <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
+              )}
+              <Icon size={16} className="shrink-0" />
+              <span>{section.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div
+          role="tabpanel"
+          id={`settings-panel-${active}`}
+          aria-labelledby={`settings-tab-${active}`}
+          tabIndex={0}
+          className="focus-ring mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-md px-4 py-4"
+        >
+          {active === "appearance" && <AppearanceSection />}
+          {active === "agent-bridge" && <AgentBridgePanel />}
+          {active === "console" && <ConsoleSection />}
+          {active === "devices" && <DeviceMaintenance />}
+          {active === "about" && <UpdatesPanel />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useSaveConfig() {
   const uiConfig = useTraffic((s) => s.uiConfig);
+  const config: UiConfig = uiConfig ?? DEFAULT_CONFIG;
+
+  async function save(next: UiConfig) {
+    useTraffic.getState().setUiConfig(next);
+    applyUiConfig(next);
+    if (isTauri) {
+      await invoke("set_config", { config: next }).catch(() => {});
+    } else {
+      persistThemeChoice(next.theme, next.accent);
+    }
+  }
+
+  return { config, save };
+}
+
+function AppearanceSection() {
+  const { config, save } = useSaveConfig();
   const [slowMs, setSlowMs] = useState<number>(loadSlowMs);
   const [bodyCapMb, setBodyCapMb] = useState<number>(loadBodyCapMb);
+  const [configPath, setConfigPath] = useState<string | null>(null);
   const commitTimer = useRef<number | null>(null);
 
-  const config: UiConfig = uiConfig ?? DEFAULT_CONFIG;
   const customAccentActive = Boolean(config.colors?.accent?.trim());
   const [customAccent, setCustomAccent] = useState<string>(() => customAccentSeed(config));
 
   useEffect(() => {
     setCustomAccent(customAccentSeed(config));
   }, [config.colors?.accent, config.accent]);
+
+  useEffect(() => {
+    resolveConfigPath().then(setConfigPath);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -59,23 +212,13 @@ export function SettingsView() {
     saveBodyCapMb(mb);
   }
 
-  async function save(next: UiConfig) {
-    useTraffic.getState().setUiConfig(next);
-    applyUiConfig(next);
-    if (isTauri) {
-      await invoke("set_config", { config: next }).catch(() => {});
-    } else {
-      persistThemeChoice(next.theme, next.accent);
-    }
-  }
-
   function chooseNamedAccent(accent: AccentName) {
-    void save({ ...config, accent, colors: { ...config.colors, accent: null } });
+    void save(withNamedAccent(config, accent));
   }
 
   function changeCustomAccent(hex: string) {
     setCustomAccent(hex);
-    const next = { ...config, colors: { ...config.colors, accent: hex } };
+    const next = withCustomAccent(config, hex);
     useTraffic.getState().setUiConfig(next);
     applyUiConfig(next);
     if (!isTauri) return;
@@ -86,10 +229,16 @@ export function SettingsView() {
     }, 250);
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-4">
-      <h1 className="text-sm font-semibold text-txt">Settings</h1>
+  function copyConfigPath() {
+    if (!configPath) return;
+    navigator.clipboard.writeText(configPath).then(
+      () => toast("Config path copied to clipboard"),
+      () => toast("Clipboard unavailable", "danger"),
+    );
+  }
 
+  return (
+    <>
       <Panel className="p-4">
         <p className="text-[12px] font-medium text-txt">Theme</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -97,7 +246,7 @@ export function SettingsView() {
             <button
               key={t}
               type="button"
-              onClick={() => void save({ ...config, theme: t })}
+              onClick={() => void save(withTheme(config, t))}
               aria-pressed={config.theme === t}
               className={clsx(
                 "press focus-ring rounded-md border p-2.5 text-left transition-colors",
@@ -164,7 +313,7 @@ export function SettingsView() {
       </Panel>
 
       <Panel className="p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[12px] font-medium text-txt">config.toml</p>
             <p className="mt-1 text-[11px] text-muted">
@@ -182,6 +331,23 @@ export function SettingsView() {
             </Button>
           )}
         </div>
+        {configPath && (
+          <div className="mt-3 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded border border-line bg-bg px-2 py-1 font-mono text-[11px] text-muted">
+              {configPath}
+            </code>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Copy}
+              className="shrink-0"
+              aria-label="Copy config path"
+              onClick={copyConfigPath}
+            >
+              Copy
+            </Button>
+          </div>
+        )}
         <pre className="mt-3 overflow-x-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{`theme = "paper"            # paper | contrast | obsidian | carbon | eclipse | system
 accent = "lime"             # lime | cyan | amber | violet
 ui-font-size = 13           # px, general UI text
@@ -244,11 +410,71 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
           <span className="text-[12px] text-muted">ms</span>
         </div>
       </Panel>
+    </>
+  );
+}
 
-      <UpdatesPanel />
-      <AgentBridgePanel />
-      <DeviceMaintenance />
-    </div>
+function ConsoleSection() {
+  const { config, save } = useSaveConfig();
+  const consoleCfg = config.console ?? DEFAULT_CONSOLE_CONFIG;
+
+  function changeRingLines(lines: number) {
+    if (Number.isNaN(lines) || lines < 100) return;
+    void save(withConsolePatch(config, { ring_lines: lines }));
+  }
+
+  return (
+    <>
+      <Panel className="p-4">
+        <p className="text-[12px] font-medium text-txt">Ring buffer</p>
+        <p className="mt-1 text-[11px] text-muted">
+          Number of console lines kept while capturing. Older lines are dropped on device.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="w-28">
+            <Input
+              type="number"
+              min={100}
+              step={1000}
+              mono
+              aria-label="Console ring buffer in lines"
+              value={consoleCfg.ring_lines}
+              onChange={(e) => changeRingLines(Number(e.target.value))}
+            />
+          </div>
+          <span className="text-[12px] text-muted">lines</span>
+        </div>
+      </Panel>
+      <Panel className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-medium text-txt">Thread IDs</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+              Show a TID column in the console log list.
+            </p>
+          </div>
+          <Toggle
+            checked={consoleCfg.show_tid}
+            onChange={(v) => void save(withConsolePatch(config, { show_tid: v }))}
+            label="Show thread IDs"
+          />
+        </div>
+      </Panel>
+      <Panel className="p-4">
+        <p className="text-[12px] font-medium text-txt">Default buffer</p>
+        <p className="mt-1 text-[11px] text-muted">
+          Logcat buffer captured by default when the console view starts.
+        </p>
+        <div className="mt-3">
+          <SegmentedControl
+            options={BUFFER_OPTIONS}
+            value={consoleCfg.default_buffer}
+            onChange={(v) => void save(withConsolePatch(config, { default_buffer: v }))}
+            ariaLabel="Default logcat buffer"
+          />
+        </div>
+      </Panel>
+    </>
   );
 }
 

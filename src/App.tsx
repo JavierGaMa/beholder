@@ -41,6 +41,8 @@ import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Palette } from "./features/palette/Palette";
 import { buildPaletteCommands } from "./features/palette/commands";
 import { usePalette } from "./features/palette/store";
+import { ShortcutsOverlay } from "./features/shortcuts/ShortcutsOverlay";
+import { useShortcuts } from "./features/shortcuts/store";
 import { Toaster } from "./components/ui/toast";
 import { Modal } from "./components/ui/Modal";
 import { Tooltip } from "./components/ui/Tooltip";
@@ -106,7 +108,9 @@ export default function App() {
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     settingsCloseRef.current?.focus();
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSettingsOpen(false);
+      if (e.key === "Escape" && !useShortcuts.getState().open && !usePalette.getState().open) {
+        setSettingsOpen(false);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -194,14 +198,22 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null;
+      const typing = Boolean(
+        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable),
+      );
+      if (e.key === "?" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        useShortcuts.getState().setOpen(true);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
         usePalette.getState().toggle();
         return;
       }
-      const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (typing) return;
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         setSidebarCollapsed((c) => !c);
@@ -337,7 +349,7 @@ export default function App() {
                 </Button>
               </Tooltip>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1">
               <SettingsView />
             </div>
           </div>
@@ -345,6 +357,8 @@ export default function App() {
       </div>
 
       <Palette commands={paletteCommands} />
+
+      <ShortcutsOverlay />
 
       <Toaster />
 
