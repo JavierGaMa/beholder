@@ -26,6 +26,12 @@ export interface MetroConfig {
   port: number;
 }
 
+export interface WindowConfig {
+  sidebar_opacity: number;
+  main_pane_glass: boolean;
+  blur_radius: number;
+}
+
 export interface UiConfig {
   theme: string;
   accent: string;
@@ -37,6 +43,7 @@ export interface UiConfig {
   console?: ConsoleConfig;
   apks?: ApksConfig;
   metro?: MetroConfig;
+  window?: WindowConfig;
 }
 
 export const DEFAULT_CONFIG: UiConfig = {
@@ -53,4 +60,5 @@ export const DEFAULT_CONFIG: UiConfig = {
     download_dir: null,
   },
   metro: { port: 8081 },
+  window: { sidebar_opacity: 100, main_pane_glass: false, blur_radius: 24 },
 };

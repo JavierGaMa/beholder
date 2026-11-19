@@ -1,7 +1,8 @@
 import type { UiConfig } from "./config-types";
 import { createSystemSchemeWatch, type SchemeMediaQuery } from "./systemScheme";
+import { GLASS_TOKENS, isWindowTranslucent, surfaceTokens } from "./surfaces";
 import { resolveThemeName } from "./themes";
-import { syncWindowTheme } from "./windowTheme";
+import { syncWindowAppearance } from "./windowTheme";
 
 const TOKEN_MAP: Record<string, string> = {
   bg: "--bg",
@@ -29,7 +30,7 @@ export function applyUiConfig(config: UiConfig) {
   schemeWatch.update(config.theme, () => {
     if (activeConfig) applyUiConfig(activeConfig);
   });
-  void syncWindowTheme(config.theme);
+  void syncWindowAppearance(config);
 
   root.style.setProperty("--ui-size", `${config.ui_font_size}px`);
   root.style.setProperty("--mono-size", `${config.mono_font_size}px`);
@@ -52,6 +53,19 @@ export function applyUiConfig(config: UiConfig) {
       root.style.removeProperty(cssVar);
     }
   }
+
+  applySurfaceVars(config);
+}
+
+function applySurfaceVars(config: UiConfig) {
+  const target = (document.body ?? document.documentElement).style;
+  const tokens = surfaceTokens(config);
+  for (const token of GLASS_TOKENS) {
+    const value = tokens[token];
+    if (value === undefined) target.removeProperty(token);
+    else target.setProperty(token, value);
+  }
+  root.dataset.surface = isWindowTranslucent(config) ? "translucent" : "solid";
 }
 
 function applyThemeVars(theme: string, accent: string) {

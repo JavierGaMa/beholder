@@ -1,4 +1,4 @@
-import type { ConsoleConfig, UiConfig } from "../../lib/theme/config-types";
+import type { ConsoleConfig, UiConfig, WindowConfig } from "../../lib/theme/config-types";
 
 export function withTheme(config: UiConfig, theme: string): UiConfig {
   return { ...config, theme };
@@ -21,6 +21,17 @@ export const DEFAULT_CONSOLE_CONFIG: ConsoleConfig = {
 export function withConsolePatch(config: UiConfig, patch: Partial<ConsoleConfig>): UiConfig {
   const current: ConsoleConfig = config.console ?? DEFAULT_CONSOLE_CONFIG;
   return { ...config, console: { ...current, ...patch } };
+}
+
+export const DEFAULT_WINDOW_CONFIG: WindowConfig = {
+  sidebar_opacity: 100,
+  main_pane_glass: false,
+  blur_radius: 24,
+};
+
+export function withWindowPatch(config: UiConfig, patch: Partial<WindowConfig>): UiConfig {
+  const current: WindowConfig = config.window ?? DEFAULT_WINDOW_CONFIG;
+  return { ...config, window: { ...current, ...patch } };
 }
 
 export async function resolveConfigPath(): Promise<string | null> {

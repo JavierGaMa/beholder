@@ -131,6 +131,36 @@ impl Default for MetroConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WindowConfig {
+    #[serde(default = "default_sidebar_opacity")]
+    pub sidebar_opacity: u32,
+    #[serde(default = "default_main_pane_glass")]
+    pub main_pane_glass: bool,
+    #[serde(default = "default_blur_radius")]
+    pub blur_radius: u32,
+}
+
+fn default_sidebar_opacity() -> u32 {
+    100
+}
+fn default_main_pane_glass() -> bool {
+    false
+}
+fn default_blur_radius() -> u32 {
+    24
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        WindowConfig {
+            sidebar_opacity: default_sidebar_opacity(),
+            main_pane_glass: default_main_pane_glass(),
+            blur_radius: default_blur_radius(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProxyConfig {
     #[serde(default = "default_tls_bypass_hosts")]
     pub tls_bypass_hosts: Vec<String>,
@@ -178,6 +208,8 @@ pub struct UiConfig {
     pub metro: MetroConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default)]
+    pub window: WindowConfig,
 }
 
 fn default_theme() -> String {
@@ -211,6 +243,7 @@ impl Default for UiConfig {
             apks: ApksConfig::default(),
             metro: MetroConfig::default(),
             proxy: ProxyConfig::default(),
+            window: WindowConfig::default(),
         }
     }
 }
@@ -265,7 +298,11 @@ pub fn load(dir: &std::path::Path) -> Result<UiConfig, ConfigError> {
         return Ok(config);
     }
     let raw = std::fs::read_to_string(&path)?;
-    toml::from_str::<UiConfig>(&raw).map_err(|e| ConfigError::Parse(e.to_string()))
+    let mut config =
+        toml::from_str::<UiConfig>(&raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
+    config.window.sidebar_opacity = config.window.sidebar_opacity.min(100);
+    config.window.blur_radius = config.window.blur_radius.min(crate::window_blur::MAX_RADIUS);
+    Ok(config)
 }
 
 pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), ConfigError> {
@@ -566,6 +603,58 @@ mod tests {
         assert!(raw.contains("www.google.com"));
         assert!(raw.contains("connectivitycheck.gstatic.com"));
         assert!(raw.contains("play.googleapis.com"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_window_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.window.sidebar_opacity = 72;
+        config.window.main_pane_glass = true;
+        config.window.blur_radius = 40;
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        assert_eq!(loaded.window.sidebar_opacity, 72);
+        assert!(loaded.window.main_pane_glass);
+        assert_eq!(loaded.window.blur_radius, 40);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[window]"));
+        assert!(raw.contains("sidebar_opacity = 72"));
+        assert!(raw.contains("main_pane_glass = true"));
+        assert!(raw.contains("blur_radius = 40"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_defaults_when_section_missing() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.window, WindowConfig::default());
+        assert_eq!(loaded.window.sidebar_opacity, 100);
+        assert!(!loaded.window.main_pane_glass);
+        assert_eq!(loaded.window.blur_radius, 24);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn window_values_clamped_on_load() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-window-cl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            config_path(&dir),
+            "[window]\nsidebar_opacity = 140\nblur_radius = 99\n",
+        )
+        .unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.window.sidebar_opacity, 100);
+        assert_eq!(loaded.window.blur_radius, 64);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

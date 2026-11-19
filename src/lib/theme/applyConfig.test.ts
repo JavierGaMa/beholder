@@ -17,8 +17,15 @@ const style = {
   setProperty: vi.fn(),
   removeProperty: vi.fn(),
 };
+const bodyStyle = {
+  setProperty: vi.fn(),
+  removeProperty: vi.fn(),
+};
 
-vi.stubGlobal("document", { documentElement: { dataset, style } });
+vi.stubGlobal(
+  "document",
+  { documentElement: { dataset, style }, body: { style: bodyStyle } },
+);
 vi.stubGlobal("window", { matchMedia: () => media });
 
 const { applyUiConfig } = await import("./applyConfig");
@@ -81,5 +88,56 @@ describe("applyUiConfig", () => {
     );
     applyUiConfig(baseConfig({ mono_font_family: "" }));
     expect(style.removeProperty).toHaveBeenCalledWith("--font-mono");
+  });
+
+  it("marks the window solid and writes no glass tokens at full opacity", () => {
+    bodyStyle.setProperty.mockClear();
+    applyUiConfig(baseConfig());
+    expect(dataset.surface).toBe("solid");
+    expect(bodyStyle.setProperty).not.toHaveBeenCalled();
+  });
+
+  it("writes glass tokens and marks the window translucent", () => {
+    applyUiConfig(
+      baseConfig({ window: { sidebar_opacity: 70, main_pane_glass: false, blur_radius: 30 } }),
+    );
+    expect(dataset.surface).toBe("translucent");
+    expect(bodyStyle.setProperty).toHaveBeenCalledWith(
+      "--surface",
+      "color-mix(in oklab, var(--surface-solid) 70%, transparent)",
+    );
+    expect(bodyStyle.setProperty).toHaveBeenCalledWith(
+      "--line",
+      "color-mix(in oklab, var(--txt-solid) 8%, transparent)",
+    );
+    expect(bodyStyle.setProperty).not.toHaveBeenCalledWith("--bg", expect.anything());
+    expect(bodyStyle.setProperty).not.toHaveBeenCalledWith("--surface-2", expect.anything());
+  });
+
+  it("glazes the background and raises surface-2 with main pane glass", () => {
+    applyUiConfig(
+      baseConfig({ window: { sidebar_opacity: 50, main_pane_glass: true, blur_radius: 30 } }),
+    );
+    expect(bodyStyle.setProperty).toHaveBeenCalledWith(
+      "--bg",
+      "color-mix(in oklab, var(--bg-solid) 50%, transparent)",
+    );
+    expect(bodyStyle.setProperty).toHaveBeenCalledWith(
+      "--surface-2",
+      "color-mix(in oklab, var(--surface-2-solid) 80%, transparent)",
+    );
+  });
+
+  it("clears glass tokens when the window returns to solid", () => {
+    applyUiConfig(
+      baseConfig({ window: { sidebar_opacity: 60, main_pane_glass: true, blur_radius: 30 } }),
+    );
+    bodyStyle.removeProperty.mockClear();
+    applyUiConfig(baseConfig());
+    expect(dataset.surface).toBe("solid");
+    expect(bodyStyle.removeProperty).toHaveBeenCalledWith("--surface");
+    expect(bodyStyle.removeProperty).toHaveBeenCalledWith("--surface-2");
+    expect(bodyStyle.removeProperty).toHaveBeenCalledWith("--line");
+    expect(bodyStyle.removeProperty).toHaveBeenCalledWith("--bg");
   });
 });

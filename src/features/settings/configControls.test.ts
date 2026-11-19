@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, type UiConfig } from "../../lib/theme/config-types";
 import {
+  DEFAULT_WINDOW_CONFIG,
   withConsolePatch,
   withCustomAccent,
   withNamedAccent,
   withTheme,
+  withWindowPatch,
 } from "./configControls";
 
 const base: UiConfig = {
@@ -83,6 +85,46 @@ describe("withConsolePatch", () => {
     const next = withConsolePatch(base, { ring_lines: 1 });
     expect(next.theme).toBe(base.theme);
     expect(next.accent).toBe(base.accent);
+    expect(next.colors).toEqual(base.colors);
+  });
+});
+
+describe("withWindowPatch", () => {
+  it("merges a partial window patch and keeps the rest of the section", () => {
+    const next = withWindowPatch(base, { sidebar_opacity: 72 });
+    expect(next.window?.sidebar_opacity).toBe(72);
+    expect(next.window?.main_pane_glass).toBe(false);
+    expect(next.window?.blur_radius).toBe(24);
+  });
+
+  it("round-trips several patches without losing earlier ones", () => {
+    let config = base;
+    config = withWindowPatch(config, { sidebar_opacity: 60 });
+    config = withWindowPatch(config, { main_pane_glass: true });
+    config = withWindowPatch(config, { blur_radius: 40 });
+    expect(config.window).toEqual({
+      sidebar_opacity: 60,
+      main_pane_glass: true,
+      blur_radius: 40,
+    });
+  });
+
+  it("defaults the window section when the config carries none", () => {
+    const bare: UiConfig = { ...base, window: undefined };
+    const next = withWindowPatch(bare, { blur_radius: 12 });
+    expect(next.window).toEqual({ ...DEFAULT_WINDOW_CONFIG, blur_radius: 12 });
+  });
+
+  it("does not mutate the input config", () => {
+    const next = withWindowPatch(base, { sidebar_opacity: 55 });
+    expect(next).not.toBe(base);
+    expect(base.window?.sidebar_opacity).toBe(100);
+  });
+
+  it("leaves console and appearance fields untouched", () => {
+    const next = withWindowPatch(base, { main_pane_glass: true });
+    expect(next.console).toEqual(base.console);
+    expect(next.theme).toBe(base.theme);
     expect(next.colors).toEqual(base.colors);
   });
 });
