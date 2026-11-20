@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBarRects, buildLinePath } from "./charts";
+import { buildBarRects, buildLinePath, timeTicks, valueTicks } from "./charts";
 
 describe("buildBarRects", () => {
   it("maps values to baseline-anchored rects scaled to the max", () => {
@@ -67,5 +67,39 @@ describe("buildLinePath", () => {
   it("keeps an all-zero series on the baseline", () => {
     const path = buildLinePath([0, 0, 0], 90, 30);
     expect(path).toBe("M 0 30 L 45 30 L 90 30");
+  });
+});
+
+describe("valueTicks", () => {
+  it("returns zero, mid and max from bottom to top", () => {
+    expect(valueTicks(2048)).toEqual([0, 1024, 2048]);
+  });
+
+  it("rounds the mid value to an integer", () => {
+    expect(valueTicks(5)).toEqual([0, 3, 5]);
+  });
+
+  it("collapses to a single zero tick when max is not positive", () => {
+    expect(valueTicks(0)).toEqual([0]);
+  });
+});
+
+describe("timeTicks", () => {
+  it("spreads count ticks evenly from start to end with ratios", () => {
+    expect(timeTicks(1_000, 5_000, 5)).toEqual([
+      { t: 1_000, ratio: 0 },
+      { t: 2_000, ratio: 0.25 },
+      { t: 3_000, ratio: 0.5 },
+      { t: 4_000, ratio: 0.75 },
+      { t: 5_000, ratio: 1 },
+    ]);
+  });
+
+  it("returns one tick when the range is empty", () => {
+    expect(timeTicks(1_000, 1_000, 5)).toEqual([{ t: 1_000, ratio: 0 }]);
+  });
+
+  it("returns one tick when fewer than two ticks are requested", () => {
+    expect(timeTicks(1_000, 9_000, 1)).toEqual([{ t: 1_000, ratio: 0 }]);
   });
 });

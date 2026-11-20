@@ -39,6 +39,24 @@ export function buildLinePath(values: number[], width: number, height: number): 
     .join(" ");
 }
 
+export function valueTicks(max: number): number[] {
+  if (!(max > 0)) return [0];
+  return [0, Math.round(max / 2), max];
+}
+
+export interface TimeTick {
+  t: number;
+  ratio: number;
+}
+
+export function timeTicks(start: number, end: number, count: number): TimeTick[] {
+  if (count < 2 || !(end > start)) return [{ t: start, ratio: 0 }];
+  return Array.from({ length: count }, (_, i) => {
+    const ratio = i / (count - 1);
+    return { t: Math.round(start + (end - start) * ratio), ratio };
+  });
+}
+
 export function BucketBars({
   values,
   width = 560,
