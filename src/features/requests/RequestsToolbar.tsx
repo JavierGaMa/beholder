@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import clsx from "clsx";
 import { Pin, PinOff, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
@@ -10,7 +11,7 @@ import { Tooltip } from "../../components/ui/Tooltip";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Badge, IconButton } from "../../components/ui/primitives";
 import { useTraffic } from "../../store/traffic";
-import { activeFilterCount, type Filters } from "./filters";
+import { activeFilterCount, quickModeOf, withQuickMode, type Filters, type QuickMode } from "./filters";
 
 const STATUS_OPTIONS: { value: Filters["status"]; label: string }[] = [
   { value: "all", label: "all" },
@@ -31,12 +32,16 @@ export function RequestsToolbar({
   follow,
   onFollowChange,
   searchRef,
+  counts,
+  actions,
 }: {
   filters: Filters;
   onChange: (f: Filters) => void;
   follow: boolean;
   onFollowChange: (v: boolean) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
+  counts?: Record<QuickMode, number>;
+  actions?: ReactNode;
 }) {
   const order = useTraffic((s) => s.order);
   const exchanges = useTraffic((s) => s.exchanges);
@@ -95,10 +100,17 @@ export function RequestsToolbar({
         : "neutral";
 
   const activeCount = activeFilterCount(filters);
+  const quickOptions: { value: QuickMode | "custom"; label: string }[] = counts
+    ? [
+        { value: "all", label: `All ${counts.all}` },
+        { value: "errors", label: `Errors ${counts.errors}` },
+        { value: "slow", label: `Slow ${counts.slow}` },
+      ]
+    : [];
 
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
-      <div className="min-w-28 max-w-md flex-1">
+      <div className="min-w-28 max-w-[340px] flex-1">
         <Input
           ref={searchRef}
           mono
@@ -108,6 +120,17 @@ export function RequestsToolbar({
           aria-label="Search requests"
         />
       </div>
+      {counts && (
+        <SegmentedControl
+          options={quickOptions}
+          value={quickModeOf(filters)}
+          onChange={(mode) => {
+            if (mode !== "custom") onChange(withQuickMode(filters, mode));
+          }}
+          ariaLabel="Quick filter"
+          className="shrink-0"
+        />
+      )}
       <Tooltip label="Filters">
         <Button
           ref={anchorRef}
@@ -135,6 +158,7 @@ export function RequestsToolbar({
       <IconButton title="Clear all captured traffic" onClick={clear} className="shrink-0">
         <Trash2 size={14} />
       </IconButton>
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
       {open && (
         <div
           ref={menuRef}
@@ -144,7 +168,7 @@ export function RequestsToolbar({
           className="anim-pop-in fixed z-50 flex flex-col gap-3 overflow-y-auto rounded-[var(--radius-md)] border border-line bg-surface-2 p-3 text-left shadow-[var(--shadow-3)] outline-none"
         >
           <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted/70">Status</p>
+            <p className="text-[11px] text-muted">Status</p>
             <SegmentedControl
               options={STATUS_OPTIONS}
               value={filters.status}
@@ -153,7 +177,7 @@ export function RequestsToolbar({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted/70">Method</p>
+            <p className="text-[11px] text-muted">Method</p>
             <Input
               mono
               className="uppercase"
@@ -164,7 +188,7 @@ export function RequestsToolbar({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted/70">Options</p>
+            <p className="text-[11px] text-muted">Options</p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <Checkbox
                 label="failures"
@@ -185,7 +209,7 @@ export function RequestsToolbar({
           </div>
           {domains.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted/70">Domains</p>
+              <p className="text-[11px] text-muted">Domains</p>
               <div className="flex flex-wrap gap-1">
                 {domains.map((d) => {
                   const state = chipFor(d.host);

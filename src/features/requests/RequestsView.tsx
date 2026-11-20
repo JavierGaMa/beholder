@@ -9,21 +9,26 @@ import { invoke, isTauri } from "../../lib/tauri";
 import { loadSlowMs } from "../../lib/prefs";
 import { EmptyState } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
-import { matchFilters, type Filters } from "./filters";
+import { matchFilters, quickCounts, type Filters } from "./filters";
 import { RequestRow, RequestListHeader } from "./RequestRow";
+import { RequestsToolbar } from "./RequestsToolbar";
+import { TimeStrip } from "./TimeStrip";
+import { inWindow, timeWindow } from "./stripGeometry";
 import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
 import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Pin, Terminal } from "lucide-react";
-import { DetailPane } from "./DetailPane";
+import { DetailEmpty, DetailPane } from "./DetailPane";
 import { togglePinned } from "./pins";
 import { followTarget, PROGRAMMATIC_SCROLL_RESET_MS, shouldUnfollow } from "./follow";
 
 export function RequestsView({
   filters,
+  onFiltersChange,
   follow,
   onFollowChange,
   searchRef,
 }: {
   filters: Filters;
+  onFiltersChange: (f: Filters) => void;
   follow: boolean;
   onFollowChange: (v: boolean) => void;
   searchRef: RefObject<HTMLInputElement | null>;
@@ -46,17 +51,21 @@ export function RequestsView({
   const slowMs = loadSlowMs();
   const hideDomain = filters.includeDomains.length === 1;
 
-  const rows = useMemo(() => {
-    const all = order.map((id) => exchanges.get(id)).filter((e): e is NonNullable<typeof e> => Boolean(e));
-    return all.filter((ex) => matchFilters(ex, filters, slowMs));
-  }, [order, exchanges, filters, slowMs]);
+  const all = useMemo(
+    () => order.map((id) => exchanges.get(id)).filter((e): e is NonNullable<typeof e> => Boolean(e)),
+    [order, exchanges],
+  );
+  const rows = useMemo(() => all.filter((ex) => matchFilters(ex, filters, slowMs)), [all, filters, slowMs]);
+  const counts = useMemo(() => quickCounts(all, filters, slowMs), [all, filters, slowMs]);
+  const range = useMemo(() => timeWindow(rows), [rows]);
+  const stripRows = useMemo(() => rows.filter((ex) => inWindow(ex, range)), [rows, range]);
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const rowH = useTraffic((s) => s.uiConfig?.row_height) ?? 34;
+  const rowH = useTraffic((s) => s.uiConfig?.row_height) ?? 32;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowH + 1,
+    estimateSize: () => rowH,
     overscan: 20,
   });
 
@@ -148,6 +157,14 @@ export function RequestsView({
     ) {
       onFollowChange(false);
     }
+  }
+
+  function selectAndReveal(id: number) {
+    setSelected(id);
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    markProgrammaticScroll();
+    virtualizer.scrollToIndex(idx, { align: "auto" });
   }
 
   function jumpToLatest() {
@@ -274,87 +291,122 @@ export function RequestsView({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="relative flex flex-1 gap-0 overflow-hidden">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-line/50 px-3 py-0.5 text-[10px] uppercase tracking-wider text-muted/70">
-            <span>
-              {rows.length} requests{filters.includeDomains.length > 0 ? ` · ${filters.includeDomains.length} domains included` : ""}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={FileDown}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setExportMenu({ x: r.left, y: r.bottom + 4 });
-              }}
-            >
-              Export
-            </Button>
-            {exportNote && <span className="text-[10px] normal-case text-accent">{exportNote}</span>}
-          </div>
+    <div className="flex h-full min-h-0 gap-2">
+      <section className="panel flex min-w-0 flex-1 flex-col">
+        <TimeStrip rows={stripRows} range={range} selectedId={selected} onSelect={selectAndReveal} />
+        <div className="flex shrink-0 items-center px-3 py-2.5">
+          <RequestsToolbar
+            filters={filters}
+            onChange={onFiltersChange}
+            follow={follow}
+            onFollowChange={onFollowChange}
+            searchRef={searchRef}
+            counts={counts}
+            actions={
+              <>
+                {exportNote && <span className="text-[11px] text-accent">{exportNote}</span>}
+                {filters.includeDomains.length > 0 && (
+                  <span className="hidden text-[11px] text-muted lg:inline">
+                    {filters.includeDomains.length} domains included
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={FileDown}
+                  className="ring-1 ring-inset ring-line"
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setExportMenu({ x: r.left, y: r.bottom + 4 });
+                  }}
+                >
+                  Export
+                </Button>
+              </>
+            }
+          />
+        </div>
+        <div className="shrink-0 px-1.5">
           <RequestListHeader hideDomain={hideDomain} />
-          <div className="relative min-h-0 flex-1">
-            <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto">
-              {rows.length === 0 ? (
-                <EmptyState
-                  title="No requests captured"
-                  hint="Start capture in Setup, then use your app on the emulator"
-                />
-              ) : (
-                <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-                  {virtualizer.getVirtualItems().map((vi) => {
-                    const ex = rows[vi.index];
-                    return (
-                      <RequestRow
-                        key={ex.id}
-                        ex={ex}
-                        selected={ex.id === selected}
-                        flash={flashIds.has(ex.id)}
-                        pinned={pinned.has(ex.id)}
-                        slowMs={slowMs}
-                        hideDomain={hideDomain}
-                        onSelect={() => setSelected(ex.id)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setSelected(ex.id);
-                          setCtxMenu({ x: e.clientX, y: e.clientY, id: ex.id });
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: "100%",
-                          height: vi.size,
-                          transform: `translateY(${vi.start}px)`,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            {!follow && newCount > 0 && (
-              <Button
-                variant="subtle"
-                icon={ArrowDown}
-                onClick={jumpToLatest}
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full! text-accent shadow-[var(--shadow-2)]"
-              >
-                {newCount} new requests
-              </Button>
+        </div>
+        <div className="relative min-h-0 flex-1">
+          <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto px-1.5 pb-1.5">
+            {rows.length === 0 ? (
+              <EmptyState
+                title="No requests captured"
+                hint="Start capture in Setup, then use your app on the emulator"
+              />
+            ) : (
+              <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+                {virtualizer.getVirtualItems().map((vi) => {
+                  const ex = rows[vi.index];
+                  return (
+                    <RequestRow
+                      key={ex.id}
+                      ex={ex}
+                      selected={ex.id === selected}
+                      flash={flashIds.has(ex.id)}
+                      pinned={pinned.has(ex.id)}
+                      slowMs={slowMs}
+                      hideDomain={hideDomain}
+                      range={range}
+                      onSelect={() => setSelected(ex.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setSelected(ex.id);
+                        setCtxMenu({ x: e.clientX, y: e.clientY, id: ex.id });
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: vi.size,
+                        transform: `translateY(${vi.start}px)`,
+                      }}
+                    />
+                  );
+                })}
+              </div>
             )}
           </div>
+          {!follow && newCount > 0 && (
+            <Button
+              variant="subtle"
+              icon={ArrowDown}
+              onClick={jumpToLatest}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full! text-accent shadow-[var(--shadow-2)]"
+            >
+              {newCount} new requests
+            </Button>
+          )}
         </div>
-        {selectedEx && !detailCollapsed && (
-          <DetailPane
-            ex={selectedEx}
-            onClose={() => setSelected(null)}
-            onCollapse={() => setDetailCollapsed(true)}
-          />
-        )}
-        {exportMenu && (
+      </section>
+      {detailCollapsed ? (
+        <button
+          type="button"
+          title="Show detail"
+          onClick={() => setDetailCollapsed(false)}
+          className="panel press focus-ring flex w-8 shrink-0 flex-col items-center justify-center gap-2 text-muted hover:text-accent"
+        >
+          <PanelRight size={14} className="rotate-180" />
+          <span className="text-[10px] [writing-mode:vertical-rl]">detail</span>
+        </button>
+      ) : (
+        <section className="panel anim-slide-in-right flex w-[440px] shrink-0 flex-col">
+          {selectedEx ? (
+            <DetailPane
+              key={selectedEx.id}
+              ex={selectedEx}
+              onClose={() => setSelected(null)}
+              onCollapse={() => setDetailCollapsed(true)}
+            />
+          ) : (
+            <DetailEmpty />
+          )}
+        </section>
+      )}
+      {exportMenu && (
         <ContextMenu
           x={exportMenu.x}
           y={exportMenu.y}
@@ -374,18 +426,6 @@ export function RequestsView({
           onClose={() => setCtxMenu(null)}
         />
       )}
-      {selectedEx && detailCollapsed && (
-          <button
-            type="button"
-            title="Show detail"
-            onClick={() => setDetailCollapsed(false)}
-            className="press focus-ring flex w-7 shrink-0 flex-col items-center justify-center gap-2 border-l border-line bg-surface text-muted hover:text-accent"
-          >
-            <PanelRight size={14} className="rotate-180" />
-            <span className="text-[10px] [writing-mode:vertical-rl]">detail</span>
-          </button>
-        )}
-      </div>
     </div>
   );
 }

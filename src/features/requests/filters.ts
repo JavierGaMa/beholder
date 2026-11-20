@@ -17,6 +17,36 @@ export function isFailed(ex: HttpExchange): boolean {
   return status != null && status >= 400;
 }
 
+export type QuickMode = "all" | "errors" | "slow";
+
+export function isSlow(ex: HttpExchange, slowMs: number): boolean {
+  const total = ex.timing.total_ms;
+  return total != null && total >= slowMs;
+}
+
+export function quickModeOf(f: Filters): QuickMode | "custom" {
+  if (f.failuresOnly && f.slowOnly) return "custom";
+  if (f.failuresOnly) return "errors";
+  if (f.slowOnly) return "slow";
+  return "all";
+}
+
+export function withQuickMode(f: Filters, mode: QuickMode): Filters {
+  return { ...f, failuresOnly: mode === "errors", slowOnly: mode === "slow" };
+}
+
+export function quickCounts(exchanges: HttpExchange[], f: Filters, slowMs = 500): Record<QuickMode, number> {
+  const scope = { ...f, failuresOnly: false, slowOnly: false };
+  const counts = { all: 0, errors: 0, slow: 0 };
+  for (const ex of exchanges) {
+    if (!matchFilters(ex, scope, slowMs)) continue;
+    counts.all++;
+    if (isFailed(ex)) counts.errors++;
+    if (isSlow(ex, slowMs)) counts.slow++;
+  }
+  return counts;
+}
+
 export function activeFilterCount(f: Filters): number {
   let n = 0;
   if (f.method) n++;
@@ -33,8 +63,7 @@ export function matchFilters(ex: HttpExchange, f: Filters, slowMs = 500): boolea
   if (f.method && ex.request.method !== f.method.toUpperCase()) return false;
   const status = ex.response?.status ?? null;
   if (f.failuresOnly && !isFailed(ex)) return false;
-  const total = ex.timing.total_ms;
-  if (f.slowOnly && (total == null || total < slowMs)) return false;
+  if (f.slowOnly && !isSlow(ex, slowMs)) return false;
   if (f.status !== "all") {
     if (status == null) return false;
     if (`${Math.floor(status / 100)}xx` !== f.status) return false;

@@ -1,14 +1,34 @@
 import type { CSSProperties } from "react";
 import clsx from "clsx";
-import { AlertCircle } from "lucide-react";
 import type { HttpExchange } from "../../store/types";
-import { formatBytes, formatMs, methodClass } from "../../lib/format";
+import { formatBytes, formatMs } from "../../lib/format";
+import { severity, waterfallBar, type Severity, type TimeWindow } from "./stripGeometry";
 
-function statusTextCls(status: number | null): string {
-  if (status == null) return "text-muted";
-  if (status < 300) return "text-ok";
-  if (status < 400) return "text-warn";
-  return "text-danger";
+export const ROW_GRID = "grid grid-cols-[50px_58px_minmax(0,1fr)_72px_minmax(150px,230px)] items-center gap-2.5 px-2.5";
+
+const BAR_CLASS: Record<Severity, string> = {
+  normal: "bg-muted opacity-70",
+  warn: "bg-warn",
+  danger: "bg-danger",
+};
+
+export function StatusPill({ ex, failLabel = "fail", className }: { ex: HttpExchange; failLabel?: string; className?: string }) {
+  const status = ex.response?.status ?? null;
+  const sev = severity(ex);
+  if (sev === "normal") {
+    return <span className={clsx("justify-self-start px-1.5 text-muted", className)}>{status ?? "·"}</span>;
+  }
+  return (
+    <span
+      className={clsx(
+        "justify-self-start rounded-[5px] px-1.5 font-semibold",
+        sev === "warn" ? "bg-warn/15 text-warn" : "bg-danger/15 text-danger",
+        className,
+      )}
+    >
+      {status ?? failLabel}
+    </span>
+  );
 }
 
 export function RequestRow({
@@ -18,6 +38,7 @@ export function RequestRow({
   pinned,
   slowMs,
   hideDomain,
+  range,
   onSelect,
   onContextMenu,
   style,
@@ -28,80 +49,64 @@ export function RequestRow({
   pinned?: boolean;
   slowMs: number;
   hideDomain: boolean;
+  range: TimeWindow;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   style: CSSProperties;
 }) {
-  const status = ex.response?.status ?? null;
   const size = ex.response?.body?.size ?? ex.request.body?.size ?? null;
   const total = ex.timing.total_ms;
-  const failed = ex.error != null || (status != null && status >= 400);
   const slow = total != null && total > slowMs;
+  const bar = waterfallBar(ex, range);
   return (
     <div
       style={style}
       onClick={onSelect}
       onContextMenu={onContextMenu}
+      aria-selected={selected}
       className={clsx(
-        "relative flex cursor-default items-center gap-2 border-b border-line px-3 font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,34px)] tabular-nums transition-colors",
-        selected ? "bg-accent/10 text-txt" : "text-muted hover:bg-surface/80",
+        ROW_GRID,
+        "cursor-default rounded-lg font-mono text-[length:var(--mono-size,12px)] leading-[length:var(--row-h,32px)] tabular-nums transition-colors",
+        selected ? "bg-accent/12 text-txt ring-1 ring-inset ring-accent/25" : "text-txt hover:bg-surface-2",
         flash && "anim-fade-flash",
-        failed &&
-          (selected
-            ? "shadow-[inset_-3px_0_0_0_var(--danger)]"
-            : "shadow-[inset_3px_0_0_0_var(--danger)]"),
       )}
     >
-      {selected && (
-        <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
-      )}
-      <span
-        className={clsx(
-          "flex w-14 shrink-0 items-center gap-1 text-[11px] font-bold tracking-wide",
-          methodClass(ex.request.method),
-        )}
-      >
+      <StatusPill ex={ex} className="leading-[18px]" />
+      <span className="flex min-w-0 items-center gap-1.5 text-muted">
         {ex.request.method}
         {pinned && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
       </span>
-      <span className="min-w-0 flex-1 truncate">
-        {hideDomain ? (
-          <span className={clsx(selected ? "text-txt" : "text-txt/90")}>{ex.request.path}</span>
-        ) : (
-          <>
-            <span className={clsx(selected ? "text-txt" : "text-txt/90")}>{ex.request.host}</span>
-            <span className="text-muted">{ex.request.path}</span>
-          </>
-        )}
+      <span className="min-w-0 truncate">
+        {!hideDomain && <span className="text-muted">{ex.request.host}</span>}
+        <span>{ex.request.path}</span>
       </span>
-      {ex.error ? (
-        <AlertCircle size={13} className="w-8 shrink-0 text-danger" />
-      ) : status == null ? (
-        <span className="w-8 shrink-0 text-center text-muted/70">·</span>
-      ) : (
-        <span className={clsx("w-8 shrink-0 text-center font-semibold", statusTextCls(status))}>{status}</span>
-      )}
-      <span
-        className={clsx(
-          "w-16 shrink-0 text-right",
-          slow && (total! > slowMs * 4 ? "font-semibold text-danger" : "text-warn"),
-        )}
-      >
-        {formatMs(total)}
+      <span className="text-right text-muted">{size == null ? "" : formatBytes(size)}</span>
+      <span className="flex h-full min-w-0 items-center gap-2">
+        <span className="relative h-full min-w-0 flex-1">
+          <span className="absolute inset-x-0 top-1/2 border-t border-line/70" />
+          {bar && (
+            <span
+              className={clsx("absolute top-1/2 h-2 min-w-[3px] -translate-y-1/2 rounded", BAR_CLASS[severity(ex)])}
+              style={{ left: `${bar.left * 100}%`, width: `${bar.width * 100}%` }}
+            />
+          )}
+        </span>
+        <span className={clsx("w-14 shrink-0 text-right text-[11px]", slow ? "font-semibold text-warn" : "text-muted")}>
+          {total == null ? "" : formatMs(total)}
+        </span>
       </span>
-      <span className="w-20 shrink-0 text-right text-muted/80">{formatBytes(size)}</span>
     </div>
   );
 }
 
 export function RequestListHeader({ hideDomain }: { hideDomain?: boolean }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted/60">
-      <span className="w-14 shrink-0">Method</span>
-      <span className="min-w-0 flex-1">{hideDomain ? "Endpoint" : "Host / Path"}</span>
-      <span className="w-8 shrink-0 text-center">St</span>
-      <span className="w-16 shrink-0 text-right">Time</span>
-      <span className="w-20 shrink-0 text-right">Size</span>
+    <div className={clsx(ROW_GRID, "h-7 shrink-0 text-[11px] text-muted")}>
+      <span>Status</span>
+      <span>Method</span>
+      <span>{hideDomain ? "Endpoint" : "Request"}</span>
+      <span className="text-right">Size</span>
+      <span>Timeline</span>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFilterCount, isFailed, matchFilters, type Filters } from "./filters";
+import { activeFilterCount, isFailed, isSlow, matchFilters, quickCounts, quickModeOf, withQuickMode, type Filters } from "./filters";
 import type { HttpExchange } from "../../store/types";
 
 const base: Filters = {
@@ -136,5 +136,43 @@ describe("activeFilterCount", () => {
 
   it("ignores search text since it is visible in the toolbar input", () => {
     expect(activeFilterCount({ ...base, text: "api" })).toBe(0);
+  });
+});
+
+describe("quick modes", () => {
+  it("derives the mode from the existing failure and slow flags", () => {
+    expect(quickModeOf(base)).toBe("all");
+    expect(quickModeOf({ ...base, failuresOnly: true })).toBe("errors");
+    expect(quickModeOf({ ...base, slowOnly: true })).toBe("slow");
+    expect(quickModeOf({ ...base, failuresOnly: true, slowOnly: true })).toBe("custom");
+  });
+
+  it("sets exactly one flag per mode and keeps other facets", () => {
+    const f = { ...base, text: "api", failuresOnly: true, slowOnly: true };
+    expect(withQuickMode(f, "all")).toEqual({ ...f, failuresOnly: false, slowOnly: false });
+    expect(withQuickMode(f, "errors")).toEqual({ ...f, failuresOnly: true, slowOnly: false });
+    expect(withQuickMode(f, "slow")).toEqual({ ...f, failuresOnly: false, slowOnly: true });
+  });
+
+  it("isSlow matches the slowOnly filter threshold", () => {
+    expect(isSlow(ex({ total: 500 }), 500)).toBe(true);
+    expect(isSlow(ex({ total: 499 }), 500)).toBe(false);
+    expect(isSlow(ex({ total: null }), 500)).toBe(false);
+  });
+
+  it("counts each mode under the other active filters, ignoring the current mode", () => {
+    const all = [
+      ex({ host: "api.dev", status: 200, total: 100 }),
+      ex({ host: "api.dev", status: 500, total: 900 }),
+      ex({ host: "api.dev", status: null, error: "reset", total: null }),
+      ex({ host: "api.dev", status: 200, total: 800 }),
+      ex({ host: "cdn.dev", status: 404, total: 50 }),
+    ];
+    expect(quickCounts(all, base, 500)).toEqual({ all: 5, errors: 3, slow: 2 });
+    expect(quickCounts(all, { ...base, failuresOnly: true, includeDomains: ["api.dev"] }, 500)).toEqual({
+      all: 4,
+      errors: 2,
+      slow: 2,
+    });
   });
 });
