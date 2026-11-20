@@ -67,14 +67,6 @@ export function saveBodyCapMb(v: number) {
   localStorage.setItem("beholder.bodyCapMb", String(v));
 }
 
-export function loadSidebarCollapsed(): boolean {
-  return localStorage.getItem("beholder.sidebarCollapsed") === "true";
-}
-
-export function saveSidebarCollapsed(v: boolean) {
-  localStorage.setItem("beholder.sidebarCollapsed", String(v));
-}
-
 export function loadDbLayout(): DbLayout {
   try {
     const raw = localStorage.getItem("beholder.dbLayout");

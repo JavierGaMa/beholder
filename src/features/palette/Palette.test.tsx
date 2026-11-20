@@ -4,7 +4,6 @@ import { PaletteMenu } from "./Palette";
 import { buildPaletteCommands, searchCommands } from "./commands";
 
 const commands = buildPaletteCommands({
-  toggleSidebar: () => {},
   toggleFollow: () => {},
   focusSearch: () => {},
 });

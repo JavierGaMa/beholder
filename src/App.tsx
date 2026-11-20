@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeftRight,
+  Bot,
   Database,
   Gauge,
   MonitorSmartphone,
   Package,
+  Settings,
   SquareTerminal,
   Waves,
   X,
@@ -16,14 +18,7 @@ import type { ConsoleEvent } from "./store/console-types";
 import { invoke, isTauri, listenTraffic } from "./lib/tauri";
 import { applyUiConfig } from "./lib/theme/applyConfig";
 import type { UiConfig } from "./lib/theme/config-types";
-import {
-  loadFilters,
-  loadFollow,
-  loadSidebarCollapsed,
-  saveFilters,
-  saveFollow,
-  saveSidebarCollapsed,
-} from "./lib/prefs";
+import { loadFilters, loadFollow, saveFilters, saveFollow } from "./lib/prefs";
 import { startMock } from "./lib/mock";
 import { CommandBar } from "./features/capture/CommandBar";
 import type { Filters } from "./features/requests/filters";
@@ -85,7 +80,6 @@ export default function App() {
   const setSetupOpen = useTraffic((s) => s.setSetupOpen);
   const onboarding = useTraffic((s) => s.onboarding);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [follow, setFollow] = useState<boolean>(loadFollow);
   const [agentConnections, setAgentConnections] = useState<AgentConnections | null>(null);
@@ -95,7 +89,6 @@ export default function App() {
   const paletteCommands = useMemo(
     () =>
       buildPaletteCommands({
-        toggleSidebar: () => setSidebarCollapsed((c) => !c),
         toggleFollow: () => setFollow((f) => !f),
         focusSearch: () => {
           setActiveView("requests");
@@ -124,10 +117,6 @@ export default function App() {
       previouslyFocused?.focus();
     };
   }, [settingsOpen, setSettingsOpen]);
-
-  useEffect(() => {
-    saveSidebarCollapsed(sidebarCollapsed);
-  }, [sidebarCollapsed]);
 
   useEffect(() => {
     saveFilters(filters);
@@ -230,11 +219,6 @@ export default function App() {
         return;
       }
       if (typing) return;
-      if (e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        setSidebarCollapsed((c) => !c);
-        return;
-      }
       const idx = Number(e.key) - 1;
       if (!Number.isInteger(idx) || idx < 0 || idx >= RAIL.length) return;
       e.preventDefault();
@@ -256,120 +240,96 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden text-txt">
-      <CommandBar
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
-        filters={filters}
-        onFiltersChange={setFilters}
-        follow={follow}
-        onFollowChange={setFollow}
-        searchRef={searchRef}
-      />
-      <UpdateBanner />
+    <div className="app-frame flex h-full w-full flex-col overflow-hidden text-txt">
+      <CommandBar />
       <div className="relative flex min-h-0 flex-1">
-        <aside
-          className={clsx(
-            "flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200",
-            sidebarCollapsed ? "w-12" : "w-44",
-          )}
-        >
-          <nav className="flex flex-col p-2" aria-label="Views">
+        <aside className="flex w-[54px] shrink-0 flex-col items-center pb-3 pt-0.5">
+          <nav className="flex flex-col items-center gap-1" aria-label="Views">
             {NAV_GROUPS.map((group, gi) => (
-              <div
-                key={group.label}
-                className={clsx(
-                  gi > 0 && (sidebarCollapsed ? "mt-2 border-t border-line pt-2" : "mt-4"),
-                )}
-              >
-                {!sidebarCollapsed && (
-                  <p className="px-2.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted/70">
-                    {group.label}
-                  </p>
-                )}
-                <div className="flex flex-col gap-0.5">
-                  {group.items.map(({ id, label, icon: Icon }) => {
-                    const shortcut = 1 + RAIL.findIndex((r) => r.id === id);
-                    const active = activeView === id;
-                    return (
+              <div key={group.label} className="flex flex-col items-center gap-1">
+                {gi > 0 && <span aria-hidden="true" className="my-1.5 h-px w-[18px] bg-line" />}
+                {group.items.map(({ id, label, icon: Icon }) => {
+                  const shortcut = 1 + RAIL.findIndex((r) => r.id === id);
+                  const active = activeView === id;
+                  return (
+                    <Tooltip key={id} label={`${label} · ${shortcut}`} side="right">
                       <button
-                        key={id}
                         type="button"
-                        onClick={() => setActiveView(id)}
+                        onClick={() => {
+                          setActiveView(id);
+                          setSettingsOpen(false);
+                        }}
                         aria-label={label}
                         aria-current={active ? "page" : undefined}
                         className={clsx(
-                          "press focus-ring group relative flex items-center gap-2.5 rounded-md py-1.5 text-[12px] font-medium",
-                          sidebarCollapsed ? "justify-center" : "px-2.5",
+                          "press focus-ring relative grid h-9 w-9 place-items-center rounded-[10px]",
                           active
-                            ? "bg-accent/10 text-accent"
+                            ? "bg-surface text-txt shadow-[var(--shadow-2),inset_0_0_0_1px_var(--line)]"
                             : "text-muted hover:bg-surface-2 hover:text-txt",
                         )}
                       >
                         {active && (
-                          <span className="absolute left-0.5 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
-                        )}
-                        <Icon size={16} className="shrink-0" />
-                        {!sidebarCollapsed && <span>{label}</span>}
-                        {!sidebarCollapsed && (
                           <span
-                            className={clsx(
-                              "ml-auto rounded border px-1 py-px font-mono text-[9px] leading-none",
-                              active
-                                ? "border-accent/30 text-accent/70"
-                                : "border-line text-muted/60",
-                            )}
-                          >
-                            {shortcut}
-                          </span>
+                            aria-hidden="true"
+                            className="absolute -left-[9px] top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-[2px] bg-accent"
+                          />
                         )}
-                        {sidebarCollapsed && (
-                          <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-line bg-surface-2 px-2 py-1 text-[11px] text-txt opacity-0 shadow-lg transition-opacity delay-150 group-focus-visible:opacity-100 group-hover:opacity-100">
-                            {label}
-                            <span className="font-mono text-[9px] text-muted">{shortcut}</span>
-                          </span>
-                        )}
+                        <Icon size={18} strokeWidth={1.75} />
                       </button>
-                    );
-                  })}
-                </div>
+                    </Tooltip>
+                  );
+                })}
               </div>
             ))}
           </nav>
-          <div className="mt-auto p-2 pt-1">
-            <button
-              type="button"
-              onClick={openAgentBridgeSettings}
-              aria-label={agentBadgeLabel}
-              style={{ visibility: badgeVisible ? "visible" : "hidden" }}
-              className={clsx(
-                "press focus-ring flex w-full items-center gap-2 rounded-md py-1.5 text-[11px] font-medium",
-                sidebarCollapsed ? "justify-center" : "px-2.5",
-                agentConnected
-                  ? "text-accent hover:bg-accent/10"
-                  : "text-muted hover:bg-surface-2 hover:text-txt",
-              )}
-            >
-              <span
-                aria-hidden="true"
+          <div className="mt-auto flex flex-col items-center gap-1">
+            <span style={{ visibility: badgeVisible ? "visible" : "hidden" }}>
+              <Tooltip label={agentConnected ? "Agent connected" : "Agent bridge"} side="right">
+                <button
+                  type="button"
+                  onClick={openAgentBridgeSettings}
+                  aria-label={agentBadgeLabel}
+                  className={clsx(
+                    "press focus-ring relative grid h-9 w-9 place-items-center rounded-[10px] hover:bg-surface-2",
+                    agentConnected ? "text-txt" : "text-muted hover:text-txt",
+                  )}
+                >
+                  <Bot size={18} strokeWidth={1.75} />
+                  <span
+                    aria-hidden="true"
+                    className={clsx(
+                      "absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full transition-colors duration-200",
+                      agentConnected ? "bg-accent" : "bg-muted/50",
+                    )}
+                  />
+                </button>
+              </Tooltip>
+            </span>
+            <Tooltip label="Settings" side="right">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                aria-label="Settings"
+                aria-pressed={settingsOpen}
                 className={clsx(
-                  "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
-                  agentConnected ? "bg-accent" : "bg-muted/50",
+                  "press focus-ring grid h-9 w-9 place-items-center rounded-[10px]",
+                  settingsOpen
+                    ? "bg-surface text-txt shadow-[var(--shadow-2),inset_0_0_0_1px_var(--line)]"
+                    : "text-muted hover:bg-surface-2 hover:text-txt",
                 )}
-              />
-              {!sidebarCollapsed && (
-                <span className="truncate">
-                  {agentConnected ? "Agent connected" : "Agent bridge"}
-                </span>
-              )}
-            </button>
+              >
+                <Settings size={18} strokeWidth={1.75} />
+              </button>
+            </Tooltip>
           </div>
         </aside>
-        <main className="min-h-0 min-w-0 flex-1 bg-bg">
-          <div key={activeView} className="anim-view-enter h-full min-h-0">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 pb-2 pr-2">
+          <UpdateBanner />
+          <div key={activeView} className="anim-view-enter min-h-0 flex-1">
             {activeView === "requests" && (
               <RequestsView
                 filters={filters}
+                onFiltersChange={setFilters}
                 follow={follow}
                 onFollowChange={setFollow}
                 searchRef={searchRef}
@@ -382,33 +342,33 @@ export default function App() {
             {activeView === "database" && <DatabasesView />}
             {activeView === "console" && <ConsoleView />}
           </div>
-        </main>
 
-        {settingsOpen && (
-          <div
-            role="dialog"
-            aria-label="Settings"
-            className="anim-view-enter absolute inset-0 z-30 flex flex-col border-t border-line bg-bg"
-          >
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-              <span className="text-sm font-semibold">Settings</span>
-              <Tooltip label="Close (Esc)">
-                <Button
-                  ref={settingsCloseRef}
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSettingsOpen(false)}
-                  aria-label="Close settings"
-                >
-                  <X size={14} />
-                </Button>
-              </Tooltip>
+          {settingsOpen && (
+            <div
+              role="dialog"
+              aria-label="Settings"
+              className="panel anim-view-enter absolute bottom-2 left-0 right-2 top-0 z-30 flex flex-col"
+            >
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-line pl-4 pr-2">
+                <span className="text-[13px] font-semibold">Settings</span>
+                <Tooltip label="Close (Esc)">
+                  <Button
+                    ref={settingsCloseRef}
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSettingsOpen(false)}
+                    aria-label="Close settings"
+                  >
+                    <X size={14} />
+                  </Button>
+                </Tooltip>
+              </div>
+              <div className="min-h-0 flex-1">
+                <SettingsView />
+              </div>
             </div>
-            <div className="min-h-0 flex-1">
-              <SettingsView />
-            </div>
-          </div>
-        )}
+          )}
+        </main>
       </div>
 
       <Palette commands={paletteCommands} />

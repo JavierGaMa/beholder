@@ -32,7 +32,7 @@ export function ShortcutsOverlay() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.label} role="group" aria-label={group.label} className="mb-3 last:mb-0">
-              <p className="px-1 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted/70">
+              <p className="px-1 pb-1.5 text-[11px] font-semibold text-muted">
                 {group.label}
               </p>
               <div className="flex flex-col gap-0.5">

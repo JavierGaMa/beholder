@@ -1,19 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import {
-  Check,
-  ChevronDown,
-  CircleDot,
-  MonitorSmartphone,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Play,
-  Plus,
-  RotateCcw,
-  Settings,
-  Square,
-} from "lucide-react";
+import { Check, ChevronDown, CircleDot, Play, Plus, RotateCcw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
 import { loadBodyCapMb } from "../../lib/prefs";
@@ -21,24 +8,12 @@ import { useAdbDevicesQuery } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
 import type { AvdInfo } from "../../store/types";
-import { useTraffic, type View } from "../../store/traffic";
-import { isFailed, type Filters } from "../requests/filters";
-import { RequestsToolbar } from "../requests/RequestsToolbar";
+import { useTraffic } from "../../store/traffic";
+import { usePalette } from "../palette/store";
 import { ErrorBox } from "../../components/ui/ErrorBox";
-import { Badge } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { Menu, type MenuOption } from "../../components/ui/Menu";
-import { Tooltip } from "../../components/ui/Tooltip";
-
-const VIEW_LABELS: Record<View, string> = {
-  requests: "Requests",
-  websockets: "WebSockets",
-  metrics: "Metrics",
-  emulators: "Emulators",
-  apks: "APKs",
-  database: "Databases",
-  console: "Console",
-};
+import { formatElapsed, healthSummary, type HealthTone } from "./captureStatus";
 
 const MACOS_WINDOW_CONTROLS_INSET = 76;
 
@@ -49,40 +24,21 @@ function macOSWindowControlsInset(): number {
     : 0;
 }
 
-export function isTrafficView(view: View): boolean {
-  return view === "requests" || view === "websockets";
-}
+const HEALTH_TONE_CLS: Record<HealthTone, string> = {
+  muted: "text-muted hover:text-txt",
+  warn: "text-warn",
+  danger: "text-danger",
+};
 
-export function CommandBar({
-  sidebarCollapsed,
-  onToggleSidebar,
-  filters,
-  onFiltersChange,
-  follow,
-  onFollowChange,
-  searchRef,
-}: {
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
-  filters: Filters;
-  onFiltersChange: (f: Filters) => void;
-  follow: boolean;
-  onFollowChange: (v: boolean) => void;
-  searchRef: RefObject<HTMLInputElement | null>;
-}) {
-  const activeView = useTraffic((s) => s.activeView);
+export function CommandBar() {
   const captureOn = useTraffic((s) => s.captureOn);
   const capturePort = useTraffic((s) => s.capturePort);
   const metro = useTraffic((s) => s.metro);
-  const exchanges = useTraffic((s) => s.exchanges);
-  const order = useTraffic((s) => s.order);
   const targetSerial = useTraffic((s) => s.targetSerial);
   const targetAvd = useTraffic((s) => s.targetAvd);
   const setTarget = useTraffic((s) => s.setTarget);
   const setActiveView = useTraffic((s) => s.setActiveView);
   const setCapture = useTraffic((s) => s.setCapture);
-  const settingsOpen = useTraffic((s) => s.settingsOpen);
-  const setSettingsOpen = useTraffic((s) => s.setSettingsOpen);
   const setOnboarding = useTraffic((s) => s.setOnboarding);
 
   const avdsQ = useAvdsQuery();
@@ -94,13 +50,6 @@ export function CommandBar({
   const adbError = qError(adbQ.error) ?? qError(avdsQ.error);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const failures = useMemo(
-    () => order.filter((id) => { const ex = exchanges.get(id); return ex ? isFailed(ex) : false; }).length,
-    [order, exchanges],
-  );
-
-  const showCapture = isTrafficView(activeView);
 
   useEffect(() => {
     void refreshAvds();
@@ -167,7 +116,7 @@ export function CommandBar({
     }
   }
 
-  const label = targetAvd ?? targetSerial ?? "select target";
+  const label = targetAvd ?? targetSerial ?? "Select target";
 
   function targetMeta(a: AvdInfo): string {
     return a.running || a.beholder_ready ? `API ${a.api_level ?? "?"}` : "no root";
@@ -210,140 +159,90 @@ export function CommandBar({
     onSelect: () => setActiveView("emulators"),
   });
 
+  const summary = healthSummary({
+    checks,
+    unknown: healthQ.isPending || healthQ.isError,
+    capturePort,
+    metro,
+  });
+
   return (
     <header
       data-tauri-drag-region
       style={{ paddingLeft: macOSWindowControlsInset() }}
-      className="app-toolbar relative z-30 h-11 shrink-0 border-b border-line bg-surface"
+      className="app-toolbar relative z-30 h-[46px] shrink-0"
     >
-      <div className="flex h-full flex-nowrap items-center gap-2 overflow-hidden px-2">
-        <Tooltip label={sidebarCollapsed ? "Expand sidebar (Cmd/Ctrl+B)" : "Collapse sidebar (Cmd/Ctrl+B)"}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            onClick={onToggleSidebar}
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-          </Button>
-        </Tooltip>
-
-        <div data-tauri-drag-region className="min-w-0 flex-1" />
-
-        <div className="flex min-w-0 max-w-3xl flex-auto items-center justify-center overflow-hidden">
-          {activeView === "requests" ? (
-            <RequestsToolbar
-              filters={filters}
-              onChange={onFiltersChange}
-              follow={follow}
-              onFollowChange={onFollowChange}
-              searchRef={searchRef}
-            />
-          ) : (
-            <span className="min-w-0 truncate px-2 text-[12px] font-medium text-muted">
-              {VIEW_LABELS[activeView]}
-            </span>
-          )}
-        </div>
-
-        <div data-tauri-drag-region className="min-w-0 flex-1" />
-
-        <div className="flex min-w-0 items-center gap-2">
-          {showCapture && (
-            <>
-              <span
-                title={captureOn ? "Capture running" : "Capture stopped"}
-                className={clsx(
-                  "h-2.5 w-2.5 shrink-0 rounded-full",
-                  captureOn ? "animate-pulse bg-ok" : "bg-muted/50",
-                )}
-              />
-
-              <Menu
-                items={targetItems}
-                onClose={() => {}}
-                width={320}
-                trigger={(t) => (
-                  <Button
-                    ref={t.ref}
-                    variant="ghost"
-                    className="min-w-0"
-                    onClick={() => {
-                      void refreshAvds();
-                      t.onClick();
-                    }}
-                    aria-haspopup="menu"
-                    aria-expanded={t["aria-expanded"]}
-                    title="Select emulator target"
-                  >
-                    <MonitorSmartphone size={13} className="shrink-0 text-muted" />
-                    <span className="min-w-12 max-w-40 truncate font-mono">{label}</span>
-                    <ChevronDown size={13} className="shrink-0 text-muted" />
-                  </Button>
-                )}
-              />
-
-              <Button
-                variant={captureOn ? "danger" : "primary"}
-                icon={captureOn ? Square : Play}
-                disabled={busy || (!captureOn && !targetSerial)}
-                onClick={toggleCapture}
-                className="shrink-0 whitespace-nowrap"
-                title={captureOn ? "Stop capture" : targetSerial ? "Start capture" : "Select a running emulator first"}
-              >
-                {captureOn ? "Stop" : "Capture"}
-              </Button>
-
-              {captureOn && (
-                <Tooltip label="Restart capture">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    disabled={busy || !targetSerial}
-                    onClick={restartCapture}
-                    aria-label="Restart capture"
-                  >
-                    <RotateCcw size={15} />
-                  </Button>
-                </Tooltip>
-              )}
-
-              <div className="hidden shrink-0 items-center gap-3 font-mono text-[11px] text-muted lg:flex">
-                {captureOn && (
-                  <CaptureDoctor
-                    checks={checks}
-                    unknown={healthQ.isPending || healthQ.isError}
-                    busy={busy}
-                    hasTarget={targetSerial != null}
-                    onRestart={restartCapture}
-                  />
-                )}
-                {captureOn && capturePort != null && <span className="text-accent">:{capturePort}</span>}
-                {captureOn && metro?.detected && (
-                  <Badge tone="accent">
-                    Metro :{metro.port}
-                  </Badge>
-                )}
-                <span>{order.length} req</span>
-                {failures > 0 && <span className="text-danger">{failures} fail</span>}
-              </div>
-            </>
-          )}
-
-          <Tooltip label="Settings">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => setSettingsOpen(!settingsOpen)}
-              aria-label="Settings"
+      <div data-tauri-drag-region className="flex h-full flex-nowrap items-center gap-2.5 overflow-hidden px-3">
+        <Menu
+          items={targetItems}
+          onClose={() => {}}
+          width={320}
+          trigger={(t) => (
+            <button
+              ref={t.ref}
+              type="button"
+              className="press focus-ring flex h-7 min-w-0 shrink-0 items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold text-txt hover:bg-surface-2"
+              onClick={() => {
+                void refreshAvds();
+                t.onClick();
+              }}
+              aria-haspopup="menu"
+              aria-expanded={t["aria-expanded"]}
+              title="Select emulator target"
             >
-              <Settings size={15} />
-            </Button>
-          </Tooltip>
-        </div>
+              <span
+                aria-hidden="true"
+                className={clsx(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  targetSerial ? "bg-accent" : "bg-muted/50",
+                )}
+              />
+              <span className="min-w-0 max-w-48 truncate">{label}</span>
+              <ChevronDown size={13} className="shrink-0 text-muted" />
+            </button>
+          )}
+        />
+
+        {captureOn ? (
+          <CapturePill busy={busy} onStop={toggleCapture} />
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Play}
+            disabled={busy || !targetSerial}
+            onClick={toggleCapture}
+            className="shrink-0 whitespace-nowrap"
+            title={targetSerial ? "Start capture" : "Select a running emulator first"}
+          >
+            Capture
+          </Button>
+        )}
+
+        {captureOn && (
+          <CaptureDoctor
+            summary={summary.text}
+            toneCls={HEALTH_TONE_CLS[summary.tone]}
+            checks={checks}
+            busy={busy}
+            hasTarget={targetSerial != null}
+            onRestart={restartCapture}
+          />
+        )}
+
+        <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
+
+        <button
+          type="button"
+          onClick={() => usePalette.getState().toggle()}
+          aria-keyshortcuts="Meta+K Control+K"
+          className="press focus-ring flex h-7 w-60 min-w-0 shrink items-center justify-between gap-6 rounded-[8px] bg-surface pl-3 pr-1.5 text-[12px] text-muted shadow-[inset_0_0_0_1px_var(--line)] hover:text-txt"
+        >
+          <span className="truncate">Search or run a command</span>
+          <kbd className="shrink-0 rounded-[4px] bg-surface-2 px-1.5 py-px font-mono text-[11px] leading-4 text-muted">
+            ⌘K
+          </kbd>
+        </button>
       </div>
 
       {error && (
@@ -355,6 +254,38 @@ export function CommandBar({
   );
 }
 
+function CapturePill({ busy, onStop }: { busy: boolean; onStop: () => void }) {
+  const [start] = useState(() => Date.now());
+  const [now, setNow] = useState(start);
+
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  return (
+    <div
+      role="status"
+      aria-label="Capture running"
+      className="flex h-7 shrink-0 items-center gap-2 rounded-full bg-accent/13 pl-3 pr-1 text-[12px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_22%,transparent)]"
+    >
+      <span aria-hidden="true" className="live-pulse h-[7px] w-[7px] rounded-full bg-accent" />
+      <span className="font-semibold text-accent">Capturing</span>
+      <span className="font-mono tabular-nums text-txt">{formatElapsed(now - start)}</span>
+      <button
+        type="button"
+        onClick={onStop}
+        disabled={busy}
+        aria-label="Stop capture"
+        title="Stop capture"
+        className="press focus-ring grid h-5 w-5 place-items-center rounded-full hover:bg-danger/25 disabled:pointer-events-none disabled:opacity-40"
+      >
+        <span className="h-2 w-2 rounded-[2px] bg-txt" />
+      </button>
+    </div>
+  );
+}
+
 function checkTextCls(status: CaptureCheckT["status"]): string {
   if (status === "fail") return "text-danger";
   if (status === "warn") return "text-warn";
@@ -362,30 +293,22 @@ function checkTextCls(status: CaptureCheckT["status"]): string {
 }
 
 function CaptureDoctor({
+  summary,
+  toneCls,
   checks,
-  unknown,
   busy,
   hasTarget,
   onRestart,
 }: {
+  summary: string;
+  toneCls: string;
   checks: CaptureCheckT[];
-  unknown: boolean;
   busy: boolean;
   hasTarget: boolean;
   onRestart: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  const anyFail = checks.some((c) => c.status === "fail");
-  const anyWarn = checks.some((c) => c.status === "warn");
-  const dotCls = unknown
-    ? "bg-muted/50"
-    : anyFail
-      ? "animate-pulse bg-danger"
-      : anyWarn
-        ? "bg-warn"
-        : "bg-ok";
 
   useEffect(() => {
     if (!open) return;
@@ -397,19 +320,22 @@ function CaptureDoctor({
   }, [open]);
 
   return (
-    <div ref={ref} className="relative flex items-center">
-      <Button
-        variant="ghost"
-        size="icon"
+    <div ref={ref} className="relative hidden min-w-0 items-center md:flex">
+      <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         title="Capture doctor"
         aria-expanded={open}
+        className={clsx(
+          "focus-ring min-w-0 truncate rounded-[6px] px-1.5 py-1 text-[12px] transition-colors",
+          toneCls,
+        )}
       >
-        <span className={clsx("h-2 w-2 rounded-full", dotCls)} />
-      </Button>
+        {summary}
+      </button>
       {open && (
-        <div className="anim-pop-in absolute right-0 top-5 w-80 rounded-[var(--radius-md)] border border-line bg-surface-2 p-1.5 shadow-[var(--shadow-3)]">
-          <p className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted/70">Capture doctor</p>
+        <div className="anim-pop-in fixed top-[42px] z-40 w-80 rounded-[10px] bg-surface-2 p-1.5 shadow-[var(--shadow-3),inset_0_0_0_1px_var(--line)]">
+          <p className="px-2 pb-1 pt-1.5 text-[12px] font-semibold text-txt">Capture doctor</p>
           {checks.length === 0 && (
             <p className="px-2 py-1.5 text-[11px] text-muted">checking capture health...</p>
           )}

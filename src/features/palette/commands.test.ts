@@ -14,7 +14,6 @@ const VIEWS: View[] = [
 ];
 
 const handlers = (): PaletteHandlers => ({
-  toggleSidebar: vi.fn(),
   toggleFollow: vi.fn(),
   focusSearch: vi.fn(),
 });
@@ -62,12 +61,16 @@ describe("palette command registry", () => {
   it("wires handler-backed actions to the provided callbacks", () => {
     const h = handlers();
     const cmds = buildPaletteCommands(h);
-    cmds.find((c) => c.id === "toggle-sidebar")?.run();
     cmds.find((c) => c.id === "toggle-follow")?.run();
     cmds.find((c) => c.id === "focus-search")?.run();
-    expect(h.toggleSidebar).toHaveBeenCalledTimes(1);
     expect(h.toggleFollow).toHaveBeenCalledTimes(1);
     expect(h.focusSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not register a sidebar toggle", () => {
+    const cmds = buildPaletteCommands(handlers());
+    expect(cmds.find((c) => c.id === "toggle-sidebar")).toBeUndefined();
+    expect(cmds.some((c) => /sidebar/i.test(c.label))).toBe(false);
   });
 
   it("navigates to the target view on run", () => {

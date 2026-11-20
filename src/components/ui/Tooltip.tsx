@@ -13,7 +13,7 @@ type TooltipChildProps = {
 export type TooltipProps = {
   label: string;
   children: ReactElement<TooltipChildProps>;
-  side?: "top" | "bottom";
+  side?: "top" | "bottom" | "right";
   delayMs?: number;
 };
 
@@ -22,7 +22,7 @@ const EST_BUBBLE_HEIGHT = 28;
 
 export function Tooltip({ label, children, side = "top", delayMs = 300 }: TooltipProps) {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number; flipped: boolean } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; transform: string } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
 
@@ -34,11 +34,19 @@ export function Tooltip({ label, children, side = "top", delayMs = 300 }: Toolti
       const el = wrapRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const flipped = side === "top" && r.top < EST_BUBBLE_HEIGHT + BUBBLE_MARGIN + 4;
+      if (side === "right") {
+        setPos({
+          left: r.right + BUBBLE_MARGIN,
+          top: r.top + r.height / 2,
+          transform: "translate(0, -50%)",
+        });
+        return;
+      }
+      const below = side === "bottom" || r.top < EST_BUBBLE_HEIGHT + BUBBLE_MARGIN + 4;
       setPos({
         left: r.left + r.width / 2,
-        top: flipped ? r.bottom + BUBBLE_MARGIN : r.top - BUBBLE_MARGIN,
-        flipped,
+        top: below ? r.bottom + BUBBLE_MARGIN : r.top - BUBBLE_MARGIN,
+        transform: below ? "translate(-50%, 0)" : "translate(-50%, -100%)",
       });
     };
     place();
@@ -91,11 +99,11 @@ export function Tooltip({ label, children, side = "top", delayMs = 300 }: Toolti
               position: "fixed",
               left: pos.left,
               top: pos.top,
-              transform: pos.flipped ? "translate(-50%, 0)" : "translate(-50%, -100%)",
+              transform: pos.transform,
             }}
             className={clsx(
               "anim-overlay-fade pointer-events-none z-50 whitespace-nowrap",
-              "rounded-[var(--radius-sm)] border border-line bg-surface-2 px-2 py-1 text-[11px] text-txt shadow-[var(--shadow-2)]",
+              "rounded-[6px] bg-surface-2 px-2 py-1 text-[11px] text-txt shadow-[var(--shadow-2),inset_0_0_0_1px_var(--line)]",
             )}
           >
             {label}

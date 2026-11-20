@@ -204,6 +204,27 @@ body {
     inset 0 0 0 1px var(--line);
 }
 
+.app-frame {
+  background: var(--bg);
+}
+
+[data-surface="translucent"] .app-frame {
+  background: var(--surface);
+}
+
+@keyframes live-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+.live-pulse {
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
 .focus-ring:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);

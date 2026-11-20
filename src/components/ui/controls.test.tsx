@@ -4,19 +4,24 @@ import { Button } from "./Button";
 import { Chip } from "./Chip";
 import { SegmentedControl } from "./SegmentedControl";
 import { Toggle } from "./Toggle";
+import { Badge, Panel } from "./primitives";
 
 describe("Button", () => {
   it("applies primary variant classes", () => {
     const html = renderToStaticMarkup(<Button variant="primary">Save</Button>);
     expect(html).toContain("bg-accent");
     expect(html).toContain("text-accent-fg");
-    expect(html).toContain("rounded-[var(--radius-md)]");
+    expect(html).toContain("font-semibold");
+    expect(html).toContain("rounded-[8px]");
   });
 
   it("applies ghost variant classes", () => {
     const html = renderToStaticMarkup(<Button variant="ghost">Cancel</Button>);
+    expect(html).toContain("bg-transparent");
+    expect(html).toContain("shadow-[inset_0_0_0_1px_var(--line)]");
     expect(html).toContain("text-muted");
     expect(html).toContain("hover:bg-surface-2");
+    expect(html).not.toMatch(/class="[^"]*\bborder\b/);
   });
 
   it("applies subtle variant classes", () => {
@@ -36,7 +41,7 @@ describe("Button", () => {
     expect(sm).toContain("h-7");
     expect(sm).toContain("px-2.5");
     expect(sm).toContain("text-[12px]");
-    expect(renderToStaticMarkup(<Button size="md">Go</Button>)).toContain("h-8");
+    expect(renderToStaticMarkup(<Button size="md">Go</Button>)).toContain("h-7");
     const icon = renderToStaticMarkup(<Button size="icon">x</Button>);
     expect(icon).toContain("w-7");
     expect(icon).toContain("h-7");
@@ -125,13 +130,13 @@ describe("SegmentedControl", () => {
     expect(html).toContain('aria-checked="false"');
   });
 
-  it("elevates the active option with surface and shadow-1", () => {
+  it("elevates the active option with surface, a small shadow and semibold text", () => {
     const html = renderToStaticMarkup(
       <SegmentedControl options={options} value="b" onChange={() => {}} />,
     );
     expect(html).toContain("bg-surface-2");
-    expect(html).toContain("bg-surface");
-    expect(html).toContain("shadow-[var(--shadow-1)]");
+    expect(html).toContain("p-0.5");
+    expect(html).toMatch(/aria-checked="true"[^>]*class="[^"]*bg-surface [^"]*font-semibold[^"]*shadow-\[0_1px_2px/);
     expect(html).toContain("text-muted");
   });
 
@@ -141,5 +146,19 @@ describe("SegmentedControl", () => {
     );
     const tabbables = html.match(/tabindex="0"/g) ?? [];
     expect(tabbables).toHaveLength(1);
+  });
+});
+
+describe("Panel and Badge", () => {
+  it("renders Panel with the shared floating panel surface", () => {
+    expect(renderToStaticMarkup(<Panel className="p-2">x</Panel>)).toContain('class="panel p-2"');
+  });
+
+  it("renders Badge as a borderless tinted pill per tone", () => {
+    const html = renderToStaticMarkup(<Badge tone="danger">500</Badge>);
+    expect(html).toContain("bg-danger/14");
+    expect(html).toContain("text-danger");
+    expect(html).toContain("rounded-full");
+    expect(html).not.toContain("border");
   });
 });
