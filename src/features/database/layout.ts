@@ -1,7 +1,5 @@
 export const DEFAULT_DBS_WIDTH = 288;
-export const DEFAULT_TABLES_WIDTH = 224;
 export const DBS_WIDTH_BOUNDS: PaneBounds = { min: 180, max: 420, fallback: DEFAULT_DBS_WIDTH };
-export const TABLES_WIDTH_BOUNDS: PaneBounds = { min: 140, max: 320, fallback: DEFAULT_TABLES_WIDTH };
 export const DOCK_MIN_HEIGHT = 120;
 export const DOCK_MAX_RATIO = 0.7;
 export const DOCK_DEFAULT_RATIO = 0.4;
@@ -16,16 +14,12 @@ export interface PaneBounds {
 export interface DbLayout {
   dbsCollapsed: boolean;
   dbsWidth: number;
-  tablesCollapsed: boolean;
-  tablesWidth: number;
   sqlDockHeight: number | null;
 }
 
 export const DEFAULT_DB_LAYOUT: DbLayout = {
   dbsCollapsed: false,
   dbsWidth: DEFAULT_DBS_WIDTH,
-  tablesCollapsed: false,
-  tablesWidth: DEFAULT_TABLES_WIDTH,
   sqlDockHeight: null,
 };
 
@@ -60,11 +54,7 @@ export function parseDbLayout(raw: string | null): Partial<DbLayout> | null {
   const source = parsed as Record<string, unknown>;
   const result: Partial<DbLayout> = {};
   if (typeof source.dbsCollapsed === "boolean") result.dbsCollapsed = source.dbsCollapsed;
-  if (typeof source.tablesCollapsed === "boolean") result.tablesCollapsed = source.tablesCollapsed;
   if (typeof source.dbsWidth === "number" && Number.isFinite(source.dbsWidth)) result.dbsWidth = source.dbsWidth;
-  if (typeof source.tablesWidth === "number" && Number.isFinite(source.tablesWidth)) {
-    result.tablesWidth = source.tablesWidth;
-  }
   if (source.sqlDockHeight === null) {
     result.sqlDockHeight = null;
   } else if (typeof source.sqlDockHeight === "number" && Number.isFinite(source.sqlDockHeight)) {

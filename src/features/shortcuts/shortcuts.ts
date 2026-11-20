@@ -34,7 +34,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     entries: [
       { keys: "Cmd/Ctrl+K", description: "Open the command palette" },
       { keys: "?", description: "Show keyboard shortcuts" },
-      { keys: "Cmd/Ctrl+B", description: "Toggle the sidebar" },
       { keys: "Esc", description: "Close overlays and dialogs" },
     ],
   },

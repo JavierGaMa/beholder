@@ -219,11 +219,11 @@ export function TableGrid({
   }
 
   return (
-    <div className="h-full overflow-auto">
-      <table className="w-full min-w-max border-collapse text-left">
+    <div className="h-full overflow-auto px-1.5">
+      <table className="w-full min-w-max border-separate border-spacing-0 text-left">
         <thead className="sticky top-0 z-10">
           <tr className="bg-surface">
-            <th className="w-10 border-b border-line px-3 py-2 text-right font-mono text-[10px] font-medium text-muted/50">
+            <th className="w-10 border-b border-line/60 px-3 py-2 text-right text-[11px] font-normal text-muted/60">
               #
             </th>
             {page.columns.map((col) => {
@@ -232,7 +232,7 @@ export function TableGrid({
                 <th
                   key={col.name}
                   title={columnTitle(col)}
-                  className="whitespace-nowrap border-b border-line px-3 py-2 font-mono text-[11px] font-medium text-muted"
+                  className="whitespace-nowrap border-b border-line/60 px-3 py-2 text-[11px] font-normal text-muted"
                 >
                   {onSort != null ? (
                     <button
@@ -242,7 +242,7 @@ export function TableGrid({
                     >
                       <span>{col.name}</span>
                       {col.decl_type && (
-                        <span className="font-normal text-muted/45">{col.decl_type}</span>
+                        <span className="text-muted/50">{col.decl_type.toLowerCase()}</span>
                       )}
                       {active && order.dir === "asc" && (
                         <ChevronUp size={11} className="shrink-0 text-accent" />
@@ -256,14 +256,14 @@ export function TableGrid({
                     <span className="flex items-center gap-1 text-left">
                       <span>{col.name}</span>
                       {col.decl_type && (
-                        <span className="font-normal text-muted/45">{col.decl_type}</span>
+                        <span className="text-muted/50">{col.decl_type.toLowerCase()}</span>
                       )}
                     </span>
                   )}
                 </th>
               );
             })}
-            {canEdit && <th className="w-8 border-b border-line" />}
+            {canEdit && <th className="w-8 border-b border-line/60" />}
           </tr>
         </thead>
         <tbody>
@@ -273,7 +273,7 @@ export function TableGrid({
             return (
               <tr
                 key={offsetBase + i}
-                className="border-b border-line/40 transition-colors hover:bg-surface-2/60"
+                className="group [&>td:first-child]:rounded-l-[var(--radius-md)] [&>td:last-child]:rounded-r-[var(--radius-md)] [&>td]:transition-colors [&>td]:group-hover:bg-surface-2/70"
               >
                 <td
                   onContextMenu={(e) =>
@@ -285,7 +285,7 @@ export function TableGrid({
                       rowid,
                     })
                   }
-                  className="px-3 py-1.5 text-right font-mono text-[11px] tabular-nums text-muted/50"
+                  className="h-[var(--row-h,32px)] px-3 py-0 text-right font-mono text-[11px] tabular-nums text-muted/50"
                 >
                   {offsetBase + i + 1}
                 </td>
@@ -304,7 +304,7 @@ export function TableGrid({
                         })
                       }
                       className={clsx(
-                        "max-w-[320px] px-3 py-1.5 align-top text-[12px]",
+                        "h-[var(--row-h,32px)] max-w-[320px] px-3 py-0 align-middle text-[12px]",
                         editable && "cursor-text hover:bg-surface-2",
                       )}
                     >
@@ -325,7 +325,7 @@ export function TableGrid({
                   );
                 })}
                 {canEdit && (
-                  <td className="px-1 py-1.5 text-center align-top">
+                  <td className="h-[var(--row-h,32px)] px-1 py-0 text-center align-middle">
                     {rowEditable && (
                       <Button
                         variant="ghost"

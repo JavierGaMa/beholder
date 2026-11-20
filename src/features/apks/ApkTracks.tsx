@@ -18,7 +18,8 @@ import { Badge } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Menu } from "../../components/ui/Menu";
-import { downloadPct, formatBytes, type ApkEntry } from "./apksFormat";
+import { formatBytes, type ApkEntry } from "./apksFormat";
+import { rowAction } from "./apksList";
 import { localFileName, type DownloadPhase, type LocalApk } from "./apksLocalState";
 import { formatRelativeLastModified, normalizedEnv, normalizedFlavor } from "./apksTracks";
 import {
@@ -203,11 +204,6 @@ export function SourceChip({
   );
 }
 
-function EnvBadge({ env }: { env: string }) {
-  const tone = env === "QA" ? "warn" : env === "PROD" ? "danger" : "muted";
-  return <Badge tone={tone}>{env}</Badge>;
-}
-
 function RowMenu({
   downloaded,
   busy,
@@ -247,48 +243,85 @@ function RowMenu({
   );
 }
 
-function LatestAction({
+export const BUILD_GRID =
+  "grid grid-cols-[64px_140px_90px_minmax(0,1fr)_90px_120px_188px] items-center gap-x-3";
+
+function TrackPill({ env }: { env: string }) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center rounded-[var(--radius-sm)] px-1.5 py-0.5 font-mono text-[11px] font-semibold leading-none",
+        env === "PROD" ? "bg-txt text-bg" : "bg-surface-2 text-muted",
+      )}
+    >
+      {env}
+    </span>
+  );
+}
+
+function RowAction({
   state,
   serial,
   deviceSelected,
+  primary,
   onInstall,
 }: {
   state: DownloadPhase;
   serial: string;
   deviceSelected: boolean;
+  primary: boolean;
   onInstall: () => void;
 }) {
-  if (state.phase === "done") {
+  const action = rowAction(state);
+  if (action.kind === "progress") {
     return (
-      <span className="flex items-center gap-1 text-[11px] font-medium text-ok">
-        <CircleCheck size={12} /> installed
+      <span
+        className="flex items-center justify-end gap-2"
+        role="progressbar"
+        aria-label="Downloading"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={action.pct}
+      >
+        <span className="h-1 w-20 overflow-hidden rounded-full bg-surface-2">
+          <span
+            className="block h-full bg-accent transition-[width]"
+            style={{ width: `${action.pct}%` }}
+          />
+        </span>
+        <span className="w-9 text-right font-mono text-[11px] tabular-nums text-muted">
+          {action.pct}%
+        </span>
       </span>
     );
   }
-  if (state.phase === "installing") {
+  if (action.kind === "installed") return <Badge tone="accent">Installed</Badge>;
+  if (action.kind === "installing") {
     return (
-      <span className="flex items-center gap-1.5 text-[11px] text-accent">
-        <Loader2 size={12} className="animate-spin" /> installing
-      </span>
-    );
-  }
-  if (state.phase === "downloading") {
-    return (
-      <span className="flex items-center gap-1.5 font-mono text-[11px] text-accent">
-        <Loader2 size={12} className="animate-spin" /> {downloadPct(state.received, state.total)}%
+      <span className="flex items-center gap-1.5 text-[11px] text-muted">
+        <Loader2 size={12} className="animate-spin text-accent" /> installing
       </span>
     );
   }
   return (
     <Button
-      variant="primary"
+      variant={primary && action.kind === "install" ? "primary" : "ghost"}
       size="sm"
       onClick={onInstall}
       disabled={!deviceSelected}
-      title={deviceSelected ? `Install on ${serial}` : "Select a device first"}
+      title={
+        action.kind === "retry"
+          ? action.message
+          : deviceSelected
+            ? `Install on ${serial}`
+            : "Select a device first"
+      }
+      className={action.kind === "retry" ? "text-danger!" : undefined}
     >
-      {state.phase === "error" ? (
-        "Retry"
+      {action.kind === "retry" ? (
+        <>
+          <AlertCircle size={14} /> Retry
+        </>
       ) : (
         <>
           <Download size={14} /> Install
@@ -298,12 +331,13 @@ function LatestAction({
   );
 }
 
-export function BuildCard({
+export function BuildRow({
   apk,
   now,
   state,
   serial,
   deviceSelected,
+  primary,
   downloaded,
   onInstall,
   onRevealLocal,
@@ -314,6 +348,7 @@ export function BuildCard({
   state: DownloadPhase;
   serial: string;
   deviceSelected: boolean;
+  primary: boolean;
   downloaded?: LocalApk;
   onInstall: (entry: ApkEntry) => void;
   onRevealLocal: (entry: ApkEntry) => void;
@@ -327,70 +362,45 @@ export function BuildCard({
     ? `v${apk.version}`
     : localFileName(apk.name).replace(/\.apk$/i, "");
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-line bg-surface p-3 transition-colors hover:border-accent/50">
-      <div className="flex min-w-0 items-center gap-2">
-        <EnvBadge env={env} />
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
-          title={flavor}
-        >
+    <li
+      className={clsx(
+        BUILD_GRID,
+        "h-[52px] rounded-[var(--radius-md)] px-3 transition-colors hover:bg-surface-2",
+      )}
+      title={apk.name}
+    >
+      <span>
+        <TrackPill env={env} />
+      </span>
+      <span className="truncate font-mono text-[13px] font-semibold text-txt">{displayName}</span>
+      <span className="truncate font-mono text-[12px] tabular-nums text-muted">
+        {apk.build != null ? `#${apk.build}` : ""}
+      </span>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate font-mono text-[12px] text-muted" title={flavor}>
           {flavor}
         </span>
-        {rel && <span className="shrink-0 text-[10px] text-muted/80">{rel}</span>}
-      </div>
-
-      <div className="min-w-0" title={apk.name}>
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="min-w-0 truncate font-mono text-[15px] font-semibold text-txt">
-            {displayName}
-          </span>
-          {apk.build != null && (
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
-              #{apk.build}
-            </span>
-          )}
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="font-mono text-[11px] tabular-nums text-muted/80">
-            {formatBytes(apk.size_bytes)}
-          </span>
-          {downloaded && <Badge tone="ok">local</Badge>}
-        </div>
-      </div>
-
-      {state.phase === "downloading" && (
-        <div className="h-1 w-full overflow-hidden rounded bg-surface-2">
-          <div
-            className="h-full bg-accent transition-[width]"
-            style={{ width: `${downloadPct(state.received, state.total)}%` }}
-          />
-        </div>
-      )}
-      {state.phase === "error" && (
-        <p className="flex items-center gap-1 font-mono text-[10px] text-danger">
-          <AlertCircle size={10} className="shrink-0" />
-          <span className="truncate" title={state.message}>
-            {state.message}
-          </span>
-        </p>
-      )}
-
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <LatestAction
+        {downloaded && <Badge>downloaded</Badge>}
+      </span>
+      <span className="font-mono text-[12px] tabular-nums text-muted">
+        {formatBytes(apk.size_bytes)}
+      </span>
+      <span className="truncate font-mono text-[12px] text-muted">{rel}</span>
+      <span className="flex items-center justify-end gap-1">
+        <RowAction
           state={state}
           serial={serial}
           deviceSelected={deviceSelected}
+          primary={primary}
           onInstall={() => onInstall(apk)}
         />
-        <div className="flex shrink-0 items-center">
-          <RowMenu
-            downloaded={downloaded}
-            busy={busy}
-            onReveal={() => onRevealLocal(apk)}
-            onDelete={() => onDeleteLocal(apk)}
-          />
-        </div>
-      </div>
-    </div>
+        <RowMenu
+          downloaded={downloaded}
+          busy={busy}
+          onReveal={() => onRevealLocal(apk)}
+          onDelete={() => onDeleteLocal(apk)}
+        />
+      </span>
+    </li>
   );
 }

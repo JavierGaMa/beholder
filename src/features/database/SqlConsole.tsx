@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { History, Loader2, Play, Plus, Wand2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, History, Loader2, Play, Plus, Wand2, X } from "lucide-react";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { Button } from "../../components/ui/Button";
 import { useDatabaseSchemaQuery } from "../../queries/databases";
@@ -24,7 +24,10 @@ export function SqlConsole({
   history,
   running,
   onRun,
-  onClose,
+  editorOpen,
+  onToggleEditor,
+  editorHeight,
+  resizer,
 }: {
   serial: string;
   pkg: string;
@@ -39,7 +42,10 @@ export function SqlConsole({
   history: string[];
   running: boolean;
   onRun: (sql: string) => void;
-  onClose: () => void;
+  editorOpen: boolean;
+  onToggleEditor: () => void;
+  editorHeight: number;
+  resizer: ReactNode;
 }) {
   const schemaQuery = useDatabaseSchemaQuery(serial, pkg, dbName, true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -72,12 +78,72 @@ export function SqlConsole({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-line/50 px-3 py-1">
-        <span className="text-[10px] uppercase tracking-wider text-muted/70">
-          sql · <span className="font-mono lowercase">{dbName}</span>
-        </span>
-        <span className="ml-auto flex items-center gap-2">
+    <>
+      <header className="flex shrink-0 items-center gap-2 px-2.5 py-2">
+        <div
+          role="tablist"
+          aria-label="SQL queries"
+          onKeyDown={onTablistKeyDown}
+          className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-[var(--radius-md)] bg-surface-2 p-0.5"
+        >
+          {tabs.map((tab, i) => {
+            const active = tab.id === activeId;
+            const empty = tab.sql.trim() === "";
+            return (
+              <span
+                key={tab.id}
+                className={clsx(
+                  "group flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] transition-colors [transition-duration:var(--dur-base)]",
+                  active ? "bg-surface shadow-[var(--shadow-1)]" : "hover:bg-surface/50",
+                )}
+              >
+                <button
+                  ref={(el) => {
+                    if (el != null) tabRefs.current.set(tab.id, el);
+                    else tabRefs.current.delete(tab.id);
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  onClick={() => onSwitchTab(tab.id)}
+                  title={empty ? "Empty query" : tab.sql}
+                  className={clsx(
+                    "focus-ring flex h-6 items-center rounded-[var(--radius-sm)] px-2.5 text-[11px] font-medium",
+                    active ? "text-txt" : "text-muted hover:text-txt",
+                  )}
+                >
+                  <span className="max-w-[200px] truncate">{tabLabel(tab.sql, i)}</span>
+                </button>
+                {tabs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onCloseTab(tab.id)}
+                    title={`Close query ${i + 1}`}
+                    aria-label={`Close query ${i + 1}`}
+                    className={clsx(
+                      "focus-ring -ml-1 mr-0.5 grid h-5 w-5 place-items-center rounded-[var(--radius-sm)] text-muted transition-opacity hover:text-txt focus-visible:opacity-100",
+                      active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                    )}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+          <button
+            type="button"
+            onClick={onAddTab}
+            disabled={tabs.length >= MAX_TABS}
+            title={tabs.length >= MAX_TABS ? `Up to ${MAX_TABS} queries` : "New query"}
+            aria-label="New query"
+            className="focus-ring grid h-6 w-6 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted transition-colors hover:text-txt disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <div ref={wrapRef} className="relative">
             <Button
               ref={anchorRef}
@@ -104,7 +170,7 @@ export function SqlConsole({
                       setHistoryOpen(false);
                     }}
                     title={q}
-                    className="focus-ring rounded px-2 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface-2 hover:text-txt"
+                    className="focus-ring rounded px-2 py-1.5 text-left font-mono text-[11px] text-txt/90 transition-colors hover:bg-surface hover:text-txt"
                   >
                     <span className="line-clamp-2 break-all">{q}</span>
                   </button>
@@ -114,13 +180,13 @@ export function SqlConsole({
           </div>
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={() => onTextChange(formatSql(text))}
             disabled={text.trim() === ""}
             title="Pretty-print the query"
             aria-label="Format SQL"
           >
-            <Wand2 size={14} />
+            <Wand2 size={14} /> Format
           </Button>
           <Button
             variant="primary"
@@ -129,98 +195,47 @@ export function SqlConsole({
             disabled={running || text.trim() === ""}
             title="Run query (Cmd/Ctrl+Enter)"
           >
-            {running ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Play size={14} />
-            )}{" "}
-            Run ⌘↵
+            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Run{" "}
+            <span className="font-mono">⌘↵</span>
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={onClose}
-            title="Close the SQL console"
-            aria-label="Close SQL console"
+            onClick={onToggleEditor}
+            aria-pressed={editorOpen}
+            title={editorOpen ? "Hide the SQL editor" : "Show the SQL editor"}
+            aria-label={editorOpen ? "Hide SQL editor" : "Show SQL editor"}
           >
-            <X size={14} />
+            {editorOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </Button>
         </span>
       </header>
-      <div
-        role="tablist"
-        aria-label="SQL queries"
-        onKeyDown={onTablistKeyDown}
-        className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line/50 px-2 py-1"
-      >
-        {tabs.map((tab, i) => {
-          const active = tab.id === activeId;
-          const empty = tab.sql.trim() === "";
-          return (
-            <span key={tab.id} className="flex shrink-0 items-center gap-0.5">
-              <button
-                ref={(el) => {
-                  if (el != null) tabRefs.current.set(tab.id, el);
-                  else tabRefs.current.delete(tab.id);
-                }}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                onClick={() => onSwitchTab(tab.id)}
-                title={empty ? "Empty query" : tab.sql}
-                className={clsx(
-                  "focus-ring flex h-7 items-center rounded px-2.5 text-xs transition-colors",
-                  active
-                    ? "bg-surface-2 font-medium text-txt shadow-[inset_0_-2px_0_0_var(--accent)]"
-                    : "border-b-2 border-transparent text-muted hover:bg-surface-2/60 hover:text-txt",
-                )}
-              >
-                <span className="max-w-[240px] truncate">{tabLabel(tab.sql, i)}</span>
-              </button>
-              {tabs.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => onCloseTab(tab.id)}
-                  title={`Close query ${i + 1}`}
-                  aria-label={`Close query ${i + 1}`}
-                  className="focus-ring grid h-6 w-6 place-items-center rounded text-muted transition-colors hover:bg-surface-2/60 hover:text-txt"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </span>
-          );
-        })}
-        <button
-          type="button"
-          onClick={onAddTab}
-          disabled={tabs.length >= MAX_TABS}
-          title={tabs.length >= MAX_TABS ? `Up to ${MAX_TABS} queries` : "New query"}
-          aria-label="New query"
-          className="focus-ring grid h-7 w-7 shrink-0 place-items-center rounded text-muted transition-colors hover:bg-surface-2/60 hover:text-txt disabled:pointer-events-none disabled:opacity-40"
+      {editorOpen && (
+        <section
+          className="flex shrink-0 flex-col border-y border-line/60"
+          style={{ height: editorHeight }}
         >
-          <Plus size={14} />
-        </button>
-      </div>
-      <div role="tabpanel" aria-label="SQL editor" className="min-h-0 flex-1">
-        <Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center">
-              <Loader2 size={14} className="animate-spin text-accent" />
-            </div>
-          }
-        >
-          <SqlCodeEditor
-            value={text}
-            onChange={onTextChange}
-            onRun={onRun}
-            selectionRef={selectionRef}
-            schema={schemaQuery.data ?? []}
-            placeholder='SELECT * FROM "table" LIMIT 50'
-          />
-        </Suspense>
-      </div>
-    </section>
+          <div role="tabpanel" aria-label="SQL editor" className="min-h-0 flex-1">
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 size={14} className="animate-spin text-accent" />
+                </div>
+              }
+            >
+              <SqlCodeEditor
+                value={text}
+                onChange={onTextChange}
+                onRun={onRun}
+                selectionRef={selectionRef}
+                schema={schemaQuery.data ?? []}
+                placeholder='SELECT * FROM "table" LIMIT 50'
+              />
+            </Suspense>
+          </div>
+          {resizer}
+        </section>
+      )}
+    </>
   );
 }

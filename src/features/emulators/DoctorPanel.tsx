@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import clsx from "clsx";
-import { AlertTriangle, CheckCircle2, RefreshCw, RotateCcw, Zap, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, RefreshCw, RotateCcw, X, Zap } from "lucide-react";
 import { invoke } from "../../lib/tauri";
 import { Badge } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { ErrorBox } from "../../components/ui/ErrorBox";
+import { doctorSummary } from "./emulatorSelection";
 
 type CheckStatus = "ok" | "warn" | "fail";
 
@@ -17,9 +19,9 @@ interface DoctorCheck {
 }
 
 const STATUS_ICON = {
-  ok: CheckCircle2,
+  ok: Check,
   warn: AlertTriangle,
-  fail: XCircle,
+  fail: X,
 } as const;
 
 const STATUS_CLS = {
@@ -31,11 +33,11 @@ const STATUS_CLS = {
 export function DoctorPanel({
   avdName,
   serial,
-  onClose,
+  facts,
 }: {
   avdName: string;
   serial: string;
-  onClose: () => void;
+  facts: ReactNode;
 }) {
   const [checks, setChecks] = useState<DoctorCheck[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,57 +94,67 @@ export function DoctorPanel({
     }
   }
 
-  const fixable = checks.filter((c) => c.fix != null);
+  const summary = doctorSummary(checks);
   const failing = checks.some((c) => c.status !== "ok");
 
   return (
-    <div className="rounded-md border border-line bg-surface p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-semibold text-txt">Doctor · {avdName}</p>
-          <p className="mt-0.5 font-mono text-[11px] text-muted">{serial}</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={run}
-            disabled={loading || busy}
-            title="Re-run checks"
-            aria-label="Re-run checks"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onClose} title="Close" aria-label="Close">
-            <X size={14} />
-          </Button>
-        </div>
+    <div className="flex flex-col">
+      <div className="flex min-h-12 items-center gap-2">
+        <span className="truncate font-mono text-[13px] font-semibold text-txt">{avdName}</span>
+        <span className="truncate font-mono text-[12px] text-muted">{serial}</span>
+        <span className="flex-1" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={run}
+          disabled={loading || busy}
+          title="Run the capture health checks again"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Run checks again
+        </Button>
+      </div>
+
+      {facts}
+
+      <div className="mt-5 flex items-baseline gap-2">
+        <p className="text-[12px] font-semibold text-txt">Capture health</p>
+        {checks.length > 0 && (
+          <span className="text-[12px] text-muted">
+            {summary.passing} of {summary.total} checks pass
+          </span>
+        )}
+        {checks.length > 0 && !failing && !loading && (
+          <Badge tone="ok" className="ml-auto">
+            all healthy
+          </Badge>
+        )}
       </div>
 
       {loading && checks.length === 0 && (
-        <p className="mt-4 text-[12px] text-muted">Running diagnostics…</p>
+        <p className="mt-3 text-[12px] text-muted">Running diagnostics…</p>
       )}
 
       {checks.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-2.5">
+        <ul className="mt-2 flex flex-col">
           {checks.map((c) => {
             const Icon = STATUS_ICON[c.status];
             return (
-              <li key={c.id} className="flex items-start gap-2.5">
-                <Icon size={15} className={clsx("mt-0.5 shrink-0", STATUS_CLS[c.status])} />
+              <li key={c.id} className="flex items-start gap-3 border-b border-line py-3">
+                <Icon size={14} className={clsx("mt-0.5 shrink-0", STATUS_CLS[c.status])} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-medium text-txt">{c.title}</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{c.detail}</p>
+                  <p className="text-[12px] font-semibold text-txt">{c.title}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-muted">{c.detail}</p>
                 </div>
                 {c.fix && (
                   <Button
                     variant="ghost"
                     size="sm"
+                    icon={Zap}
                     disabled={busy}
                     onClick={() => applyFix(c.fix!)}
-                    className="shrink-0 border-accent/50! text-accent! hover:bg-accent/10! hover:text-accent!"
+                    className="shrink-0"
                   >
-                    <Zap size={14} /> Fix
+                    Fix
                   </Button>
                 )}
               </li>
@@ -154,26 +166,23 @@ export function DoctorPanel({
       {error && <ErrorBox message={error} className="mt-3" />}
 
       {checks.length > 0 && (
-        <div className="mt-4 flex items-center gap-2 border-t border-line pt-3">
-          {fixable.length > 0 && (
-            <Button variant="primary" icon={Zap} disabled={busy} onClick={fixAll}>
-              Fix all issues
+        <div className="mt-4 flex items-center gap-2">
+          {summary.fixCount > 0 && (
+            <Button variant="primary" size="sm" icon={Zap} disabled={busy} onClick={fixAll}>
+              Fix {summary.fixCount} {summary.fixCount === 1 ? "issue" : "issues"}
             </Button>
           )}
           <Button
-            variant="danger"
+            variant="ghost"
+            size="sm"
             icon={RotateCcw}
             disabled={busy}
             onClick={() => applyFix("reboot")}
             title="Last resort — full emulator reboot"
+            className="hover:bg-danger/10! hover:text-danger!"
           >
-            Reboot
+            Reboot emulator
           </Button>
-          {!failing && !loading && (
-            <Badge tone="ok" className="ml-auto">
-              all healthy
-            </Badge>
-          )}
         </div>
       )}
     </div>

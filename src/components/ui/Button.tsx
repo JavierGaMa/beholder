@@ -14,15 +14,17 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "border-transparent bg-accent text-accent-fg hover:brightness-110",
-  ghost: "border-transparent text-muted hover:bg-surface-2 hover:text-txt",
-  subtle: "border-transparent bg-surface-2 text-txt hover:brightness-110",
-  danger: "border-transparent text-danger hover:bg-danger/10",
+  primary: "bg-accent font-semibold text-accent-fg hover:brightness-110",
+  ghost: "bg-transparent font-medium text-muted hover:bg-surface-2 hover:text-txt",
+  subtle: "bg-surface-2 font-medium text-txt hover:brightness-110",
+  danger: "bg-transparent font-medium text-danger hover:bg-danger/10",
 };
+
+const GHOST_RING = "shadow-[inset_0_0_0_1px_var(--line)]";
 
 const sizes: Record<ButtonSize, string> = {
   sm: "h-7 gap-1.5 px-2.5 text-[12px]",
-  md: "h-8 gap-1.5 px-3 text-[12px]",
+  md: "h-7 gap-1.5 px-3 text-[12px]",
   icon: "h-7 w-7 p-0",
 };
 
@@ -41,9 +43,10 @@ export function Button({
       type={type}
       ref={ref}
       className={clsx(
-        "press focus-ring inline-flex items-center justify-center rounded-[var(--radius-md)] border font-medium",
+        "press focus-ring inline-flex items-center justify-center rounded-[8px]",
         "transition-colors [transition-duration:var(--dur-fast)] disabled:pointer-events-none disabled:opacity-40",
         variants[variant],
+        variant === "ghost" && size !== "icon" && GHOST_RING,
         sizes[size],
         className,
       )}

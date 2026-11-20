@@ -23,8 +23,8 @@ export function Select({ label, className, id, children, ref, ...rest }: SelectP
           id={selectId}
           ref={ref}
           className={clsx(
-            "focus-ring h-7 w-full appearance-none rounded-[var(--radius-md)] border border-line bg-surface-2 pl-2 pr-7 text-[12px] text-txt",
-            "transition-colors [transition-duration:var(--dur-fast)] focus:border-accent",
+            "focus-ring h-[30px] w-full appearance-none rounded-[8px] bg-surface-2 pl-3 pr-7 text-[12px] text-txt",
+            "transition-shadow [transition-duration:var(--dur-fast)] focus:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_45%,transparent)]",
             "disabled:pointer-events-none disabled:opacity-40",
             className,
           )}

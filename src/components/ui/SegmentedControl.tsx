@@ -49,7 +49,7 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       onKeyDown={onKeyDown}
-      className={clsx("inline-flex items-center rounded-[var(--radius-md)] bg-surface-2 p-0.5", className)}
+      className={clsx("inline-flex items-center gap-0.5 rounded-[9px] bg-surface-2 p-0.5", className)}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -62,9 +62,11 @@ export function SegmentedControl<T extends string>({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={clsx(
-              "focus-ring h-6 rounded-[var(--radius-sm)] px-2.5 text-[11px] font-medium",
+              "focus-ring h-[26px] rounded-[7px] px-2.5 text-[12px]",
               "transition-colors [transition-duration:var(--dur-base)] disabled:pointer-events-none disabled:opacity-40",
-              active ? "bg-surface text-txt shadow-[var(--shadow-1)]" : "text-muted hover:text-txt",
+              active
+                ? "bg-surface font-semibold text-txt shadow-[0_1px_2px_rgb(0_0_0/0.18)]"
+                : "text-muted hover:text-txt",
             )}
           >
             {option.label}

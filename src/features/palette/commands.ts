@@ -8,7 +8,6 @@ import {
   Keyboard,
   MonitorSmartphone,
   Package,
-  PanelLeft,
   Pin,
   Search,
   Settings,
@@ -35,7 +34,6 @@ export interface PaletteCommand {
 }
 
 export interface PaletteHandlers {
-  toggleSidebar: () => void;
   toggleFollow: () => void;
   focusSearch: () => void;
 }
@@ -68,14 +66,6 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
       section: "Actions",
       icon: Settings,
       run: () => useTraffic.getState().setSettingsOpen(true),
-    },
-    {
-      id: "toggle-sidebar",
-      label: "Toggle Sidebar",
-      section: "Actions",
-      shortcut: "B",
-      icon: PanelLeft,
-      run: handlers.toggleSidebar,
     },
     {
       id: "keyboard-shortcuts",

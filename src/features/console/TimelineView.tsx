@@ -21,10 +21,10 @@ function TimelineLogRow({ item }: { item: Extract<TimelineItem, { kind: "log" }>
       )}
     >
       <span className="w-[86px] shrink-0 tabular-nums text-muted/80">{timeOf(at)}</span>
-      <span className={clsx("w-3 shrink-0 text-center font-bold", levelCls(line.level))}>
+      <span className={clsx("w-3 shrink-0 text-center", levelCls(line.level))}>
         {LEVEL_LETTER[line.level]}
       </span>
-      <span className="w-28 shrink-0 truncate text-accent" title={line.tag}>
+      <span className="w-28 shrink-0 truncate text-muted" title={line.tag}>
         {line.tag}
       </span>
       <span className="min-w-0 flex-1 truncate whitespace-pre text-txt/90" title={line.message}>

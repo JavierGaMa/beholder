@@ -4,14 +4,7 @@ import { Button } from "./Button";
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div
-      className={clsx(
-        "rounded-[var(--radius-md)] border border-line bg-surface shadow-[var(--shadow-1)]",
-        className,
-      )}
-    >
-      {children}
-    </div>
+    <div className={clsx("panel", className)}>{children}</div>
   );
 }
 
@@ -25,16 +18,16 @@ export function Badge({
   className?: string;
 }) {
   const tones = {
-    muted: "border-line bg-surface-2 text-muted",
-    ok: "border-ok/25 bg-ok/10 text-ok",
-    warn: "border-warn/25 bg-warn/10 text-warn",
-    danger: "border-danger/25 bg-danger/10 text-danger",
-    accent: "border-accent/25 bg-accent/10 text-accent",
+    muted: "bg-muted/14 text-muted",
+    ok: "bg-ok/14 text-ok",
+    warn: "bg-warn/14 text-warn",
+    danger: "bg-danger/14 text-danger",
+    accent: "bg-accent/14 text-accent",
   } as const;
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-none",
         tones[tone],
         className,
       )}

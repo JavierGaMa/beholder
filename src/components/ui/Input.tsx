@@ -34,8 +34,8 @@ export function Input({
           id={inputId}
           ref={ref}
           className={clsx(
-            "focus-ring h-7 w-full rounded-[var(--radius-md)] border border-line bg-surface-2 px-2 text-[12px] text-txt",
-            "placeholder:text-muted/60 transition-colors [transition-duration:var(--dur-fast)] focus:border-accent",
+            "focus-ring h-[30px] w-full rounded-[8px] bg-surface-2 px-3 text-[12px] text-txt",
+            "placeholder:text-muted transition-shadow [transition-duration:var(--dur-fast)] focus:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_45%,transparent)]",
             "disabled:pointer-events-none disabled:opacity-40",
             mono && "font-mono",
             Trailing && "pr-7",

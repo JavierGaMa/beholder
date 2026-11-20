@@ -29,6 +29,12 @@ describe("shortcut catalog", () => {
     expect(keys).toContain("Esc");
     expect(keys).toContain("Cmd/Ctrl+K");
   });
+
+  it("does not document a sidebar toggle", () => {
+    const entries = SHORTCUT_GROUPS.flatMap((g) => g.entries);
+    expect(entries.some((e) => e.keys === "Cmd/Ctrl+B")).toBe(false);
+    expect(entries.some((e) => /sidebar/i.test(e.description))).toBe(false);
+  });
 });
 
 describe("view shortcuts", () => {
