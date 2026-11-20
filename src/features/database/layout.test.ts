@@ -12,7 +12,7 @@ import {
   RAIL_WIDTH,
   resolvePaneWidth,
   serializeDbLayout,
-  TABLES_WIDTH_BOUNDS,
+  type PaneBounds,
 } from "./layout";
 import { loadDbLayout, saveDbLayout } from "../../lib/prefs";
 
@@ -26,6 +26,8 @@ function stubStorage(entries: Record<string, string> = {}) {
   });
 }
 
+const NARROW_BOUNDS: PaneBounds = { min: 140, max: 320, fallback: 224 };
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -33,10 +35,6 @@ afterEach(() => {
 describe("layout constants", () => {
   it("pins the databases pane bounds and default", () => {
     expect(DBS_WIDTH_BOUNDS).toEqual({ min: 180, max: 420, fallback: 288 });
-  });
-
-  it("pins the tables pane bounds and default", () => {
-    expect(TABLES_WIDTH_BOUNDS).toEqual({ min: 140, max: 320, fallback: 224 });
   });
 
   it("pins the rail width and dock height constants", () => {
@@ -52,42 +50,42 @@ describe("clampPaneWidth", () => {
     expect(clampPaneWidth(288, DBS_WIDTH_BOUNDS)).toBe(288);
     expect(clampPaneWidth(180, DBS_WIDTH_BOUNDS)).toBe(180);
     expect(clampPaneWidth(420, DBS_WIDTH_BOUNDS)).toBe(420);
-    expect(clampPaneWidth(224, TABLES_WIDTH_BOUNDS)).toBe(224);
-    expect(clampPaneWidth(140, TABLES_WIDTH_BOUNDS)).toBe(140);
-    expect(clampPaneWidth(320, TABLES_WIDTH_BOUNDS)).toBe(320);
+    expect(clampPaneWidth(224, NARROW_BOUNDS)).toBe(224);
+    expect(clampPaneWidth(140, NARROW_BOUNDS)).toBe(140);
+    expect(clampPaneWidth(320, NARROW_BOUNDS)).toBe(320);
   });
 
   it("clamps below-minimum values to the pane minimum", () => {
-    expect(clampPaneWidth(40, TABLES_WIDTH_BOUNDS)).toBe(140);
+    expect(clampPaneWidth(40, NARROW_BOUNDS)).toBe(140);
     expect(clampPaneWidth(40, DBS_WIDTH_BOUNDS)).toBe(180);
   });
 
   it("clamps above-maximum values to the pane maximum", () => {
     expect(clampPaneWidth(900, DBS_WIDTH_BOUNDS)).toBe(420);
-    expect(clampPaneWidth(900, TABLES_WIDTH_BOUNDS)).toBe(320);
+    expect(clampPaneWidth(900, NARROW_BOUNDS)).toBe(320);
   });
 
   it("falls back to the pane default for NaN input", () => {
     expect(clampPaneWidth(Number.NaN, DBS_WIDTH_BOUNDS)).toBe(288);
-    expect(clampPaneWidth(Number.NaN, TABLES_WIDTH_BOUNDS)).toBe(224);
+    expect(clampPaneWidth(Number.NaN, NARROW_BOUNDS)).toBe(224);
   });
 });
 
 describe("resolvePaneWidth", () => {
   it("resolves a collapsed pane to the rail width regardless of stored width", () => {
     expect(resolvePaneWidth({ collapsed: true, width: 288, bounds: DBS_WIDTH_BOUNDS })).toBe(RAIL_WIDTH);
-    expect(resolvePaneWidth({ collapsed: true, width: 900, bounds: TABLES_WIDTH_BOUNDS })).toBe(RAIL_WIDTH);
+    expect(resolvePaneWidth({ collapsed: true, width: 900, bounds: NARROW_BOUNDS })).toBe(RAIL_WIDTH);
   });
 
   it("resolves an expanded pane to the clamped width", () => {
     expect(resolvePaneWidth({ collapsed: false, width: 350, bounds: DBS_WIDTH_BOUNDS })).toBe(350);
-    expect(resolvePaneWidth({ collapsed: false, width: 260, bounds: TABLES_WIDTH_BOUNDS })).toBe(260);
+    expect(resolvePaneWidth({ collapsed: false, width: 260, bounds: NARROW_BOUNDS })).toBe(260);
     expect(resolvePaneWidth({ collapsed: false, width: 900, bounds: DBS_WIDTH_BOUNDS })).toBe(420);
   });
 
   it("resolves an expanded pane with garbage width to the pane default", () => {
     expect(resolvePaneWidth({ collapsed: false, width: Number.NaN, bounds: DBS_WIDTH_BOUNDS })).toBe(288);
-    expect(resolvePaneWidth({ collapsed: false, width: Number.NaN, bounds: TABLES_WIDTH_BOUNDS })).toBe(224);
+    expect(resolvePaneWidth({ collapsed: false, width: Number.NaN, bounds: NARROW_BOUNDS })).toBe(224);
   });
 });
 
@@ -130,8 +128,6 @@ describe("parseDbLayout and serializeDbLayout", () => {
     const layout = {
       dbsCollapsed: true,
       dbsWidth: 350,
-      tablesCollapsed: true,
-      tablesWidth: 260,
       sqlDockHeight: 250,
     };
     expect(parseDbLayout(serializeDbLayout(layout))).toEqual(layout);
@@ -156,13 +152,19 @@ describe("parseDbLayout and serializeDbLayout", () => {
   it("drops type-invalid width fields", () => {
     expect(parseDbLayout('{"dbsWidth": "288"}')).toEqual({});
     expect(parseDbLayout('{"dbsWidth": true}')).toEqual({});
-    expect(parseDbLayout('{"tablesWidth": 1e999}')).toEqual({});
+    expect(parseDbLayout('{"dbsWidth": 1e999}')).toEqual({});
   });
 
   it("keeps only the type-valid fields of a mixed payload", () => {
     expect(
       parseDbLayout('{"dbsCollapsed": true, "dbsWidth": 350, "tablesCollapsed": "yes", "sqlDockHeight": "250"}'),
     ).toEqual({ dbsCollapsed: true, dbsWidth: 350 });
+  });
+
+  it("ignores the retired tables sidebar fields", () => {
+    expect(
+      parseDbLayout('{"dbsWidth": 300, "tablesCollapsed": true, "tablesWidth": 260}'),
+    ).toEqual({ dbsWidth: 300 });
   });
 
   it("accepts a finite number or null for sqlDockHeight only", () => {
@@ -178,8 +180,6 @@ describe("loadDbLayout and saveDbLayout", () => {
     const layout = {
       dbsCollapsed: true,
       dbsWidth: 350,
-      tablesCollapsed: true,
-      tablesWidth: 260,
       sqlDockHeight: 250,
     };
     saveDbLayout(layout);
@@ -196,6 +196,13 @@ describe("loadDbLayout and saveDbLayout", () => {
   it("falls back to the default layout for corrupt JSON", () => {
     stubStorage({ "beholder.dbLayout": "garbage" });
     expect(loadDbLayout()).toEqual(DEFAULT_DB_LAYOUT);
+  });
+
+  it("drops retired tables sidebar fields from a stored layout", () => {
+    stubStorage({
+      "beholder.dbLayout": '{"dbsWidth": 300, "tablesCollapsed": true, "tablesWidth": 260}',
+    });
+    expect(loadDbLayout()).toEqual({ ...DEFAULT_DB_LAYOUT, dbsWidth: 300 });
   });
 
   it("merges defaults for an empty object payload", () => {
