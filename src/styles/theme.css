@@ -193,6 +193,17 @@ body {
     0 0 0 0.5px rgb(0 0 0 / 0.08);
 }
 
+.panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-2),
+    inset 0 0 0 1px var(--line);
+}
+
 .focus-ring:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
