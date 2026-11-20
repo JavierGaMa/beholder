@@ -65,4 +65,10 @@ mkdirSync(outDir, { recursive: true });
 const dest = join(outDir, `beholder-mcp-${triple}${exeSuffix}`);
 copyFileSync(source, dest);
 rmSync(source, { force: true });
+const targetDest = join(root, "target", triple, profile, "build", `beholder-mcp${exeSuffix}`);
+try {
+  rmSync(targetDest, { force: true, recursive: true });
+} catch {
+  console.warn(`build-sidecar: could not clear ${targetDest}`);
+}
 console.log(`build-sidecar: wrote ${dest}`);
