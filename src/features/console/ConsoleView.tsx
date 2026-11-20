@@ -13,15 +13,16 @@ import clsx from "clsx";
 import {
   AlignLeft,
   Check,
+  ChevronDown,
   Eraser,
   FileDown,
   GripHorizontal,
+  Layers,
   Pause,
   Play,
   Smartphone,
   Square,
   Terminal,
-  X,
 } from "lucide-react";
 import { useConsole } from "../../store/console";
 import { useTraffic } from "../../store/traffic";
@@ -29,16 +30,16 @@ import { invoke, isTauri } from "../../lib/tauri";
 import { EmptyState } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
-import { Select } from "../../components/ui/Select";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { Menu, type MenuOption } from "../../components/ui/Menu";
 import { useDropdownPosition } from "../../components/ui/popover";
 import { toast } from "../../components/ui/toast";
-import { isLogLine, type AppProcess, type ConsoleColumns, type LogLevel, type LogStatus, type PaneMode } from "../../store/console-types";
+import { isLogLine, type AppProcess, type ConsoleColumns, type LogStatus, type PaneMode } from "../../store/console-types";
 import { buildExportText, buildRows, computeLineStats, filterEntries } from "./rows";
 import { resolveAppFilter, syncFocusApp } from "./appfilter";
 import { LogRow } from "./LogRow";
 import { CrashCard } from "./CrashCard";
+import { severityOptions, showLogFilters, streamPill, type PillTone } from "./toolbar";
 
 const ShellPane = lazy(() => import("./ShellPane").then((m) => ({ default: m.ShellPane })));
 const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default: m.TimelineView })));
@@ -46,13 +47,6 @@ const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default:
 const PANES: { value: PaneMode; label: string }[] = [
   { value: "logs", label: "Logs" },
   { value: "timeline", label: "Timeline" },
-];
-
-const SEVERITY: { level: LogLevel | null; label: string; cls: string }[] = [
-  { level: null, label: "All", cls: "text-muted" },
-  { level: "Info", label: "Info+", cls: "text-ok" },
-  { level: "Warn", label: "Warn+", cls: "text-warn" },
-  { level: "Error", label: "Error+", cls: "text-danger" },
 ];
 
 const COLUMN_CHOICES: { key: keyof ConsoleColumns; label: string }[] = [
@@ -66,13 +60,6 @@ const COLUMN_CHOICES: { key: keyof ConsoleColumns; label: string }[] = [
 const ALL_BUFFERS = ["main", "system", "crash"];
 const BUFFER_CHOICES = ["all", "main", "system", "crash"];
 
-function statusDotCls(status: LogStatus): string {
-  if (status === "Streaming") return "bg-ok";
-  if (status === "Disconnected") return "bg-warn";
-  if (typeof status === "object") return "bg-danger";
-  return "bg-muted";
-}
-
 function statusLabel(status: LogStatus): string {
   if (status === "Streaming") return "streaming";
   if (status === "Disconnected") return "disconnected, retrying";
@@ -80,12 +67,12 @@ function statusLabel(status: LogStatus): string {
   return "stopped";
 }
 
-function statusWord(status: LogStatus): { text: string; cls: string } {
-  if (status === "Streaming") return { text: "streaming", cls: "text-ok" };
-  if (status === "Disconnected") return { text: "retrying", cls: "text-warn" };
-  if (typeof status === "object") return { text: "failed", cls: "text-danger" };
-  return { text: "stopped", cls: "text-muted/70" };
-}
+const PILL_TONE: Record<PillTone, string> = {
+  accent: "bg-accent/12 text-accent",
+  warn: "bg-warn/12 text-warn",
+  danger: "bg-danger/12 text-danger",
+  muted: "bg-surface-2 text-muted",
+};
 
 function shortPkg(pkg: string): string {
   const parts = pkg.split(".");
@@ -224,7 +211,7 @@ export function ConsoleView() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 22,
+    estimateSize: () => 30,
     overscan: 12,
   });
 
@@ -308,10 +295,17 @@ export function ConsoleView() {
   }
 
   if (!isTauri || !targetSerial) {
-    return <EmptyState title="Select an emulator target to stream logs" hint="Console streams adb logcat from the active target" />;
+    return (
+      <div className="panel h-full">
+        <EmptyState title="Select an emulator target to stream logs" hint="Console streams adb logcat from the active target" />
+      </div>
+    );
   }
 
-  const word = statusWord(status);
+  const pill = streamPill(status);
+  const filtersVisible = showLogFilters(paneMode);
+  const severity = severityOptions(lineCount, stats);
+  const deviceSerial = effectiveSerial ?? targetSerial;
 
   const columnItems: MenuOption[] = COLUMN_CHOICES.map((c) => ({
     key: c.key,
@@ -320,244 +314,290 @@ export function ConsoleView() {
     onSelect: () => setColumns({ [c.key]: !columns[c.key] } as Partial<ConsoleColumns>),
   }));
 
+  const bufferItems: MenuOption[] = BUFFER_CHOICES.map((b) => ({
+    key: b,
+    label: b,
+    icon: buffer === b ? Check : undefined,
+    onSelect: () => onBufferChange(b),
+  }));
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-        <SegmentedControl
-          options={PANES}
-          value={paneMode}
-          onChange={setPaneMode}
-          ariaLabel="Console pane"
-          className="shrink-0"
-        />
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className={clsx("size-2 shrink-0 rounded-full", statusDotCls(status))} />
-          <span className={clsx("shrink-0 text-[11px] font-medium", word.cls)} title={statusLabel(status)}>
-            {word.text}
-          </span>
-          <span className="shrink-0 text-[11px] text-muted/70">·</span>
-          <span className="truncate font-mono text-[11px] text-muted" title={statusLabel(status)}>
-            {serial ?? targetSerial}
-          </span>
-        </span>
-        <span className="shrink-0 text-[11px] text-muted">buffer</span>
-        <div className="w-24 shrink-0">
-          <Select
-            value={buffer}
-            onChange={(e) => onBufferChange(e.target.value)}
-            title="Logcat buffer"
-            aria-label="Logcat buffer"
+    <div ref={splitRef} className="@container/console flex h-full min-h-0 flex-col">
+      <section className="panel flex min-h-0 flex-1 flex-col">
+        <div className="flex h-12 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-line px-3">
+          <SegmentedControl
+            options={PANES}
+            value={paneMode}
+            onChange={setPaneMode}
+            ariaLabel="Console pane"
+            className="shrink-0"
+          />
+          <div
+            title={`${statusLabel(status)} · ${deviceSerial}`}
+            className={clsx(
+              "flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-0.5 text-[12px] font-medium",
+              PILL_TONE[pill.tone],
+            )}
           >
-            {BUFFER_CHOICES.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setPaused(!paused)}
-          aria-pressed={paused}
-          className={clsx(
-            "shrink-0",
-            paused && "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
-          )}
-        >
-          {paused ? <Play size={14} /> : <Pause size={14} />}
-          {paused ? "Resume" : "Pause"}
-        </Button>
-        {running ? (
-          <Button variant="danger" size="sm" icon={Square} onClick={stop} className="shrink-0">
-            Stop
-          </Button>
-        ) : (
-          <Button variant="primary" size="sm" icon={Play} onClick={onStart} className="shrink-0">
-            Start
-          </Button>
-        )}
-        <span className="h-4 w-px shrink-0 bg-line" />
-        <span className="flex min-w-0 flex-wrap items-center gap-1">
-          <div className="relative">
-            <Button
-              ref={appMenuPos.anchorRef}
-              variant="subtle"
-              size="sm"
-              onClick={() => (appMenuOpen ? setAppMenuOpen(false) : openAppMenu())}
-              title={
-                appFilter
-                  ? `${appFilter.package}${appFilter.pid != null ? ` (${appFilter.pid})` : ""}`
-                  : "Filter by app process"
-              }
+            <span
               className={clsx(
-                "max-w-56 font-mono",
-                appFilter && "border-accent/40! bg-accent/10! text-accent!",
+                "size-1.5 shrink-0 rounded-full bg-current",
+                pill.pulse && "animate-pulse motion-reduce:animate-none",
+              )}
+            />
+            <span>{pill.text}</span>
+            <button
+              type="button"
+              onClick={() => setPaused(!paused)}
+              aria-pressed={paused}
+              title={paused ? "Resume rendering new lines" : "Pause rendering new lines"}
+              className={clsx(
+                "focus-ring ml-0.5 flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors [transition-duration:var(--dur-fast)]",
+                paused ? "bg-accent/15 text-accent" : "text-muted hover:bg-surface hover:text-txt",
               )}
             >
-              <Smartphone size={14} className="shrink-0" />
-              <span className="truncate">
-                {appFilter
-                  ? `${shortPkg(appFilter.package)}${appFilter.pid != null ? ` · ${appFilter.pid}` : ""}`
-                  : "All apps"}
-              </span>
+              {paused ? <Play size={12} /> : <Pause size={12} />}
+              {paused ? "Resume" : "Pause"}
+            </button>
+          </div>
+          {running ? (
+            <Button variant="danger" size="sm" icon={Square} onClick={stop} aria-label="Stop" className="shrink-0">
+              <span className="@max-[1100px]/console:hidden">Stop</span>
             </Button>
-            {appMenuOpen && (
+          ) : (
+            <Button variant="primary" size="sm" icon={Play} onClick={onStart} aria-label="Start" className="shrink-0">
+              <span className="@max-[1100px]/console:hidden">Start</span>
+            </Button>
+          )}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-0.5 py-1">
+            {filtersVisible && (
               <>
-                <div className="fixed inset-0 z-20" onClick={() => setAppMenuOpen(false)} />
-                <div
-                  ref={appMenuPos.menuRef}
-                  style={appMenuPos.style}
-                  className="anim-pop-in z-30 overflow-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1 text-left shadow-[var(--shadow-3)]"
-                >
-                  {appsLoading ? (
-                    <div className="px-2 py-1 font-mono text-[11px] text-muted">loading...</div>
-                  ) : apps.length === 0 ? (
-                    <div className="px-2 py-1 font-mono text-[11px] text-muted">no third-party apps found</div>
-                  ) : (
+                <span className="h-4 w-px shrink-0 bg-line" />
+                <div className="relative shrink-0">
+                  <Button
+                    ref={appMenuPos.anchorRef}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => (appMenuOpen ? setAppMenuOpen(false) : openAppMenu())}
+                    title={
+                      appFilter
+                        ? `${appFilter.package}${appFilter.pid != null ? ` (${appFilter.pid})` : ""}`
+                        : "Filter by app process"
+                    }
+                    className={clsx(
+                      "max-w-48 font-mono",
+                      appFilter && "bg-accent/10! text-accent! hover:text-accent!",
+                    )}
+                  >
+                    <Smartphone size={14} className="shrink-0" />
+                    <span className="truncate @max-[1100px]/console:hidden">
+                      {appFilter
+                        ? `${shortPkg(appFilter.package)}${appFilter.pid != null ? ` · ${appFilter.pid}` : ""}`
+                        : "All apps"}
+                    </span>
+                    <ChevronDown size={12} className="shrink-0 opacity-70 @max-[1100px]/console:hidden" />
+                  </Button>
+                  {appMenuOpen && (
                     <>
-                      {appFilter != null && (
-                        <button
-                          type="button"
-                          onClick={() => selectApp(null)}
-                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] text-accent transition-colors hover:bg-surface"
-                        >
-                          All apps
-                        </button>
-                      )}
-                      {apps.map((a) => (
-                        <button
-                          key={a.package}
-                          type="button"
-                          disabled={a.pid == null}
-                          title={a.pid == null ? `${a.package} is not running` : a.package}
-                          onClick={() => selectApp(a)}
-                          className={clsx(
-                            "focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] transition-colors hover:bg-surface disabled:pointer-events-none",
-                            a.pid == null ? "cursor-not-allowed text-muted/50" : "text-txt",
-                            appFilter?.package === a.package && "text-accent",
-                          )}
-                        >
-                          <span className="shrink-0 font-medium">{shortPkg(a.package)}</span>
-                          <span className="min-w-0 flex-1 truncate text-muted/70">{a.package}</span>
-                          <span className="shrink-0 text-muted/70">{a.pid ?? "not running"}</span>
-                        </button>
-                      ))}
+                      <div className="fixed inset-0 z-20" onClick={() => setAppMenuOpen(false)} />
+                      <div
+                        ref={appMenuPos.menuRef}
+                        style={appMenuPos.style}
+                        className="anim-pop-in z-30 overflow-auto overscroll-contain rounded-[var(--radius-md)] border border-line bg-surface-2 p-1 text-left shadow-[var(--shadow-3)]"
+                      >
+                        {appsLoading ? (
+                          <div className="px-2 py-1 font-mono text-[11px] text-muted">loading...</div>
+                        ) : apps.length === 0 ? (
+                          <div className="px-2 py-1 font-mono text-[11px] text-muted">no third-party apps found</div>
+                        ) : (
+                          <>
+                            {appFilter != null && (
+                              <button
+                                type="button"
+                                onClick={() => selectApp(null)}
+                                className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] text-accent transition-colors hover:bg-surface"
+                              >
+                                All apps
+                              </button>
+                            )}
+                            {apps.map((a) => (
+                              <button
+                                key={a.package}
+                                type="button"
+                                disabled={a.pid == null}
+                                title={a.pid == null ? `${a.package} is not running` : a.package}
+                                onClick={() => selectApp(a)}
+                                className={clsx(
+                                  "focus-ring flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-[11px] transition-colors hover:bg-surface disabled:pointer-events-none",
+                                  a.pid == null ? "cursor-not-allowed text-muted/50" : "text-txt",
+                                  appFilter?.package === a.package && "text-accent",
+                                )}
+                              >
+                                <span className="shrink-0 font-medium">{shortPkg(a.package)}</span>
+                                <span className="min-w-0 flex-1 truncate text-muted/70">{a.package}</span>
+                                <span className="shrink-0 text-muted/70">{a.pid ?? "not running"}</span>
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
                     </>
                   )}
+                </div>
+                <div
+                  role="group"
+                  aria-label="Log severity"
+                  className="inline-flex shrink-0 items-center rounded-[var(--radius-md)] bg-surface-2 p-0.5"
+                >
+                  {severity.map((s) => {
+                    const active = minLevel === s.level;
+                    return (
+                      <button
+                        key={s.label}
+                        type="button"
+                        aria-pressed={active}
+                        title={s.title}
+                        onClick={() => setMinLevel(s.level)}
+                        className={clsx(
+                          "focus-ring flex h-6 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-sm)] px-2.5 text-[11px] font-medium transition-colors [transition-duration:var(--dur-base)]",
+                          active ? "bg-surface text-txt shadow-[var(--shadow-1)]" : "text-muted hover:text-txt",
+                        )}
+                      >
+                        <span className="@max-[1100px]/console:hidden">{s.label}</span>
+                        <span className="hidden @max-[1100px]/console:inline">{s.short}</span>
+                        {s.count != null && (
+                          <span
+                            className={clsx(
+                              "font-mono tabular-nums @max-[1180px]/console:hidden",
+                              s.level === "Error" && s.count > 0
+                                ? "text-danger"
+                                : s.level === "Warn" && s.count > 0
+                                  ? "text-warn"
+                                  : "text-muted/70",
+                            )}
+                          >
+                            {s.count.toLocaleString()}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="w-36 min-w-16 shrink">
+                  <Input
+                    list="console-observed-tags"
+                    mono
+                    value={tagQuery}
+                    onChange={(e) => setTagQuery(e.target.value)}
+                    placeholder="filter by tag"
+                    title="Tag filter (server-side)"
+                  />
+                </div>
+                <datalist id="console-observed-tags">
+                  {observedTags.slice(-200).map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                <div className="w-48 min-w-16 shrink">
+                  <Input
+                    mono
+                    value={regex}
+                    onChange={(e) => setRegex(e.target.value)}
+                    placeholder="search message (regex)"
+                    title={regexError ?? "Regex search (client-side)"}
+                    className={clsx(regexError != null && "border-danger! text-danger!")}
+                  />
                 </div>
               </>
             )}
           </div>
-          <div className="flex h-7 shrink-0 items-center overflow-hidden rounded-md border border-line">
-            {SEVERITY.map((s, i) => (
-              <button
-                key={s.label}
-                type="button"
-                title={s.level == null ? "Show all log levels" : `Show ${s.level} and above`}
-                onClick={() => setMinLevel(s.level)}
-                className={clsx(
-                  "focus-ring h-full px-2 font-mono text-[11px] transition-colors",
-                  i > 0 && "border-l border-line",
-                  minLevel === s.level ? "bg-surface-2 font-semibold" : "hover:bg-surface",
-                  s.cls,
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <div className="w-32 shrink-0">
-            <Input
-              list="console-observed-tags"
-              mono
-              value={tagQuery}
-              onChange={(e) => setTagQuery(e.target.value)}
-              placeholder="filter by tag"
-              title="Tag filter (server-side)"
+          <span className="flex shrink-0 items-center gap-1">
+            <Menu
+              items={bufferItems}
+              onClose={() => {}}
+              width={140}
+              trigger={(t) => (
+                <Button
+                  ref={t.ref}
+                  variant="ghost"
+                  size="sm"
+                  onClick={t.onClick}
+                  aria-haspopup="menu"
+                  aria-expanded={t["aria-expanded"]}
+                  aria-label="Logcat buffer"
+                  title={`Logcat buffer: ${buffer}`}
+                >
+                  <Layers size={14} className="shrink-0" />
+                  <span className="@max-[1600px]/console:hidden">{buffer}</span>
+                </Button>
+              )}
             />
-          </div>
-          <datalist id="console-observed-tags">
-            {observedTags.slice(-200).map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-          <div className="w-44 shrink-0">
-            <Input
-              mono
-              value={regex}
-              onChange={(e) => setRegex(e.target.value)}
-              placeholder="search message (regex)"
-              title={regexError ?? "Regex search (client-side)"}
-              className={clsx(regexError != null && "border-danger! text-danger!")}
+            <Menu
+              items={columnItems}
+              onClose={() => {}}
+              width={160}
+              trigger={(t) => (
+                <Button
+                  ref={t.ref}
+                  variant="ghost"
+                  size="sm"
+                  onClick={t.onClick}
+                  aria-haspopup="menu"
+                  aria-expanded={t["aria-expanded"]}
+                  aria-label="Columns"
+                  title="Choose visible columns"
+                  className={clsx(
+                    (columns.time || columns.tag || columns.pid || columns.tid) &&
+                      "text-accent! hover:text-accent!",
+                  )}
+                >
+                  <AlignLeft size={14} className="shrink-0" />
+                  <span className="@max-[1600px]/console:hidden">Columns</span>
+                </Button>
+              )}
             />
-          </div>
-        </span>
-        <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-          <Menu
-            items={columnItems}
-            onClose={() => {}}
-            width={160}
-            trigger={(t) => (
-              <Button
-                ref={t.ref}
-                variant="ghost"
-                size="sm"
-                onClick={t.onClick}
-                aria-haspopup="menu"
-                aria-expanded={t["aria-expanded"]}
-                title="Choose visible columns"
-                className={clsx(
-                  (columns.time || columns.tag || columns.pid || columns.tid) &&
-                    "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
-                )}
-              >
-                <AlignLeft size={14} /> Columns
-              </Button>
-            )}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleShell}
-            aria-label="Toggle adb shell"
-            aria-pressed={shellOpen}
-            title="adb shell (open a terminal on the device)"
-            className={clsx(
-              shellOpen && "border-accent/40! bg-accent/10! text-accent! hover:text-accent!",
-            )}
-          >
-            <Terminal size={14} /> Shell
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Eraser}
-            onClick={onClearBuffer}
-            title="Clear device logcat buffer and view"
-          >
-            Clear
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={FileDown}
-            onClick={onExport}
-            disabled={rows.length === 0}
-            title="Export visible rows to a text file"
-          >
-            Export
-          </Button>
-        </span>
-      </div>
-      <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleShell}
+              aria-label="Toggle adb shell"
+              aria-pressed={shellOpen}
+              title="adb shell (open a terminal on the device)"
+              className={clsx(shellOpen && "bg-accent/10! text-accent! hover:text-accent!")}
+            >
+              <Terminal size={14} className="shrink-0" />
+              <span className="@max-[1600px]/console:hidden">Shell</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearBuffer}
+              aria-label="Clear"
+              title="Clear device logcat buffer and view"
+            >
+              <Eraser size={14} className="shrink-0" />
+              <span className="@max-[1600px]/console:hidden">Clear</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onExport}
+              disabled={rows.length === 0}
+              aria-label="Export"
+              title="Export visible rows to a text file"
+            >
+              <FileDown size={14} className="shrink-0" />
+              <span className="@max-[1600px]/console:hidden">Export</span>
+            </Button>
+          </span>
+        </div>
         <div className="relative min-h-0 flex-1">
           {paneMode === "timeline" ? (
             <Suspense fallback={null}>
               <TimelineView />
             </Suspense>
           ) : (
-            <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto">
+            <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto py-1">
               {rows.length === 0 ? (
                 <EmptyState
                   title={running ? "No lines match the current filters" : "Console not streaming"}
@@ -597,67 +637,70 @@ export function ConsoleView() {
             </div>
           )}
         </div>
-        {shellOpen && (
-          <div className="flex shrink-0 flex-col" style={{ height: shellHeight ?? "40%" }}>
-            <div
-              onPointerDown={onShellResizeStart}
-              onPointerMove={onShellResizeMove}
-              onPointerUp={onShellResizeEnd}
-              onPointerCancel={onShellResizeEnd}
-              className="flex h-1.5 cursor-row-resize touch-none select-none items-center justify-center border-t border-line bg-surface"
+        <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-line px-4 text-[11px] tabular-nums text-muted/70">
+          <span className="shrink-0">
+            {lineCount} lines ·{" "}
+            <button
+              type="button"
+              title="Show Error and above"
+              onClick={() => setMinLevel("Error")}
+              className={clsx("focus-ring rounded-sm hover:underline", stats.errors > 0 ? "text-danger" : "text-muted/50")}
             >
-              <GripHorizontal size={11} className="text-muted/70" />
-            </div>
-            <div className="flex h-7 shrink-0 items-center gap-2 border-b border-line bg-surface px-2">
-              <span className="truncate font-mono text-[11px] text-muted" title={`adb shell · ${effectiveSerial ?? targetSerial}`}>
-                adb shell · {effectiveSerial ?? targetSerial}
+              {stats.errors} errors
+            </button>{" "}
+            ·{" "}
+            <button
+              type="button"
+              title="Show Warn and above"
+              onClick={() => setMinLevel("Warn")}
+              className={clsx("focus-ring rounded-sm hover:underline", stats.warns > 0 ? "text-warn" : "text-muted/50")}
+            >
+              {stats.warns} warns
+            </button>
+            {pausedDropCount > 0 ? ` · ${pausedDropCount} dropped` : ""}
+            {paused && pausedDropCount === 0 ? " · paused" : ""}
+          </span>
+          <span className="min-w-0 truncate">
+            {rows.length} shown · {statusLabel(status)}
+          </span>
+        </div>
+      </section>
+      {shellOpen && (
+        <>
+          <div
+            onPointerDown={onShellResizeStart}
+            onPointerMove={onShellResizeMove}
+            onPointerUp={onShellResizeEnd}
+            onPointerCancel={onShellResizeEnd}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize shell"
+            className="group flex h-2 shrink-0 cursor-row-resize touch-none select-none items-center justify-center"
+          >
+            <GripHorizontal
+              size={11}
+              className="text-muted/50 opacity-0 transition-opacity group-hover:opacity-100"
+            />
+          </div>
+          <section className="panel flex shrink-0 flex-col" style={{ height: shellHeight ?? "40%" }}>
+            <div className="flex h-10 shrink-0 items-center gap-2 px-4">
+              <span className="text-[12px] font-semibold text-txt">Shell</span>
+              <span className="truncate font-mono text-[11px] text-muted" title={`adb shell · ${deviceSerial}`}>
+                {deviceSerial}
               </span>
               <span className="flex-1" />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShellOpen(false)}
-                aria-label="Close shell"
-                title="Close shell"
-              >
-                <X size={14} />
+              <Button variant="ghost" size="sm" onClick={() => setShellOpen(false)} title="Hide shell">
+                Hide
               </Button>
             </div>
-            <div className="min-h-0 flex-1 bg-bg">
+            <div className="min-h-0 flex-1">
               <Suspense fallback={null}>
-                <ShellPane serial={effectiveSerial ?? targetSerial} />
+                <ShellPane serial={deviceSerial} />
               </Suspense>
             </div>
-          </div>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center justify-between border-t border-line bg-surface px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70">
-        <span className="shrink-0">
-          {lineCount} lines ·{" "}
-          <button
-            type="button"
-            title="Show Error and above"
-            onClick={() => setMinLevel("Error")}
-            className={clsx("focus-ring rounded-sm hover:underline", stats.errors > 0 ? "text-danger" : "text-muted/50")}
-          >
-            {stats.errors} errors
-          </button>{" "}
-          ·{" "}
-          <button
-            type="button"
-            title="Show Warn and above"
-            onClick={() => setMinLevel("Warn")}
-            className={clsx("focus-ring rounded-sm hover:underline", stats.warns > 0 ? "text-warn" : "text-muted/50")}
-          >
-            {stats.warns} warns
-          </button>
-          {pausedDropCount > 0 ? ` · ${pausedDropCount} dropped` : ""}
-          {paused && pausedDropCount === 0 ? " · paused" : ""}
-        </span>
-        <span className="min-w-0 truncate">
-          {rows.length} shown · {statusLabel(status)}
-        </span>
-      </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

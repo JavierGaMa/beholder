@@ -16,15 +16,13 @@ export const LEVEL_LETTER: Record<LogLevel, string> = {
 
 export function levelCls(level: LogLevel): string {
   switch (level) {
-    case "Info":
-      return "text-ok";
     case "Warn":
-      return "text-warn";
+      return "font-semibold text-warn";
     case "Error":
     case "Fatal":
-      return "text-danger";
+      return "font-semibold text-danger";
     default:
-      return "text-muted";
+      return "text-muted/70";
   }
 }
 
@@ -49,7 +47,7 @@ export const LogRow = memo(function LogRow({
 }) {
   if (row.kind === "gap") {
     return (
-      <div className="flex items-center border-b border-line/40 bg-surface px-3 py-0.5 font-mono text-[11px] italic text-muted/70">
+      <div className="flex min-h-7 items-center bg-surface-2/50 px-4 font-mono text-[11px] italic text-muted/70">
         ··· {row.dropped} lines dropped while paused ···
       </div>
     );
@@ -62,29 +60,30 @@ export const LogRow = memo(function LogRow({
     onCopy(formatLogLine(line));
   }
   const allCols = cols.time && cols.level && cols.tag && cols.pid && cols.tid;
+  const isError = line.level === "Error" || line.level === "Fatal";
   return (
     <div
       onClick={handleClick}
       title={allCols ? undefined : formatLogLine(line)}
       className={clsx(
-        "group flex cursor-default items-start gap-2 border-b border-line/40 px-3 py-0.5 font-mono text-[length:var(--mono-size,12px)] leading-5",
-        line.is_crash ? "bg-danger/10" : "hover:bg-surface/60",
+        "group flex min-h-[30px] cursor-default items-start gap-3 px-4 py-[5px] font-mono text-[length:var(--mono-size,12px)] leading-5 transition-colors [transition-duration:var(--dur-fast)]",
+        line.is_crash ? "bg-danger/9" : "hover:bg-surface-2/60",
       )}
     >
-      {cols.time && <span className="w-[86px] shrink-0 tabular-nums text-muted/80">{timeOf(line.ts_ms)}</span>}
+      {cols.time && <span className="w-[86px] shrink-0 tabular-nums text-muted/70">{timeOf(line.ts_ms)}</span>}
       {cols.level && (
-        <span className={clsx("w-3 shrink-0 text-center font-bold", levelCls(line.level))}>
+        <span className={clsx("w-3 shrink-0 text-center", levelCls(line.level))}>
           {LEVEL_LETTER[line.level]}
         </span>
       )}
       {cols.tag && (
-        <span className="w-28 shrink-0 truncate text-accent" title={line.tag}>
+        <span className="w-32 shrink-0 truncate text-muted" title={line.tag}>
           {line.tag}
         </span>
       )}
       {cols.pid && <span className="w-12 shrink-0 text-right tabular-nums text-muted/70">{line.pid}</span>}
       {cols.tid && <span className="w-12 shrink-0 text-right tabular-nums text-muted/50">{line.tid}</span>}
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-txt/90">
+      <span className={clsx("min-w-0 flex-1 whitespace-pre-wrap break-all", isError ? "text-danger" : "text-txt")}>
         {"pretty" in enriched ? (
           <>
             {enriched.highlighted.map((t, i) => (
@@ -97,7 +96,7 @@ export const LogRow = memo(function LogRow({
           enriched.text
         )}
         {repeatCount > 1 && (
-          <span className="ml-2 rounded border border-line px-1 text-[10px] leading-4 text-muted">
+          <span className="ml-2 rounded-[var(--radius-sm)] bg-surface-2 px-1.5 text-[10px] leading-4 text-muted">
             × {repeatCount}
           </span>
         )}
@@ -110,7 +109,7 @@ export const LogRow = memo(function LogRow({
             e.stopPropagation();
             onPin(line);
           }}
-          className="focus-ring shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-accent"
+          className="focus-ring mt-0.5 shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-accent"
         >
           <Pin size={11} />
         </button>

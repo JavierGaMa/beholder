@@ -15,10 +15,10 @@ function cssVar(name: string, fallback: string): string {
 
 function terminalTheme(): ITheme {
   return {
-    background: cssVar("--bg", "#0a0a0b"),
+    background: cssVar("--surface", "#111113"),
     foreground: cssVar("--txt", "#f4f4f5"),
     cursor: cssVar("--accent", "#22d3ee"),
-    cursorAccent: cssVar("--bg", "#0a0a0b"),
+    cursorAccent: cssVar("--surface", "#111113"),
     selectionBackground: cssVar("--surface-2", "#17171a"),
   };
 }
@@ -128,10 +128,10 @@ export function ShellPane({ serial }: { serial: string }) {
   }
 
   return (
-    <div className="relative h-full w-full bg-bg">
-      <div ref={containerRef} className="h-full w-full p-1" />
+    <div className="relative h-full w-full bg-surface">
+      <div ref={containerRef} className="h-full w-full px-3 pb-2" />
       {(exited || error != null) && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-bg/85">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface/85">
           <span className="max-w-[80%] truncate font-mono text-[12px] text-muted" title={error ?? undefined}>
             {error != null
               ? error
