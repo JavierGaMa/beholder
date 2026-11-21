@@ -24,4 +24,6 @@ Network traffic inspector for React Native apps on Android emulators (Tauri 2).
 
 - Run lint and typecheck after every change and report the result before declaring done
 - Never commit unless explicitly asked; never rewrite history unless explicitly asked
+- Commit author is always `JavierGaMa <fcojaviergamarquez@gmail.com>`; never add `Co-Authored-By` or other attribution trailers
+- Never commit `.atl/`, `.odd/` or `odd/`; they stay ignored
 - When a device-side behavior fails, reproduce with adb directly before changing code; include the raw command output in user-facing errors
