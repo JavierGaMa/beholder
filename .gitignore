@@ -35,3 +35,5 @@ docs/.vitepress/cache
 .atl/*
 .odd/
 odd/
+/.windsurf/
+/specs/
