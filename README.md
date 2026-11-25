@@ -2,7 +2,7 @@
 
 [![Documentation](https://img.shields.io/badge/docs-vitepress-000000)](https://JavierGaMa.github.io/beholder/)
 
-Non-invasive network traffic inspector for React Native apps on Android emulators. macOS desktop app built with Tauri 2.
+Non-invasive network traffic inspector for React Native apps on Android emulators.
 
 **Watch your app's traffic — hands off your app's code.** No interceptors, no manifest changes, no Flipper.
 
@@ -11,23 +11,28 @@ Non-invasive network traffic inspector for React Native apps on Android emulator
 ## What it does
 
 - **HTTPS and WebSocket inspection** — bodies, headers, timing, JSON tree with click-to-copy paths, inline image previews
-- **Zero changes to your app** — the CA installs as an Android system certificate (Conscrypt apex on Android 14+); the emulator proxy is reverted on stop and quit
+- **Zero changes to your app** — certificate and proxy are applied when a capture starts and reverted when it stops ([how it works](https://JavierGaMa.github.io/beholder/guide/capture))
 - **Metrics** — downloaded/uploaded wire bytes per session and per domain, p50/p95 latency, slowest requests, media and download breakdowns, saved snapshots to compare runs
 - **SQL console** — pull any app database from the emulator and query it read-only with schema-aware autocomplete
 - **Agent bridge + MCP** — a local read-only API and an MCP server so coding agents can inspect traffic, metrics, and query databases without leaving the terminal
-- **Emulator management** — create Beholder-ready emulators (Google APIs + arm64) and repair broken ones with the built-in Doctor
-- **Exports and theming** — HAR, Postman, and Bruno collections; Ghostty-style `config.toml` with live reload
+- **Emulator management** — create capture-ready emulators and repair broken ones with the built-in [Doctor](https://JavierGaMa.github.io/beholder/guide/doctor)
+- **Exports and theming** — HAR, Postman, and Bruno collections; Ghostty-style [`config.toml`](https://JavierGaMa.github.io/beholder/config/) with live reload
 
 ## Install
 
-Grab the latest dmg from [Releases](https://github.com/JavierGaMa/beholder/releases), or build from source:
+**Homebrew** (recommended):
 
 ```bash
-git clone https://github.com/JavierGaMa/beholder.git
-cd beholder
-npm install
-npm run tauri dev
+brew install --cask JavierGaMa/tap/beholder
 ```
+
+Updates arrive via `brew upgrade --cask beholder` — or the in-app updater.
+
+**Direct download**: grab the latest DMG from [Releases](https://github.com/JavierGaMa/beholder/releases) — macOS blocks the first launch of the unsigned download (right-click > Open).
+
+**Build from source**: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Quick start
 
 1. Pick your emulator in the command bar dropdown
 2. Press **Capture**
