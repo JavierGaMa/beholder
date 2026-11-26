@@ -15,6 +15,10 @@ pub use doctor::{apply_basic_fix, run_checks, CheckStatus, DoctorCheck, FixId};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
 pub use types::{AvdInfo, Device, DeviceState, SystemImage};
 
+pub fn is_emulator_serial(serial: &str) -> bool {
+    serial.starts_with("emulator-")
+}
+
 pub trait DeviceScanner {
     fn list(&self) -> Result<Vec<Device>, DeviceError>;
 }
@@ -48,7 +52,7 @@ impl<'a> AdbScanner<'a> {
 
 impl<'a> DeviceScanner for AdbScanner<'a> {
     fn list(&self) -> Result<Vec<Device>, DeviceError> {
-        let out = self.runner.run(&["devices"])?;
+        let out = self.runner.run(&["devices", "-l"])?;
         let mut devices = vec![];
         for line in out.stdout.lines().skip(1) {
             let line = line.trim();
@@ -67,10 +71,14 @@ impl<'a> DeviceScanner for AdbScanner<'a> {
                 "unauthorized" => DeviceState::Unauthorized,
                 _ => DeviceState::Unknown,
             };
+            let model = parts
+                .find_map(|part| part.strip_prefix("model:"))
+                .map(|m| m.replace('_', " "));
             devices.push(Device {
-                is_emulator: serial.starts_with("emulator-"),
+                is_emulator: is_emulator_serial(&serial),
                 serial,
                 state,
+                model,
             });
         }
         Ok(devices)

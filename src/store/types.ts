@@ -118,6 +118,7 @@ export interface Device {
   serial: string;
   state: "Online" | "Offline" | "Unauthorized" | "Unknown";
   is_emulator: boolean;
+  model: string | null;
 }
 
 export interface AvdInfo {

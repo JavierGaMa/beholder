@@ -297,7 +297,7 @@ export function ConsoleView() {
   if (!isTauri || !targetSerial) {
     return (
       <div className="panel h-full">
-        <EmptyState title="Select an emulator target to stream logs" hint="Console streams adb logcat from the active target" />
+        <EmptyState title="Select a target to stream logs" hint="Console streams adb logcat from the active target" />
       </div>
     );
   }

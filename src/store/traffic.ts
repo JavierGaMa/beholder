@@ -6,6 +6,8 @@ import { hitKey } from "../features/routes/routes";
 export const MAX_EXCHANGES = 2000;
 export const MAX_WS_FRAMES = 500;
 
+export type TargetKind = "emulator" | "device";
+
 export type View =
   | "requests"
   | "websockets"
@@ -61,6 +63,8 @@ interface TrafficState {
   setupOpen: boolean;
   targetSerial: string | null;
   targetAvd: string | null;
+  targetName: string | null;
+  targetKind: TargetKind | null;
   onboarding: OnboardingTarget | null;
   pendingSelectId: number | null;
   requestSelect: (id: number) => void;
@@ -74,7 +78,7 @@ interface TrafficState {
   setUiConfig: (c: UiConfig) => void;
   setSettingsOpen: (open: boolean) => void;
   setSetupOpen: (open: boolean) => void;
-  setTarget: (serial: string | null, avd: string | null) => void;
+  setTarget: (serial: string | null, name: string | null, kind: TargetKind) => void;
   setOnboarding: (t: OnboardingTarget | null) => void;
 }
 
@@ -98,6 +102,8 @@ export const useTraffic = create<TrafficState>((set) => ({
   setupOpen: false,
   targetSerial: null,
   targetAvd: null,
+  targetName: null,
+  targetKind: null,
   onboarding: null,
   pendingSelectId: null,
   requestSelect: (id) => set({ pendingSelectId: id, activeView: "requests" }),
@@ -110,7 +116,13 @@ export const useTraffic = create<TrafficState>((set) => ({
   setUiConfig: (c) => set({ uiConfig: c }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSetupOpen: (open) => set({ setupOpen: open }),
-  setTarget: (serial, avd) => set({ targetSerial: serial, targetAvd: avd }),
+  setTarget: (serial, name, kind) =>
+    set({
+      targetSerial: serial,
+      targetName: name,
+      targetKind: kind,
+      targetAvd: kind === "emulator" ? name : null,
+    }),
   setOnboarding: (t) => set({ onboarding: t }),
   clear: () =>
     set({

@@ -63,14 +63,14 @@ describe("CommandBar", () => {
     for (const view of ALL_VIEWS) {
       setStore({ activeView: view });
       const html = render();
-      expect(html, view).toContain('title="Select emulator target"');
+      expect(html, view).toContain('title="Select target"');
       expect(html, view).toContain(">Capture</button>");
       expect(html, view).toContain("Search or run a command");
     }
   });
 
   it("disables capture until a running target is selected", () => {
-    expect(render()).toMatch(/<button[^>]*disabled=""[^>]*title="Select a running emulator first"/);
+    expect(render()).toMatch(/<button[^>]*disabled=""[^>]*title="Select a running target first"/);
     setStore({ targetSerial: "emulator-5554", targetAvd: "Pixel_8_API_35" });
     const html = render();
     expect(html).toContain("Pixel_8_API_35");

@@ -37,8 +37,8 @@ async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
       return "/opt/mock/adb" as T;
     case "list_devices":
       return [
-        { serial: "emulator-5554", state: "Online", is_emulator: true },
-        { serial: "ABC123", state: "Online", is_emulator: false },
+        { serial: "emulator-5554", state: "Online", is_emulator: true, model: "sdk gphone64 arm64" },
+        { serial: "ABC123", state: "Online", is_emulator: false, model: "SM S911B" },
       ] as T;
     case "current_proxy":
       return null as T;
