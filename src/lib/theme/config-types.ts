@@ -26,6 +26,10 @@ export interface MetroConfig {
   port: number;
 }
 
+export interface RoutesConfig {
+  files: string[];
+}
+
 export interface WindowConfig {
   sidebar_opacity?: number | null;
   main_pane_glass?: boolean | null;
@@ -43,6 +47,7 @@ export interface UiConfig {
   console?: ConsoleConfig;
   apks?: ApksConfig;
   metro?: MetroConfig;
+  routes?: RoutesConfig;
   window?: WindowConfig;
 }
 

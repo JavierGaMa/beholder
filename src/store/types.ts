@@ -29,6 +29,24 @@ export interface RoutedTo {
   target: string;
 }
 
+export interface RouteStatus {
+  key: string;
+  id: string;
+  path_prefix: string;
+  host: string | null;
+  target: string;
+  enabled: boolean;
+}
+
+export interface RouteFileStatus {
+  path: string;
+  name: string;
+  error: string | null;
+  routes: RouteStatus[];
+}
+
+export type RouteHealth = "up" | "down";
+
 export interface HttpResponse {
   status: number;
   headers: Header[];

@@ -38,15 +38,16 @@ describe("shortcut catalog", () => {
 });
 
 describe("view shortcuts", () => {
-  it("maps digits 1 through 7 to the seven views in rail order", () => {
+  it("maps digits 1 through 8 to the eight views in rail order", () => {
     expect(VIEW_SHORTCUTS).toEqual([
       { digit: "1", view: "requests" },
       { digit: "2", view: "websockets" },
       { digit: "3", view: "metrics" },
-      { digit: "4", view: "emulators" },
-      { digit: "5", view: "apks" },
-      { digit: "6", view: "database" },
-      { digit: "7", view: "console" },
+      { digit: "4", view: "routes" },
+      { digit: "5", view: "emulators" },
+      { digit: "6", view: "apks" },
+      { digit: "7", view: "database" },
+      { digit: "8", view: "console" },
     ]);
   });
 

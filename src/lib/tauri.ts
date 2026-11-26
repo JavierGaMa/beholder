@@ -1,4 +1,8 @@
-export const isTauri = typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
+import { MOCK_ROUTE_FILES, MOCK_ROUTE_HEALTH } from "./mock";
+
+export const isTauri =
+  typeof window !== "undefined" &&
+  typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
 
 export async function listenTraffic(onBatch: (events: unknown[]) => void): Promise<() => void> {
   if (!isTauri) return () => {};
@@ -15,6 +19,11 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
 
 async function mockInvoke<T>(cmd: string): Promise<T> {
   switch (cmd) {
+    case "list_routes":
+    case "reload_routes":
+      return MOCK_ROUTE_FILES as T;
+    case "routes_health":
+      return MOCK_ROUTE_HEALTH as T;
     case "adb_status":
       return "/opt/mock/adb" as T;
     case "list_devices":

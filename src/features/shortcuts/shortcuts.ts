@@ -12,16 +12,18 @@ export const VIEW_SHORTCUTS: { digit: string; view: string }[] = [
   { digit: "1", view: "requests" },
   { digit: "2", view: "websockets" },
   { digit: "3", view: "metrics" },
-  { digit: "4", view: "emulators" },
-  { digit: "5", view: "apks" },
-  { digit: "6", view: "database" },
-  { digit: "7", view: "console" },
+  { digit: "4", view: "routes" },
+  { digit: "5", view: "emulators" },
+  { digit: "6", view: "apks" },
+  { digit: "7", view: "database" },
+  { digit: "8", view: "console" },
 ];
 
 const VIEW_LABELS: Record<string, string> = {
   requests: "Requests",
   websockets: "WebSockets",
   metrics: "Metrics",
+  routes: "Routes",
   emulators: "Emulators",
   apks: "APKs",
   database: "Databases",

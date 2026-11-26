@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { HttpExchange, TrafficEvent, WsEvent } from "./types";
 import type { UiConfig } from "../lib/theme/config-types";
+import { hitKey } from "../features/routes/routes";
 
 export const MAX_EXCHANGES = 2000;
 export const MAX_WS_FRAMES = 500;
@@ -9,6 +10,7 @@ export type View =
   | "requests"
   | "websockets"
   | "metrics"
+  | "routes"
   | "emulators"
   | "apks"
   | "console"
@@ -52,6 +54,7 @@ interface TrafficState {
   sessionBytesIn: number;
   sessionBytesOut: number;
   sessionFailed: number;
+  routedHits: Map<string, number>;
   installLog: string | null;
   uiConfig: UiConfig | null;
   settingsOpen: boolean;
@@ -88,6 +91,7 @@ export const useTraffic = create<TrafficState>((set) => ({
   sessionBytesIn: 0,
   sessionBytesOut: 0,
   sessionFailed: 0,
+  routedHits: new Map(),
   installLog: null,
   uiConfig: null,
   settingsOpen: false,
@@ -118,6 +122,7 @@ export const useTraffic = create<TrafficState>((set) => ({
       sessionBytesIn: 0,
       sessionBytesOut: 0,
       sessionFailed: 0,
+      routedHits: new Map(),
     }),
   ingest: (events) =>
     set((s) => {
@@ -129,6 +134,7 @@ export const useTraffic = create<TrafficState>((set) => ({
       let sessionBytesIn = s.sessionBytesIn;
       let sessionBytesOut = s.sessionBytesOut;
       let sessionFailed = s.sessionFailed;
+      let routedHits = s.routedHits;
       const seen = s.seen;
       for (const ev of events) {
         switch (ev.type) {
@@ -150,6 +156,12 @@ export const useTraffic = create<TrafficState>((set) => ({
               seen.add(ev.id);
               order.push(ev.id);
               sessionBytesOut += ev.request.body?.size ?? 0;
+              const routed = ev.request.routed;
+              if (routed) {
+                if (routedHits === s.routedHits) routedHits = new Map(s.routedHits);
+                const key = hitKey(routed.route_id, routed.target);
+                routedHits.set(key, (routedHits.get(key) ?? 0) + 1);
+              }
             }
             count += 1;
             break;
@@ -215,6 +227,7 @@ export const useTraffic = create<TrafficState>((set) => ({
         sessionBytesIn,
         sessionBytesOut,
         sessionFailed,
+        routedHits,
       };
     }),
 }));

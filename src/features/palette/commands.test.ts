@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildPaletteCommands, searchCommands, type PaletteHandlers } from "./commands";
+import { useRoutes } from "../routes/store";
 import { useTraffic, type View } from "../../store/traffic";
 import type { TrafficEvent } from "../../store/types";
 
@@ -7,6 +8,7 @@ const VIEWS: View[] = [
   "requests",
   "websockets",
   "metrics",
+  "routes",
   "emulators",
   "apks",
   "database",
@@ -78,6 +80,26 @@ describe("palette command registry", () => {
     expect(useTraffic.getState().activeView).toBe("websockets");
   });
 
+  it("registers a Go to Routes command on the fourth shortcut", () => {
+    const cmd = buildPaletteCommands(handlers()).find((c) => c.id === "go-to-routes");
+    expect(cmd?.label).toBe("Go to Routes");
+    expect(cmd?.shortcut).toBe("4");
+    cmd?.run();
+    expect(useTraffic.getState().activeView).toBe("routes");
+  });
+
+  it("disables every route on run", () => {
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    vi.stubGlobal("window", {});
+    useRoutes.setState({ enabled: ["/r.json::orders"] });
+    const cmd = buildPaletteCommands(handlers()).find((c) => c.id === "disable-all-routes");
+    expect(cmd?.label).toBe("Disable all routes");
+    expect(cmd?.section).toBe("Actions");
+    cmd?.run();
+    expect(useRoutes.getState().enabled).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
   it("opens settings on run", () => {
     buildPaletteCommands(handlers()).find((c) => c.id === "open-settings")?.run();
     expect(useTraffic.getState().settingsOpen).toBe(true);
@@ -124,7 +146,7 @@ describe("searchCommands", () => {
     const cmds = buildPaletteCommands(handlers());
     const ordered = searchCommands(cmds, "", ["clear-requests", "go-to-metrics"]);
     expect(ordered[0]?.id).toBe("go-to-metrics");
-    expect(ordered[7]?.id).toBe("clear-requests");
-    expect(ordered[8]?.id).toBe("open-settings");
+    expect(ordered[8]?.id).toBe("clear-requests");
+    expect(ordered[9]?.id).toBe("open-settings");
   });
 });

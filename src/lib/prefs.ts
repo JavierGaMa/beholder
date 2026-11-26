@@ -39,6 +39,20 @@ export function saveFilters(f: Filters) {
   localStorage.setItem("beholder.filters", JSON.stringify(f));
 }
 
+export function loadEnabledRoutes(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem("beholder.enabledRoutes") ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((key): key is string => typeof key === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function saveEnabledRoutes(keys: string[]) {
+  localStorage.setItem("beholder.enabledRoutes", JSON.stringify(keys));
+}
+
 export function loadFollow(): boolean {
   return localStorage.getItem("beholder.follow") !== "false";
 }
