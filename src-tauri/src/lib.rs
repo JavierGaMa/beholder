@@ -22,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            tauri::async_runtime::spawn(commands::retry_companion_stops(app.handle().clone()));
             let agent_cfg = app
                 .path()
                 .app_local_data_dir()

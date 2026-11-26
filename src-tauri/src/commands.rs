@@ -1047,6 +1047,34 @@ pub async fn capture_start(
     start_capture(&state, &app, &serial, port, body_cap, package).await
 }
 
+pub(crate) async fn retry_companion_stops(app: tauri::AppHandle) {
+    let mut tick = tokio::time::interval(COMPANION_RETRY);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        let Some(state) = app.try_state::<AppState>() else {
+            continue;
+        };
+        let Ok(_capturing) = state.capture_lock.try_lock() else {
+            continue;
+        };
+        let (Ok(dir), Ok(runner)) = (app.path().app_local_data_dir(), state.get_runner().await)
+        else {
+            continue;
+        };
+        let active = if *state.companion.lock().await {
+            state.active_serial.lock().await.clone()
+        } else {
+            None
+        };
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            crate::companion_session::retry_pending(runner.as_ref(), &dir, active.as_deref())
+        })
+        .await;
+    }
+}
+
+const COMPANION_RETRY: std::time::Duration = std::time::Duration::from_secs(3);
 const COMPANION_ATTEMPTS: u32 = 30;
 const COMPANION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 

@@ -554,6 +554,7 @@ function DeviceMaintenance() {
       setCapture(false);
       setMsg("Proxy reverted on all emulators.");
     } catch (e) {
+      setCapture(false);
       setMsg(String(e));
     } finally {
       setBusy(false);

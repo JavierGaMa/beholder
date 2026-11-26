@@ -1,4 +1,4 @@
-use bh_device::CommandRunner;
+use bh_device::{CommandRunner, DeviceScanner};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -54,6 +54,24 @@ pub fn sweep(
         .count() as u32
 }
 
+pub fn retry_pending(runner: &dyn CommandRunner, dir: &Path, active: Option<&str>) -> u32 {
+    let pending = recorded(dir)
+        .iter()
+        .any(|serial| Some(serial.as_str()) != active);
+    if !pending {
+        return 0;
+    }
+    let Ok(devices) = bh_device::AdbScanner::new(runner).list() else {
+        return 0;
+    };
+    let online: Vec<String> = devices
+        .into_iter()
+        .filter(|d| d.state == bh_device::DeviceState::Online)
+        .map(|d| d.serial)
+        .collect();
+    sweep(runner, dir, &online, active)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +104,31 @@ mod tests {
         runner.enqueue_ok("Starting: Intent { }");
         stop(&runner, Some(&dir), "R5CT91").unwrap();
         assert!(recorded(&dir).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_stop_that_failed_is_retried_once_the_phone_is_back() {
+        let dir = temp_dir("retry");
+        record(&dir, "R5CT91").unwrap();
+        let runner = FakeRunner::new();
+        runner.enqueue_ok("List of devices attached\n\n");
+        assert_eq!(retry_pending(&runner, &dir, None), 0);
+        runner.enqueue_ok("List of devices attached\nR5CT91 device model:SM_S911B\n");
+        runner.enqueue_ok("Starting: Intent { }");
+        assert_eq!(retry_pending(&runner, &dir, None), 1);
+        assert!(recorded(&dir).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn nothing_pending_means_no_adb_traffic() {
+        let dir = temp_dir("quiet");
+        let runner = FakeRunner::new();
+        assert_eq!(retry_pending(&runner, &dir, None), 0);
+        record(&dir, "R5CT91").unwrap();
+        assert_eq!(retry_pending(&runner, &dir, Some("R5CT91")), 0);
+        assert!(runner.calls.lock().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
