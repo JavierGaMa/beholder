@@ -263,31 +263,33 @@ export function EmulatorsView() {
           </p>
         </section>
 
-        <section className="panel min-w-0 flex-1 overflow-y-auto">
-          <div className="max-w-3xl px-5 pb-5 pt-1">
-            {showCreate || selectedAvd == null ? (
-              <CreateForm
-                canGoBack={selectedAvd != null}
-                onBack={() => setCreating(false)}
-                name={name}
-                setName={setName}
-                profile={profile}
-                setProfile={setProfile}
-                profiles={profiles}
-                imagePkg={imagePkg}
-                setImagePkg={setImagePkg}
-                images={images}
-                imagesLoading={imagesQ.isPending}
-                selectedImage={selectedImage}
-                installing={installing}
-                installLog={installLog}
-                busy={busy}
-                onInstall={install}
-                onCreate={createAndLaunch}
-              />
-            ) : (
-              <EmulatorDetail avd={selectedAvd} onLaunch={launch} />
-            )}
+        <section className="panel flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="max-w-3xl px-5 pb-5 pt-1">
+              {showCreate || selectedAvd == null ? (
+                <CreateForm
+                  canGoBack={selectedAvd != null}
+                  onBack={() => setCreating(false)}
+                  name={name}
+                  setName={setName}
+                  profile={profile}
+                  setProfile={setProfile}
+                  profiles={profiles}
+                  imagePkg={imagePkg}
+                  setImagePkg={setImagePkg}
+                  images={images}
+                  imagesLoading={imagesQ.isPending}
+                  selectedImage={selectedImage}
+                  installing={installing}
+                  installLog={installLog}
+                  busy={busy}
+                  onInstall={install}
+                  onCreate={createAndLaunch}
+                />
+              ) : (
+                <EmulatorDetail avd={selectedAvd} onLaunch={launch} />
+              )}
+            </div>
           </div>
         </section>
       </div>
