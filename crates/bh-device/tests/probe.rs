@@ -100,6 +100,7 @@ fn state_of(root: RootAccess, ca: bool, tier: Tier) -> (TierState, String) {
         root,
         system_ca_installed: ca,
         companion_version: None,
+        user_ca_installed: None,
     };
     let status = tiers(&probe).into_iter().find(|s| s.tier == tier).unwrap();
     (status.state, status.detail)

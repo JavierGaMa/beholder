@@ -201,9 +201,13 @@ pub fn run() {
                     tunnel_task.stop().await;
                 }
                 let port = state.proxy.lock().await.as_ref().map(|h| h.port);
+                let through_companion = *state.companion.lock().await;
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
+                        if through_companion {
+                            let _ = bh_device::companion::stop(&runner, &serial);
+                        }
                         let dir = app_handle.path().app_local_data_dir().ok();
                         proxy_restore::release_device(&runner, dir.as_deref(), &serial, port);
                     }

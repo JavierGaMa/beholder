@@ -1,4 +1,5 @@
 pub mod avd;
+pub mod companion;
 pub mod doctor;
 pub mod host_bootstrap;
 pub mod host_doctor;

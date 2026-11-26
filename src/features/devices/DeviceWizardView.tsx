@@ -1,10 +1,11 @@
 import clsx from "clsx";
 import { CircleCheck, CircleDashed, Copy, Lock } from "lucide-react";
 import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Select";
 import { Badge } from "../../components/ui/primitives";
 import { toast } from "../../components/ui/toast";
 import type { TierId } from "../../store/types";
-import type { CardAction, WizardCard, WizardModel } from "./deviceTiers";
+import type { CardAction, CompanionState, WizardCard, WizardModel } from "./deviceTiers";
 
 export const NETWORK_SECURITY_CONFIG = `<network-security-config>
     <debug-overrides>
@@ -102,6 +103,63 @@ function Card({
   );
 }
 
+function CompanionCard({
+  state,
+  apps,
+  selectedApp,
+  disabled,
+  onSelectApp,
+  onInstall,
+  onGet,
+}: {
+  state: CompanionState;
+  apps: string[];
+  selectedApp: string | null;
+  disabled: boolean;
+  onSelectApp: (packageName: string | null) => void;
+  onInstall: () => void;
+  onGet: () => void;
+}) {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-line bg-surface p-3">
+      <h3 className="text-[13px] font-semibold text-txt">Capture one app</h3>
+      {state === "ready" ? (
+        <div className="mt-2">
+          <Select
+            label="App"
+            value={selectedApp ?? ""}
+            disabled={disabled}
+            onChange={(e) => onSelectApp(e.target.value || null)}
+          >
+            <option value="">Whole phone</option>
+            {apps.map((app) => (
+              <option key={app} value={app}>
+                {app}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : (
+        <>
+          <p className="text-[12px] text-muted">
+            {state === "outdated"
+              ? "The companion on this phone is old. Install version 0.3.0 or newer."
+              : "Install the Beholder companion app to capture one app and leave the rest of the phone alone."}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" disabled={disabled} onClick={onGet}>
+              Get companion
+            </Button>
+            <Button size="sm" disabled={disabled} onClick={onInstall}>
+              Install APK
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function DeviceWizardView({
   model,
   openCard,
@@ -110,6 +168,11 @@ export function DeviceWizardView({
   onAction,
   onCapture,
   onDoctor,
+  apps,
+  selectedApp,
+  onSelectApp,
+  onInstallCompanion,
+  onGetCompanion,
 }: {
   model: WizardModel;
   openCard: TierId | null;
@@ -118,6 +181,11 @@ export function DeviceWizardView({
   onAction: (tier: TierId, action: CardAction) => void;
   onCapture: () => void;
   onDoctor: () => void;
+  apps: string[];
+  selectedApp: string | null;
+  onSelectApp: (packageName: string | null) => void;
+  onInstallCompanion: () => void;
+  onGetCompanion: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -143,9 +211,23 @@ export function DeviceWizardView({
         />
       ))}
 
+      {model.companion && (
+        <CompanionCard
+          state={model.companion}
+          apps={apps}
+          selectedApp={selectedApp}
+          disabled={busy || capturing}
+          onSelectApp={onSelectApp}
+          onInstall={onInstallCompanion}
+          onGet={onGetCompanion}
+        />
+      )}
+
       <footer className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-[300px] text-[11px] text-muted">
-          Capture goes through adb reverse. Your proxy setting is restored on stop.
+          {model.companion === "ready" && selectedApp
+            ? "Capture goes through adb reverse. Only the selected app uses the proxy."
+            : "Capture goes through adb reverse. Your proxy setting is restored on stop."}
         </p>
         <div className="flex gap-2">
           <Button size="sm" disabled={!model.canCapture} onClick={onDoctor}>

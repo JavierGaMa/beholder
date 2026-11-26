@@ -40,6 +40,7 @@ export function CommandBar() {
   const targetSerial = useTraffic((s) => s.targetSerial);
   const targetAvd = useTraffic((s) => s.targetAvd);
   const targetName = useTraffic((s) => s.targetName);
+  const targetPackage = useTraffic((s) => s.targetPackage);
   const setTarget = useTraffic((s) => s.setTarget);
   const setActiveView = useTraffic((s) => s.setActiveView);
   const setCapture = useTraffic((s) => s.setCapture);
@@ -169,6 +170,17 @@ export function CommandBar() {
             </button>
           )}
         />
+
+        {targetPackage && targetSerial && (
+          <button
+            type="button"
+            className="press focus-ring h-7 min-w-0 max-w-48 truncate rounded-[8px] px-2 font-mono text-[11px] text-muted hover:bg-surface-2 hover:text-txt"
+            onClick={() => useDeviceWizard.getState().open(targetSerial)}
+            title="Only this app is captured"
+          >
+            {targetPackage}
+          </button>
+        )}
 
         {captureOn ? (
           <CapturePill busy={busy} onStop={toggleCapture} />

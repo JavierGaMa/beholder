@@ -1,3 +1,4 @@
+use crate::companion;
 use crate::runner::{CommandRunner, DeviceError};
 use crate::{is_emulator_serial, AdbDevice};
 use serde::Serialize;
@@ -25,6 +26,7 @@ pub struct DeviceProbe {
     pub root: RootAccess,
     pub system_ca_installed: bool,
     pub companion_version: Option<String>,
+    pub user_ca_installed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -85,17 +87,19 @@ pub fn probe(
     let android_release = read_prop(&device, "ro.build.version.release")?;
     let sdk = read_prop(&device, "ro.build.version.sdk")?.parse().ok();
     let root = root_access(runner, serial)?;
-    let companion_version = device
-        .shell(&format!(
-            "dumpsys package {COMPANION_PACKAGE} | grep versionName"
-        ))?
-        .stdout
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("versionName="))
-        .map(str::to_string);
+    let companion_version = companion::installed_version(runner, serial)?;
     let system_ca_installed = device
         .is_cert_trusted(cert_filename, cert_pem)
         .unwrap_or(false);
+    let user_ca_installed = if !system_ca_installed
+        && companion_version
+            .as_deref()
+            .is_some_and(companion::supports_desktop)
+    {
+        companion::ca_installed(runner, serial, cert_pem).ok()
+    } else {
+        None
+    };
     Ok(DeviceProbe {
         serial: serial.to_string(),
         model,
@@ -105,6 +109,7 @@ pub fn probe(
         root,
         system_ca_installed,
         companion_version,
+        user_ca_installed,
     })
 }
 
@@ -124,6 +129,12 @@ pub fn tiers(probe: &DeviceProbe) -> Vec<TierStatus> {
             Tier::UserCa,
             TierState::Ready,
             "Covered by the system certificate. No changes to your app.",
+        )
+    } else if probe.user_ca_installed == Some(true) {
+        status(
+            Tier::UserCa,
+            TierState::Ready,
+            "Certificate installed on the phone. Add the config to your debug build.",
         )
     } else {
         status(

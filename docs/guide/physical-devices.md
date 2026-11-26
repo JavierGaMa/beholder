@@ -24,8 +24,12 @@ When `su` works from the adb shell, **Unlock** in the device setup mounts the Be
 
 When `adb root` is not available, the database viewer reads through `su` on Magisk phones, or through `run-as` for debuggable apps. The `-wal` and `-shm` files are copied together with the database. Some manufacturers disable `run-as`. Writing changes back to a phone still needs `adb root`.
 
+## Capture one app
+
+With the [Beholder companion app](https://github.com/JavierGaMa/BeholdersApk/releases) 0.3.0 or newer installed, pick an app under **Capture one app** in the device setup. The companion runs a local VPN scoped to that app and points it at the proxy on your Mac, so the rest of the phone is left alone and the global proxy is not touched. The phone may ask you to accept the VPN once. The app still has to trust the certificate and honor the system proxy.
+
 ## Limits
 
-- The global proxy affects the whole phone. Apps that do not trust the certificate fail their HTTPS requests while capturing; hosts in `tls_bypass_hosts` in `config.toml` are relayed untouched.
+- Without the companion, the global proxy affects the whole phone. Apps that do not trust the certificate fail their HTTPS requests while capturing; hosts in `tls_bypass_hosts` in `config.toml` are relayed untouched.
 - Clients that ignore the system proxy or pin certificates are not captured.
 - iPhones are not supported.

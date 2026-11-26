@@ -12,6 +12,14 @@ export function useDeviceProbeQuery(serial: string, online: boolean) {
   });
 }
 
+export function useDeviceAppsQuery(serial: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["device-apps", serial],
+    queryFn: () => invoke<{ package: string }[]>("console_apps", { serial }),
+    enabled,
+  });
+}
+
 export function useWatchedDevicesQuery() {
   return useQuery({
     queryKey: ["adb-devices"],

@@ -19,7 +19,9 @@ const report = (full: TierState, userCa: TierState, root: DeviceReport["probe"][
     root,
     system_ca_installed: full === "ready",
     companion_version: null,
+    user_ca_installed: null,
   },
+  companion_desktop: false,
   tiers: [
     { tier: "basic", state: "ready", detail: "basic detail" },
     { tier: "user_ca", state: userCa, detail: "user detail" },
@@ -68,6 +70,20 @@ describe("wizardModel", () => {
     expect(model.state.label).toBe("Disconnected");
     expect(model.title).toBe("R5CT91");
     expect(model.canCapture).toBe(false);
+  });
+
+  it("describes the companion from the probe", () => {
+    const base = report("locked", "action", "none");
+    expect(wizardModel("R5CT91", phone("Online"), base).companion).toBe("missing");
+    const old = { ...base, probe: { ...base.probe, companion_version: "0.2.0" } };
+    expect(wizardModel("R5CT91", phone("Online"), old).companion).toBe("outdated");
+    const ready = {
+      ...base,
+      probe: { ...base.probe, companion_version: "0.3.0" },
+      companion_desktop: true,
+    };
+    expect(wizardModel("R5CT91", phone("Online"), ready).companion).toBe("ready");
+    expect(wizardModel("R5CT91", phone("Offline"), ready).companion).toBeNull();
   });
 
   it("waits for the probe without locking capture", () => {

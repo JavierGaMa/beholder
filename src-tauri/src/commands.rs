@@ -497,6 +497,7 @@ pub async fn clear_stale_proxies(
 pub struct DeviceReport {
     pub probe: bh_device::DeviceProbe,
     pub tiers: Vec<bh_device::TierStatus>,
+    pub companion_desktop: bool,
 }
 
 #[tauri::command]
@@ -513,7 +514,15 @@ pub async fn probe_device(
         let probe = bh_device::probe(runner.as_ref(), &serial, &filename, &ca.cert_pem)
             .map_err(|e| e.to_string())?;
         let tiers = bh_device::tiers(&probe);
-        Ok(DeviceReport { probe, tiers })
+        let companion_desktop = probe
+            .companion_version
+            .as_deref()
+            .is_some_and(bh_device::companion::supports_desktop);
+        Ok(DeviceReport {
+            probe,
+            tiers,
+            companion_desktop,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1016,9 +1025,13 @@ pub async fn capture_start(
     serial: String,
     port: Option<u16>,
     body_cap: Option<usize>,
+    package: Option<String>,
 ) -> Result<u16, String> {
-    start_capture(&state, &app, &serial, port, body_cap).await
+    start_capture(&state, &app, &serial, port, body_cap, package).await
 }
+
+const COMPANION_ATTEMPTS: u32 = 30;
+const COMPANION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 async fn start_capture(
     state: &AppState,
@@ -1026,6 +1039,7 @@ async fn start_capture(
     serial: &str,
     port: Option<u16>,
     body_cap: Option<usize>,
+    package: Option<String>,
 ) -> Result<u16, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
@@ -1085,6 +1099,11 @@ async fn start_capture(
     if let Some(prev) = state.tunnel_task.lock().await.take() {
         prev.stop().await;
     }
+    if std::mem::take(&mut *state.companion.lock().await) {
+        if let Some(previous) = state.active_serial.lock().await.clone() {
+            let _ = bh_device::companion::stop(runner.as_ref(), &previous);
+        }
+    }
     let previous_serial = {
         let mut active = state.active_serial.lock().await;
         if active.as_deref() == Some(serial) {
@@ -1104,12 +1123,49 @@ async fn start_capture(
     let proxy_serial = serial.to_string();
     let metro_port = metro.port;
     let proxy_dir = dir.clone();
-    let avd = tokio::task::spawn_blocking(
-        move || -> Result<Option<String>, String> {
+    let (avd, through_companion) = tokio::task::spawn_blocking(
+        move || -> Result<(Option<String>, bool), String> {
             let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
+            let companion_package = match package {
+                Some(package) if !bh_device::is_emulator_serial(&proxy_serial) => {
+                    let version = bh_device::companion::installed_version(
+                        proxy_runner.as_ref(),
+                        &proxy_serial,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    bh_device::companion::use_companion(
+                        &proxy_serial,
+                        version.as_deref(),
+                        Some(&package),
+                    )
+                    .then_some(package)
+                }
+                _ => None,
+            };
             if !bh_device::is_emulator_serial(&proxy_serial) {
                 device.reverse(port).map_err(|e| e.to_string())?;
                 let _ = device.reverse(metro_port);
+            }
+            if let Some(package) = companion_package {
+                crate::proxy_restore::release_device(
+                    proxy_runner.as_ref(),
+                    Some(&proxy_dir),
+                    &proxy_serial,
+                    None,
+                );
+                if let Err(e) = bh_device::companion::start(
+                    proxy_runner.as_ref(),
+                    &proxy_serial,
+                    &package,
+                    port,
+                    COMPANION_ATTEMPTS,
+                    COMPANION_INTERVAL,
+                ) {
+                    let _ = bh_device::companion::stop(proxy_runner.as_ref(), &proxy_serial);
+                    let _ = device.remove_reverse(port);
+                    return Err(e.to_string());
+                }
+                return Ok((None, true));
             }
             let current = device.current_proxy().map_err(|e| e.to_string())?;
             let previous = crate::proxy_restore::previous_to_save(
@@ -1121,11 +1177,12 @@ async fn start_capture(
             device
                 .set_proxy(crate::metro::proxy_host(&proxy_serial), port)
                 .map_err(|e| e.to_string())?;
-            Ok(emu_avd_name(&proxy_runner, &proxy_serial))
+            Ok((emu_avd_name(&proxy_runner, &proxy_serial), false))
         },
     )
     .await
     .map_err(|e| e.to_string())??;
+    *state.companion.lock().await = through_companion;
 
     let metro_task = crate::metro::spawn_metro_task(app.clone());
     if !bh_device::is_emulator_serial(serial) {
@@ -1163,9 +1220,13 @@ async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), St
         port = Some(handle.port);
         handle.stop().await;
     }
+    let through_companion = std::mem::take(&mut *state.companion.lock().await);
     let serial = state.active_serial.lock().await.take();
     if let Some(serial) = serial {
         if let Ok(runner) = state.get_runner().await {
+            if through_companion {
+                let _ = bh_device::companion::stop(runner.as_ref(), &serial);
+            }
             let dir = app.path().app_local_data_dir().ok();
             crate::proxy_restore::release_device(runner.as_ref(), dir.as_deref(), &serial, port);
         }
@@ -1249,13 +1310,43 @@ pub async fn capture_health(state: State<'_, AppState>) -> Result<Vec<CaptureChe
     };
 
     let serial = state.active_serial.lock().await.clone();
-    let device_status = device_proxy_check(&state, serial.as_deref(), port).await;
+    let through_companion = *state.companion.lock().await;
+    let device_status = match serial.clone().filter(|_| through_companion) {
+        Some(serial) => companion_check(&state, serial, port).await,
+        None => device_proxy_check(&state, serial.as_deref(), port).await,
+    };
     let mut checks = vec![sink_status, proxy_status, device_status];
     if let Some(serial) = serial.filter(|s| !bh_device::is_emulator_serial(s)) {
         checks.push(device_tunnel_check(&state, serial, port).await);
     }
 
     Ok(checks)
+}
+
+async fn companion_check(state: &AppState, serial: String, port: u16) -> CaptureCheck {
+    let runner = match state.get_runner().await {
+        Ok(r) => r,
+        Err(e) => {
+            return check("companion", "Companion app", CheckStatus::Fail, e.to_string(), None)
+        }
+    };
+    let read = tokio::task::spawn_blocking(move || {
+        bh_device::companion::status(runner.as_ref(), &serial)
+    })
+    .await;
+    let (status, detail) = match read {
+        Ok(Ok(s)) if s.capture == "desktop" && s.port == port => {
+            (CheckStatus::Ok, format!("capturing {}", s.package))
+        }
+        Ok(Ok(s)) => (
+            CheckStatus::Fail,
+            format!("companion is not capturing for this session ({}) {}", s.capture, s.error),
+        ),
+        Ok(Err(e)) => (CheckStatus::Fail, e.to_string()),
+        Err(e) => (CheckStatus::Fail, e.to_string()),
+    };
+    let fix = (!matches!(status, CheckStatus::Ok)).then(|| "Restart capture".to_string());
+    check("companion", "Companion app", status, detail, fix)
 }
 
 async fn device_tunnel_check(state: &AppState, serial: String, port: u16) -> CaptureCheck {
@@ -1357,10 +1448,11 @@ pub async fn capture_restart(
     app: tauri::AppHandle,
     serial: String,
     body_cap: Option<usize>,
+    package: Option<String>,
 ) -> Result<u16, String> {
     stop_capture(&state, &app).await?;
     state.restart_sink(&app);
-    start_capture(&state, &app, &serial, None, body_cap).await
+    start_capture(&state, &app, &serial, None, body_cap, package).await
 }
 
 #[tauri::command]

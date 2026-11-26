@@ -9,6 +9,7 @@ const model = (patch: Partial<WizardModel>): WizardModel => ({
   state: { label: "Connected", tone: "ok" },
   banner: null,
   canCapture: true,
+  companion: null,
   cards: [
     { tier: "basic", title: "Basic", state: "ready", detail: "basic detail", action: null },
     { tier: "user_ca", title: "HTTPS for your debug builds", state: "action", detail: "user detail", action: "steps" },
@@ -27,6 +28,11 @@ const render = (m: WizardModel, patch: Record<string, unknown> = {}) =>
       onAction={() => {}}
       onCapture={() => {}}
       onDoctor={() => {}}
+      apps={["com.x.app"]}
+      selectedApp={null}
+      onSelectApp={() => {}}
+      onInstallCompanion={() => {}}
+      onGetCompanion={() => {}}
       {...patch}
     />,
   );
@@ -52,6 +58,18 @@ describe("DeviceWizardView", () => {
     );
     expect(html).toContain("Unlock the phone");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Start capture<\/button>/);
+  });
+
+  it("offers to install the companion when it is missing or old", () => {
+    expect(render(model({ companion: "missing" }))).toContain(">Install APK</button>");
+    expect(render(model({ companion: "outdated" }))).toContain("0.3.0 or newer");
+  });
+
+  it("lists apps and explains per-app capture when the companion is ready", () => {
+    const html = render(model({ companion: "ready" }), { selectedApp: "com.x.app" });
+    expect(html).toContain("Whole phone");
+    expect(html).toContain("com.x.app");
+    expect(html).toContain("Only the selected app uses the proxy");
   });
 
   it("shows the manual steps and the config snippet when expanded", () => {

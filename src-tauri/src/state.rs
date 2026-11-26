@@ -19,6 +19,7 @@ pub struct AppState {
     pub active_serial: AsyncMutex<Option<String>>,
     pub metro_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
     pub tunnel_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
+    pub companion: AsyncMutex<bool>,
     pub routes: bh_proxy::SharedRoutes,
     pub route_catalog: AsyncMutex<Option<crate::routes::RouteCatalog>>,
 }
@@ -32,6 +33,7 @@ impl AppState {
             active_serial: AsyncMutex::new(None),
             metro_task: AsyncMutex::new(None),
             tunnel_task: AsyncMutex::new(None),
+            companion: AsyncMutex::new(false),
             routes: bh_proxy::SharedRoutes::default(),
             route_catalog: AsyncMutex::new(None),
         }

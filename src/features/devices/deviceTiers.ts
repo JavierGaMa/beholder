@@ -2,6 +2,7 @@ import type { Device, DeviceReport, TierId, TierState } from "../../store/types"
 
 export type CardAction = "steps" | "why" | "unlock";
 export type StateTone = "ok" | "warn" | "danger";
+export type CompanionState = "ready" | "outdated" | "missing";
 
 export interface WizardCard {
   tier: TierId;
@@ -17,6 +18,7 @@ export interface WizardModel {
   state: { label: string; tone: StateTone };
   banner: string | null;
   canCapture: boolean;
+  companion: CompanionState | null;
   cards: WizardCard[];
 }
 
@@ -56,6 +58,11 @@ function actionFor(tier: TierId, state: TierState): CardAction | null {
   return null;
 }
 
+function companionState(report: DeviceReport): CompanionState {
+  if (report.companion_desktop) return "ready";
+  return report.probe.companion_version ? "outdated" : "missing";
+}
+
 export function wizardModel(
   serial: string,
   device: Device | null,
@@ -92,6 +99,7 @@ export function wizardModel(
     state,
     banner,
     canCapture: online,
+    companion: online && report ? companionState(report) : null,
     cards,
   };
 }

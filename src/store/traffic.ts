@@ -65,6 +65,8 @@ interface TrafficState {
   targetAvd: string | null;
   targetName: string | null;
   targetKind: TargetKind | null;
+  targetPackage: string | null;
+  setTargetPackage: (packageName: string | null) => void;
   onboarding: OnboardingTarget | null;
   pendingSelectId: number | null;
   requestSelect: (id: number) => void;
@@ -104,6 +106,8 @@ export const useTraffic = create<TrafficState>((set) => ({
   targetAvd: null,
   targetName: null,
   targetKind: null,
+  targetPackage: null,
+  setTargetPackage: (targetPackage) => set({ targetPackage }),
   onboarding: null,
   pendingSelectId: null,
   requestSelect: (id) => set({ pendingSelectId: id, activeView: "requests" }),
@@ -117,12 +121,13 @@ export const useTraffic = create<TrafficState>((set) => ({
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSetupOpen: (open) => set({ setupOpen: open }),
   setTarget: (serial, name, kind) =>
-    set({
+    set((s) => ({
+      targetPackage: s.targetSerial === serial ? s.targetPackage : null,
       targetSerial: serial,
       targetName: name,
       targetKind: kind,
       targetAvd: kind === "emulator" ? name : null,
-    }),
+    })),
   setOnboarding: (t) => set({ onboarding: t }),
   clear: () =>
     set({

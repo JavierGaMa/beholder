@@ -165,6 +165,7 @@ export interface DeviceProbe {
   root: RootAccess;
   system_ca_installed: boolean;
   companion_version: string | null;
+  user_ca_installed: boolean | null;
 }
 
 export interface TierStatus {
@@ -176,4 +177,5 @@ export interface TierStatus {
 export interface DeviceReport {
   probe: DeviceProbe;
   tiers: TierStatus[];
+  companion_desktop: boolean;
 }

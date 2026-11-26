@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
-import { invoke } from "../../lib/tauri";
+import { invoke, openExternal, pickApk } from "../../lib/tauri";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
 import { toast } from "../../components/ui/toast";
 import { qError } from "../../lib/query";
-import { useDeviceProbeQuery, useWatchedDevicesQuery } from "../../queries/deviceProbe";
+import {
+  useDeviceAppsQuery,
+  useDeviceProbeQuery,
+  useWatchedDevicesQuery,
+} from "../../queries/deviceProbe";
 import { useTraffic } from "../../store/traffic";
 import type { TierId } from "../../store/types";
 import { startCapture } from "../capture/startCapture";
@@ -14,12 +18,18 @@ import { DeviceWizardView } from "./DeviceWizardView";
 import { wizardModel, type CardAction } from "./deviceTiers";
 import { useDeviceWizard } from "./store";
 
+const COMPANION_RELEASES = "https://github.com/JavierGaMa/BeholdersApk/releases";
+
 function WizardBody({ serial }: { serial: string }) {
   const devicesQ = useWatchedDevicesQuery();
   const device = devicesQ.data?.find((d) => d.serial === serial) ?? null;
   const online = device?.state === "Online";
   const probeQ = useDeviceProbeQuery(serial, online);
   const captureOn = useTraffic((s) => s.captureOn);
+  const isTarget = useTraffic((s) => s.targetSerial === serial);
+  const targetPackage = useTraffic((s) => s.targetPackage);
+  const setTargetPackage = useTraffic((s) => s.setTargetPackage);
+  const appsQ = useDeviceAppsQuery(serial, online && probeQ.data?.companion_desktop === true);
   const [openCard, setOpenCard] = useState<TierId | null>(null);
   const [doctor, setDoctor] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,6 +80,18 @@ function WizardBody({ serial }: { serial: string }) {
         onAction={onAction}
         onCapture={() => void run(() => startCapture(serial))}
         onDoctor={() => setDoctor((v) => !v)}
+        apps={(appsQ.data ?? []).map((a) => a.package)}
+        selectedApp={isTarget ? targetPackage : null}
+        onSelectApp={setTargetPackage}
+        onGetCompanion={() => void run(() => openExternal(COMPANION_RELEASES))}
+        onInstallCompanion={() =>
+          void run(async () => {
+            const path = await pickApk();
+            if (!path) return;
+            await invoke("install_apk", { serial, path });
+            await probeQ.refetch();
+          })
+        }
       />
       {(error ?? probeError) && (
         <div className="flex items-start gap-2 px-4 pb-4">
