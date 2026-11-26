@@ -192,11 +192,20 @@ pub fn run() {
                 if let Some(metro_task) = state.metro_task.lock().await.take() {
                     metro_task.stop().await;
                 }
+                if let Some(tunnel_task) = state.tunnel_task.lock().await.take() {
+                    tunnel_task.stop().await;
+                }
+                let port = state.proxy.lock().await.as_ref().map(|h| h.port);
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
                         let device = bh_device::AdbDevice::new(&runner, &serial);
                         let _ = bh_device::ProxyConfigurator::clear_proxy(&device);
+                        if let Some(port) =
+                            port.filter(|_| !bh_device::is_emulator_serial(&serial))
+                        {
+                            let _ = device.remove_reverse(port);
+                        }
                     }
                 }
                 if let Some(console) = app_handle.try_state::<state::ConsoleState>() {

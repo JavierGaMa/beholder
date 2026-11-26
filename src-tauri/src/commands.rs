@@ -1009,13 +1009,22 @@ async fn start_capture(
         prev.stop().await;
     }
 
+    if let Some(prev) = state.tunnel_task.lock().await.take() {
+        prev.stop().await;
+    }
+
     let proxy_runner = runner.clone();
     let proxy_serial = serial.to_string();
+    let metro_port = metro.port;
     let avd = tokio::task::spawn_blocking(
         move || -> Result<Option<String>, String> {
             let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
+            if !bh_device::is_emulator_serial(&proxy_serial) {
+                device.reverse(port).map_err(|e| e.to_string())?;
+                let _ = device.reverse(metro_port);
+            }
             device
-                .set_proxy(crate::metro::PROXY_HOST, port)
+                .set_proxy(crate::metro::proxy_host(&proxy_serial), port)
                 .map_err(|e| e.to_string())?;
             Ok(emu_avd_name(&proxy_runner, &proxy_serial))
         },
@@ -1024,6 +1033,10 @@ async fn start_capture(
     .map_err(|e| e.to_string())??;
 
     let metro_task = crate::metro::spawn_metro_task(app.clone());
+    if !bh_device::is_emulator_serial(serial) {
+        let task = crate::metro::spawn_tunnel_task(runner.clone(), serial.to_string(), port);
+        state.tunnel_task.lock().await.replace(task);
+    }
 
     *state.active_serial.lock().await = Some(serial.to_string());
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
@@ -1047,7 +1060,12 @@ async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), St
     if let Some(metro_task) = state.metro_task.lock().await.take() {
         metro_task.stop().await;
     }
+    if let Some(tunnel_task) = state.tunnel_task.lock().await.take() {
+        tunnel_task.stop().await;
+    }
+    let mut port = None;
     if let Some(handle) = state.proxy.lock().await.take() {
+        port = Some(handle.port);
         handle.stop().await;
     }
     let serial = state.active_serial.lock().await.take();
@@ -1055,6 +1073,9 @@ async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), St
         if let Ok(runner) = state.get_runner().await {
             let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
             let _ = ProxyConfigurator::clear_proxy(&device);
+            if let Some(port) = port.filter(|_| !bh_device::is_emulator_serial(&serial)) {
+                let _ = device.remove_reverse(port);
+            }
         }
     }
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
@@ -1137,8 +1158,33 @@ pub async fn capture_health(state: State<'_, AppState>) -> Result<Vec<CaptureChe
 
     let serial = state.active_serial.lock().await.clone();
     let device_status = device_proxy_check(&state, serial.as_deref(), port).await;
+    let mut checks = vec![sink_status, proxy_status, device_status];
+    if let Some(serial) = serial.filter(|s| !bh_device::is_emulator_serial(s)) {
+        checks.push(device_tunnel_check(&state, serial, port).await);
+    }
 
-    Ok(vec![sink_status, proxy_status, device_status])
+    Ok(checks)
+}
+
+async fn device_tunnel_check(state: &AppState, serial: String, port: u16) -> CaptureCheck {
+    let runner = match state.get_runner().await {
+        Ok(r) => r,
+        Err(e) => {
+            return check("device-tunnel", "Device tunnel", CheckStatus::Fail, e.to_string(), None)
+        }
+    };
+    let read = tokio::task::spawn_blocking(move || {
+        bh_device::AdbDevice::new(runner.as_ref(), &serial).has_reverse(port)
+    })
+    .await;
+    let (status, detail) = match read {
+        Ok(Ok(true)) => (CheckStatus::Ok, format!("adb reverse tcp:{port} is active")),
+        Ok(Ok(false)) => (CheckStatus::Fail, format!("adb reverse tcp:{port} is missing")),
+        Ok(Err(e)) => (CheckStatus::Fail, e.to_string()),
+        Err(e) => (CheckStatus::Fail, e.to_string()),
+    };
+    let fix = (!matches!(status, CheckStatus::Ok)).then(|| "Restart capture".to_string());
+    check("device-tunnel", "Device tunnel", status, detail, fix)
 }
 
 async fn device_proxy_check(
@@ -1146,7 +1192,6 @@ async fn device_proxy_check(
     serial: Option<&str>,
     port: u16,
 ) -> CaptureCheck {
-    let expected = format!("{}:{}", crate::metro::PROXY_HOST, port);
     let Some(serial) = serial else {
         return check(
             "device-proxy",
@@ -1169,6 +1214,7 @@ async fn device_proxy_check(
         }
     };
     let serial = serial.to_string();
+    let expected = format!("{}:{}", crate::metro::proxy_host(&serial), port);
     let read = tokio::task::spawn_blocking(move || {
         let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
         ProxyConfigurator::current_proxy(&device)

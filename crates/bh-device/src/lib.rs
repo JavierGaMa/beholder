@@ -141,6 +141,42 @@ impl<'a> AdbDevice<'a> {
         )))
     }
 
+    fn adb_ok(&self, args: &[&str]) -> Result<Output, DeviceError> {
+        let mut full = vec!["-s", self.serial.as_str()];
+        full.extend_from_slice(args);
+        let out = self.runner.run(&full)?;
+        if !out.success {
+            return Err(DeviceError::Other(format!(
+                "adb {} failed: {}{}",
+                args.join(" "),
+                out.stdout.trim(),
+                out.stderr.trim()
+            )));
+        }
+        Ok(out)
+    }
+
+    pub fn reverse(&self, port: u16) -> Result<(), DeviceError> {
+        let spec = format!("tcp:{port}");
+        self.adb_ok(&["reverse", &spec, &spec])?;
+        Ok(())
+    }
+
+    pub fn remove_reverse(&self, port: u16) -> Result<(), DeviceError> {
+        let spec = format!("tcp:{port}");
+        self.adb_ok(&["reverse", "--remove", &spec])?;
+        Ok(())
+    }
+
+    pub fn has_reverse(&self, port: u16) -> Result<bool, DeviceError> {
+        let spec = format!("tcp:{port}");
+        let out = self.adb_ok(&["reverse", "--list"])?;
+        Ok(out.stdout.lines().any(|line| {
+            let mut tokens = line.split_whitespace().rev();
+            tokens.next() == Some(spec.as_str()) && tokens.next() == Some(spec.as_str())
+        }))
+    }
+
     fn shell_ok(&self, cmd: &str) -> Result<Output, DeviceError> {
         let out = self.shell(cmd)?;
         if !out.success {
