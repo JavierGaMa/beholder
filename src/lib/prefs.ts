@@ -23,6 +23,7 @@ export const DEFAULT_FILTERS: Filters = {
   inBodies: false,
   includeDomains: [],
   excludeDomains: [],
+  localOnly: false,
 };
 
 export function loadFilters(): Filters {

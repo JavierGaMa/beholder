@@ -77,6 +77,14 @@ export function RequestRow({
         {pinned && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
       </span>
       <span className="min-w-0 truncate">
+        {ex.request.routed && (
+          <span
+            title={ex.request.routed.target}
+            className="mr-1.5 rounded-[5px] bg-accent/14 px-1.5 py-px text-[10px] font-semibold leading-4 text-accent"
+          >
+            local
+          </span>
+        )}
         {!hideDomain && <span className="text-muted">{ex.request.host}</span>}
         <span>{ex.request.path}</span>
       </span>

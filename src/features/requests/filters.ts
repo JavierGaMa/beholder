@@ -9,6 +9,7 @@ export interface Filters {
   inBodies: boolean;
   includeDomains: string[];
   excludeDomains: string[];
+  localOnly: boolean;
 }
 
 export function isFailed(ex: HttpExchange): boolean {
@@ -56,12 +57,14 @@ export function activeFilterCount(f: Filters): number {
   if (f.inBodies) n++;
   if (f.includeDomains.length > 0) n++;
   if (f.excludeDomains.length > 0) n++;
+  if (f.localOnly) n++;
   return n;
 }
 
 export function matchFilters(ex: HttpExchange, f: Filters, slowMs = 500): boolean {
   if (f.method && ex.request.method !== f.method.toUpperCase()) return false;
   const status = ex.response?.status ?? null;
+  if (f.localOnly && !ex.request.routed) return false;
   if (f.failuresOnly && !isFailed(ex)) return false;
   if (f.slowOnly && !isSlow(ex, slowMs)) return false;
   if (f.status !== "all") {

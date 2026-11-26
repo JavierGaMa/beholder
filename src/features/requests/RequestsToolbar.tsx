@@ -201,6 +201,11 @@ export function RequestsToolbar({
                 onChange={(e) => onChange({ ...filters, slowOnly: e.target.checked })}
               />
               <Checkbox
+                label="Local only"
+                checked={filters.localOnly}
+                onChange={(e) => onChange({ ...filters, localOnly: e.target.checked })}
+              />
+              <Checkbox
                 label="content"
                 checked={filters.inBodies}
                 onChange={(e) => onChange({ ...filters, inBodies: e.target.checked })}
