@@ -105,6 +105,7 @@ mod tests {
                 headers: vec![],
                 body: None,
                 started_at: 0.0,
+                routed: None,
             },
         }
     }

@@ -47,6 +47,7 @@ mod tests {
                 headers,
                 body,
                 started_at: 0.0,
+                routed: None,
             },
             response: None,
             error: None,

@@ -103,6 +103,14 @@ pub struct HttpRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyCapture>,
     pub started_at: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routed: Option<RoutedTo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RoutedTo {
+    pub route_id: String,
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -178,6 +186,22 @@ pub enum TrafficEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_routed_request_serializes_without_routed_field() {
+        let json = r#"{"method":"GET","url":"https://a.dev/x","host":"a.dev","path":"/x","headers":[],"started_at":1.0}"#;
+        let request: HttpRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.routed, None);
+        assert_eq!(serde_json::to_string(&request).unwrap(), json);
+    }
+
+    #[test]
+    fn routed_request_serializes_route_id_and_target() {
+        let json = r#"{"method":"GET","url":"https://a.dev/x","host":"a.dev","path":"/x","headers":[],"started_at":1.0,"routed":{"route_id":"orders","target":"http://127.0.0.1:4000"}}"#;
+        let request: HttpRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.routed.as_ref().unwrap().route_id, "orders");
+        assert_eq!(serde_json::to_string(&request).unwrap(), json);
+    }
 
     #[test]
     fn body_capture_keeps_small_bodies() {

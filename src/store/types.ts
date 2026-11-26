@@ -21,6 +21,12 @@ export interface HttpRequest {
   headers: Header[];
   body?: BodyCapture | null;
   started_at: number;
+  routed?: RoutedTo | null;
+}
+
+export interface RoutedTo {
+  route_id: string;
+  target: string;
 }
 
 export interface HttpResponse {

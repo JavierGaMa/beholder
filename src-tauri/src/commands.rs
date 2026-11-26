@@ -906,6 +906,7 @@ async fn start_capture(
         state.current_sink(),
         metro,
         tls_bypass_hosts,
+        Default::default(),
     )
     .await
     .map_err(|e| e.to_string())?;

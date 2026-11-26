@@ -144,6 +144,7 @@ async fn capture_decodes_while_client_receives_encoded_bytes() {
             enabled: false,
         },
         Vec::new(),
+        Default::default(),
     )
     .await
     .unwrap();

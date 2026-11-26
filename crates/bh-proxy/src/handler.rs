@@ -1,12 +1,12 @@
 use crate::decode::decode_content_encoding;
-use crate::MetroBypass;
+use crate::{MetroBypass, SharedRoutes};
 use bh_core::types::*;
 use bh_core::TrafficSink;
 use futures::SinkExt;
 use http_body::Body as HttpBodyTrait;
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
-    hyper::{HeaderMap, Request, Response},
+    hyper::{header::HeaderValue, http::uri::Authority, HeaderMap, Request, Response},
     Body, Error, HttpContext, HttpHandler, RequestOrResponse,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,6 +18,7 @@ pub struct Shared {
     pub cap: usize,
     pub metro: MetroBypass,
     pub tls_hosts: Vec<String>,
+    pub routes: SharedRoutes,
     pub next_exchange: AtomicU64,
 }
 
@@ -42,6 +43,7 @@ impl RecordingHttpHandler {
         cap: usize,
         metro: MetroBypass,
         tls_hosts: Vec<String>,
+        routes: SharedRoutes,
     ) -> Self {
         RecordingHttpHandler {
             shared: Arc::new(Shared {
@@ -49,6 +51,7 @@ impl RecordingHttpHandler {
                 cap,
                 metro,
                 tls_hosts,
+                routes,
                 next_exchange: AtomicU64::new(1),
             }),
             current: None,
@@ -140,11 +143,68 @@ fn apply_emulator_rewrite(uri: &mut hudsucker::hyper::Uri, headers: &mut HeaderM
             .as_deref()
             .and_then(rewrite_host_header_value)
         {
-            if let Ok(v) = hudsucker::hyper::header::HeaderValue::from_str(&value) {
+            if let Ok(v) = HeaderValue::from_str(&value) {
                 headers.insert("host", v);
             }
         }
     }
+}
+
+fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
+    let has_token = |name: &str, token: &str| {
+        header_str(headers, name).is_some_and(|value| {
+            value
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case(token))
+        })
+    };
+    has_token("connection", "upgrade") && has_token("upgrade", "websocket")
+}
+
+struct Forward {
+    uri: hudsucker::hyper::Uri,
+    host: HeaderValue,
+    routed: RoutedTo,
+}
+
+fn resolve_forward(
+    routes: &SharedRoutes,
+    uri: &hudsucker::hyper::Uri,
+    headers: &HeaderMap,
+) -> Option<Forward> {
+    if is_websocket_upgrade(headers) {
+        return None;
+    }
+    let host = match uri.host() {
+        Some(host) => host.to_string(),
+        None => header_str(headers, "host")?
+            .parse::<Authority>()
+            .ok()?
+            .host()
+            .to_string(),
+    };
+    let path_and_query = uri.path_and_query().map_or("/", |pq| pq.as_str());
+    let resolved = {
+        let active = routes.read().unwrap_or_else(|e| e.into_inner());
+        bh_core::resolve(&active.routes, &active.enabled, &host, path_and_query)?
+    };
+    let target: hudsucker::hyper::Uri = resolved.target.parse().ok()?;
+    let authority = target.authority()?.clone();
+    let host = HeaderValue::from_str(authority.as_str()).ok()?;
+    let uri = hudsucker::hyper::Uri::builder()
+        .scheme("http")
+        .authority(authority)
+        .path_and_query(resolved.path_and_query)
+        .build()
+        .ok()?;
+    Some(Forward {
+        uri,
+        host,
+        routed: RoutedTo {
+            route_id: resolved.route_id,
+            target: resolved.target,
+        },
+    })
 }
 
 fn rewrite_host_header_value(value: &str) -> Option<String> {
@@ -214,6 +274,8 @@ impl HttpHandler for RecordingHttpHandler {
             Err(_) => (None, Body::empty()),
         };
 
+        let forward = resolve_forward(&self.shared.routes, &uri, &parts.headers);
+
         self.shared.sink.emit(TrafficEvent::ExchangeStarted {
             id,
             request: HttpRequest {
@@ -224,10 +286,17 @@ impl HttpHandler for RecordingHttpHandler {
                 headers: hdrs,
                 body: body_capture,
                 started_at: now_ms(),
+                routed: forward.as_ref().map(|f| f.routed.clone()),
             },
         });
 
-        apply_emulator_rewrite(&mut parts.uri, &mut parts.headers);
+        match forward {
+            Some(forward) => {
+                parts.uri = forward.uri;
+                parts.headers.insert("host", forward.host);
+            }
+            None => apply_emulator_rewrite(&mut parts.uri, &mut parts.headers),
+        }
 
         Request::from_parts(parts, rebuilt_body).into()
     }

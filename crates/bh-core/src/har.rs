@@ -184,6 +184,7 @@ mod tests {
                 headers: vec![],
                 body: None,
                 started_at: 1_700_000_000_000.0,
+                routed: None,
             },
             response: if with_response {
                 Some(HttpResponse {

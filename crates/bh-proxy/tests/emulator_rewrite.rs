@@ -28,6 +28,7 @@ async fn emulator_host_upstream_rewrites_to_loopback() {
             enabled: false,
         },
         Vec::new(),
+        Default::default(),
     )
     .await
     .unwrap();

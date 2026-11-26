@@ -15,6 +15,7 @@ fn main() {
                 enabled: false,
             },
             Vec::new(),
+            Default::default(),
         )
         .await
         .unwrap();

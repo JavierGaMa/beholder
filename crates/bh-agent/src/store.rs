@@ -551,6 +551,7 @@ mod tests {
             headers: vec![],
             body: None,
             started_at: 1_700_000_000_000.0,
+            routed: None,
         }
     }
 
@@ -670,6 +671,7 @@ mod tests {
                 headers: vec![],
                 body: None,
                 started_at: 0.0,
+                routed: None,
             },
             response: Some(bh_core::types::HttpResponse {
                 status,

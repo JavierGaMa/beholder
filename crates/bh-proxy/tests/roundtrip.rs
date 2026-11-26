@@ -13,6 +13,7 @@ async fn http_and_https_roundtrip() {
             enabled: false,
         },
         Vec::new(),
+        Default::default(),
     )
     .await
     .unwrap();
