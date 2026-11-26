@@ -157,7 +157,7 @@ export function DetailEmpty() {
   return <EmptyState title="No request selected" hint="Select a request to inspect it" />;
 }
 
-export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onClose: () => void; onCollapse: () => void }) {
+export function DetailPane({ ex, onClose }: { ex: HttpExchange; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("headers");
 
   const cookies = useMemo(() => {
@@ -188,7 +188,7 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-[18px] pb-3.5 pt-4">
+      <div className="shrink-0 px-[18px] pb-3.5 pt-1">
         <div className="flex min-w-0 items-center gap-2 text-[12px]">
           <StatusPill ex={ex} failLabel="Connection failed" className="py-0.5 font-mono" />
           <span className="shrink-0 font-mono text-muted">{ex.request.method}</span>
@@ -200,9 +200,6 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
             icon={ClipboardCopy}
             onCopy={() => ex.response?.body?.text ?? ex.request.body?.text ?? ""}
           />
-          <IconButton title="Collapse detail" onClick={onCollapse}>
-            <ChevronRight size={14} />
-          </IconButton>
           <IconButton title="Close" onClick={onClose}>
             <X size={14} />
           </IconButton>

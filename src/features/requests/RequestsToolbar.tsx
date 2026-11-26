@@ -109,8 +109,8 @@ export function RequestsToolbar({
     : [];
 
   return (
-    <div className="flex w-full min-w-0 items-center gap-2">
-      <div className="min-w-28 max-w-[340px] flex-1">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+      <div className="min-w-28 max-w-[340px] flex-1 basis-40">
         <Input
           ref={searchRef}
           mono
@@ -158,7 +158,7 @@ export function RequestsToolbar({
       <IconButton title="Clear all captured traffic" onClick={clear} className="shrink-0">
         <Trash2 size={14} />
       </IconButton>
-      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       {open && (
         <div
           ref={menuRef}

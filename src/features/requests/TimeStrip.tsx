@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import clsx from "clsx";
 import type { HttpExchange } from "../../store/types";
 import { isFailed } from "./filters";
@@ -8,21 +9,29 @@ export function TimeStrip({
   range,
   selectedId,
   onSelect,
+  trailing,
 }: {
   rows: HttpExchange[];
   range: TimeWindow;
   selectedId: number | null;
   onSelect: (id: number) => void;
+  trailing?: ReactNode;
 }) {
   const errors = rows.reduce((n, ex) => n + (isFailed(ex) ? 1 : 0), 0);
   const selected = selectedId != null ? rows.find((ex) => ex.id === selectedId) : undefined;
   return (
     <div className="shrink-0 border-b border-line px-4 pb-1.5 pt-3">
-      <div className="flex items-baseline gap-3.5 text-[12px]">
+      <div className="flex min-w-0 items-center gap-3.5 text-[12px]">
         <span className="text-[13px] font-semibold text-txt">Last {range.seconds} seconds</span>
-        <span className="text-muted">
+        <span className="min-w-0 truncate text-muted">
           {rows.length} requests, {errors} with errors
         </span>
+        {trailing != null && (
+          <>
+            <span className="flex-1" />
+            {trailing}
+          </>
+        )}
       </div>
       <div
         className="relative mt-2 h-[52px] bg-[repeating-linear-gradient(to_top,transparent_0_16px,color-mix(in_srgb,var(--line)_70%,transparent)_16px_17px)]"

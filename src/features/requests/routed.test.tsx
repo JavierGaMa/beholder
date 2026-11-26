@@ -47,7 +47,7 @@ function row(ex: HttpExchange, hideDomain = false) {
 }
 
 function detail(ex: HttpExchange) {
-  return renderToStaticMarkup(<DetailPane ex={ex} onClose={() => {}} onCollapse={() => {}} />);
+  return renderToStaticMarkup(<DetailPane ex={ex} onClose={() => {}} />);
 }
 
 describe("routed request marks", () => {

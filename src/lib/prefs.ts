@@ -6,6 +6,12 @@ import {
 } from "../features/database/layout";
 import type { DbLayout } from "../features/database/layout";
 import {
+  DEFAULT_REQUEST_DETAIL_LAYOUT,
+  parseRequestDetailLayout,
+  serializeRequestDetailLayout,
+  type RequestDetailLayout,
+} from "../features/requests/layout";
+import {
   createInitialTabs,
   parseTabs,
   serializeTabs,
@@ -95,6 +101,23 @@ export function loadDbLayout(): DbLayout {
 
 export function saveDbLayout(l: DbLayout) {
   localStorage.setItem("beholder.dbLayout", serializeDbLayout(l));
+}
+
+export function loadRequestDetailLayout(): RequestDetailLayout {
+  try {
+    const raw = localStorage.getItem("beholder.requestDetailLayout");
+    if (!raw) return { ...DEFAULT_REQUEST_DETAIL_LAYOUT };
+    const parsed = parseRequestDetailLayout(raw);
+    return parsed == null
+      ? { ...DEFAULT_REQUEST_DETAIL_LAYOUT }
+      : { ...DEFAULT_REQUEST_DETAIL_LAYOUT, ...parsed };
+  } catch {
+    return { ...DEFAULT_REQUEST_DETAIL_LAYOUT };
+  }
+}
+
+export function saveRequestDetailLayout(l: RequestDetailLayout) {
+  localStorage.setItem("beholder.requestDetailLayout", serializeRequestDetailLayout(l));
 }
 
 export function loadSqlTabs(): SqlTabs {
