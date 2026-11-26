@@ -53,7 +53,7 @@ Requests reach your service with every header and the body unchanged, including 
 files = ["/abs/path/routes.json"]
 ```
 
-The default is an empty list. `config.toml` already contains the section, so edit its `files` value instead of adding a second `[routes]` header.
+The default is an empty list. A newly created `config.toml` already contains the section; a file created by an earlier version may not. Edit the `files` value if the section exists, and add the section only if it is missing.
 
 Files are read when the file list changes, when a capture starts, and when you press **Reload** in the Routes view. A file that cannot be read or parsed is listed with its error, contributes no routes, and does not block the capture.
 
@@ -68,6 +68,8 @@ Files are read when the file list changes, when a capture starts, and when you p
 ## The Routes view
 
 Every route starts disabled. Toggles are remembered between sessions and apply to the next request without restarting the capture. **Enable all** and **Disable all** change every route at once; the command palette also offers **Disable all routes**.
+
+Only one route per host and path prefix can be enabled, for example when two files describe two environments. Enabling a route disables the one with the same match, and **Enable all** keeps the route already enabled, or the first listed one.
 
 Each route shows one status:
 
@@ -89,5 +91,5 @@ The request list keeps the original URL, host, and path, and marks routed reques
 - WebSocket connections are not routed
 - Hosts listed in `proxy.tls_bypass_hosts` are not intercepted, so they are never routed
 - Metro traffic relayed by the Metro pass-through is never routed
-- If an enabled target is down, the app receives `502 Bad Gateway` and the request stays without a response in the list
+- If an enabled target is down, the app receives `502 Bad Gateway` and the request is listed as failed with the connection error
 - Routes cannot mock responses or rewrite headers or bodies
