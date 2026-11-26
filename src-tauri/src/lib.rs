@@ -5,6 +5,7 @@ mod config;
 mod console;
 mod discovery;
 mod metro;
+mod proxy_restore;
 mod routes;
 mod state;
 mod window_blur;
@@ -199,13 +200,8 @@ pub fn run() {
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
-                        let device = bh_device::AdbDevice::new(&runner, &serial);
-                        let _ = bh_device::ProxyConfigurator::clear_proxy(&device);
-                        if let Some(port) =
-                            port.filter(|_| !bh_device::is_emulator_serial(&serial))
-                        {
-                            let _ = device.remove_reverse(port);
-                        }
+                        let dir = app_handle.path().app_local_data_dir().ok();
+                        proxy_restore::release_device(&runner, dir.as_deref(), &serial, port);
                     }
                 }
                 if let Some(console) = app_handle.try_state::<state::ConsoleState>() {

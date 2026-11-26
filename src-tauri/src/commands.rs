@@ -470,23 +470,23 @@ pub async fn create_avd(name: String, pkg: String, profile: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn clear_stale_proxies(state: State<'_, AppState>) -> Result<u32, String> {
+pub async fn clear_stale_proxies(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<u32, String> {
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let scanner = bh_device::AdbScanner::new(runner.as_ref());
     let devices = scanner.list().map_err(|e| e.to_string())?;
     let active = state.proxy.lock().await.as_ref().map(|h| h.port);
     let mut cleared = 0;
-    for d in devices
-        .iter()
-        .filter(|d| d.is_emulator && d.state == DeviceState::Online)
-    {
+    for d in devices.iter().filter(|d| d.state == DeviceState::Online) {
         let device = bh_device::AdbDevice::new(runner.as_ref(), &d.serial);
         if let Ok(Some(proxy)) = ProxyConfigurator::current_proxy(&device) {
-            if let Some(port) = proxy.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
-                if Some(port) != active && !port_alive(port) {
-                    let _ = ProxyConfigurator::clear_proxy(&device);
-                    cleared += 1;
-                }
+            let saved = crate::proxy_restore::lookup(&dir, &d.serial).is_some();
+            if crate::proxy_restore::is_stale(&d.serial, &proxy, active, &port_alive, saved) {
+                crate::proxy_restore::release_device(runner.as_ref(), Some(&dir), &d.serial, None);
+                cleared += 1;
             }
         }
     }
@@ -1002,8 +1002,14 @@ async fn start_capture(
     .await
     .map_err(|e| e.to_string())?;
 
+    let mut previous_port = None;
     if let Some(existing) = state.proxy.lock().await.take() {
+        previous_port = Some(existing.port);
         existing.stop().await;
+    }
+    let previous_serial = state.active_serial.lock().await.clone();
+    if let Some(previous) = previous_serial.filter(|s| s != serial) {
+        crate::proxy_restore::release_device(runner.as_ref(), Some(&dir), &previous, previous_port);
     }
     if let Some(prev) = state.metro_task.lock().await.take() {
         prev.stop().await;
@@ -1016,6 +1022,7 @@ async fn start_capture(
     let proxy_runner = runner.clone();
     let proxy_serial = serial.to_string();
     let metro_port = metro.port;
+    let proxy_dir = dir.clone();
     let avd = tokio::task::spawn_blocking(
         move || -> Result<Option<String>, String> {
             let device = bh_device::AdbDevice::new(proxy_runner.as_ref(), &proxy_serial);
@@ -1023,6 +1030,13 @@ async fn start_capture(
                 device.reverse(port).map_err(|e| e.to_string())?;
                 let _ = device.reverse(metro_port);
             }
+            let current = device.current_proxy().map_err(|e| e.to_string())?;
+            let previous = crate::proxy_restore::previous_to_save(
+                current.as_deref(),
+                crate::proxy_restore::lookup(&proxy_dir, &proxy_serial),
+            );
+            crate::proxy_restore::remember(&proxy_dir, &proxy_serial, previous)
+                .map_err(|e| format!("cannot save the current device proxy: {e}"))?;
             device
                 .set_proxy(crate::metro::proxy_host(&proxy_serial), port)
                 .map_err(|e| e.to_string())?;
@@ -1071,11 +1085,8 @@ async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), St
     let serial = state.active_serial.lock().await.take();
     if let Some(serial) = serial {
         if let Ok(runner) = state.get_runner().await {
-            let device = bh_device::AdbDevice::new(runner.as_ref(), &serial);
-            let _ = ProxyConfigurator::clear_proxy(&device);
-            if let Some(port) = port.filter(|_| !bh_device::is_emulator_serial(&serial)) {
-                let _ = device.remove_reverse(port);
-            }
+            let dir = app.path().app_local_data_dir().ok();
+            crate::proxy_restore::release_device(runner.as_ref(), dir.as_deref(), &serial, port);
         }
     }
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
@@ -1735,7 +1746,7 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
                 let scanner = bh_device::AdbScanner::new(runner.as_ref());
                 scanner.list().map_err(|e| e.to_string())?
             };
-            for d in serials.into_iter().filter(|d| d.is_emulator) {
+            for d in serials.into_iter().filter(|d| d.state == DeviceState::Online) {
                 let device = bh_device::AdbDevice::new(runner.as_ref(), &d.serial);
                 let _ = CertificateInstaller::uninstall_cert(&device, &name);
             }

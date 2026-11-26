@@ -38,6 +38,7 @@ pub trait ProxyConfigurator {
     fn set_proxy(&self, host: &str, port: u16) -> Result<(), DeviceError>;
     fn clear_proxy(&self) -> Result<(), DeviceError>;
     fn current_proxy(&self) -> Result<Option<String>, DeviceError>;
+    fn restore_proxy(&self, previous: Option<&str>) -> Result<(), DeviceError>;
 }
 
 pub struct AdbScanner<'a> {
@@ -363,6 +364,22 @@ impl<'a> ProxyConfigurator for AdbDevice<'a> {
             return Ok(None);
         }
         Ok(Some(v.to_string()))
+    }
+
+    fn restore_proxy(&self, previous: Option<&str>) -> Result<(), DeviceError> {
+        let safe = |value: &str| {
+            !value.is_empty()
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c))
+        };
+        match previous.filter(|value| safe(value)) {
+            Some(value) => {
+                self.shell_ok(&format!("settings put global http_proxy {value}"))?;
+                Ok(())
+            }
+            None => self.clear_proxy(),
+        }
     }
 }
 
