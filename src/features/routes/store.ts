@@ -11,6 +11,7 @@ interface RoutesState {
   enableAll: (files: RouteFileStatus[]) => void;
   reconcile: (files: RouteFileStatus[]) => void;
   disableAll: () => void;
+  forget: (paths: string[]) => void;
   sync: () => void;
 }
 
@@ -62,6 +63,9 @@ export const useRoutes = create<RoutesState>((set, get) => {
     disableAll: () => {
       persist([]);
       push("set_all_routes_enabled", { enabled: false });
+    },
+    forget: (paths) => {
+      apply(get().enabled.filter((key) => !paths.some((path) => key.startsWith(`${path}::`))));
     },
     sync: () => {
       for (const key of get().enabled) push("set_route_enabled", { key, enabled: true });

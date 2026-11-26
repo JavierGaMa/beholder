@@ -41,7 +41,7 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
 files = []                  # absolute paths of route files
 ```
 
-See [Local routes](/guide/routes) for the route file format.
+The **Routes** view can edit this list for you with **Connect services**, **Choose file…** and **Remove**. See [Local routes](/guide/routes) for the connect flow and the route file format.
 
 ## Themes
 

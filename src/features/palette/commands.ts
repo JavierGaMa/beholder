@@ -9,6 +9,7 @@ import {
   MonitorSmartphone,
   Package,
   Pin,
+  Plug,
   Route,
   RouteOff,
   Search,
@@ -20,6 +21,7 @@ import {
 import { useTraffic, type View } from "../../store/traffic";
 import { useShortcuts } from "../shortcuts/store";
 import { useRoutes } from "../routes/store";
+import { useConnect } from "../routes/connectStore";
 import { toast } from "../../components/ui/toast";
 import { fuzzyScore } from "./fuzzy";
 
@@ -116,6 +118,17 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
       section: "Actions",
       icon: Trash2,
       run: () => useTraffic.getState().clear(),
+    },
+    {
+      id: "connect-services",
+      label: "Connect services",
+      section: "Actions",
+      icon: Plug,
+      run: () => {
+        useTraffic.getState().setSettingsOpen(false);
+        useTraffic.getState().setActiveView("routes");
+        useConnect.getState().open();
+      },
     },
     {
       id: "disable-all-routes",

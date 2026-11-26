@@ -12,6 +12,7 @@ vi.stubGlobal("localStorage", {
 
 const { RoutesView } = await import("./RoutesView");
 const { useRoutes } = await import("./store");
+const { useConnect } = await import("./connectStore");
 const { useTraffic } = await import("../../store/traffic");
 const { routesQueryKey, routesHealthQueryKey } = await import("../../queries/routes");
 
@@ -82,16 +83,58 @@ beforeEach(() => {
   useTraffic.getState().clear();
   patch(useTraffic, { routedHits: new Map() });
   patch(useRoutes, { enabled: [] });
+  patch(useConnect, { banner: null });
 });
 
 describe("RoutesView", () => {
-  it("explains the config section when no route file is configured", () => {
+  it("invites to connect services when no route file is configured", () => {
     const html = render([]);
-    expect(html).toContain("Route requests to local services");
-    expect(html).toContain("[routes]");
-    expect(html).toContain("Copy config snippet");
-    expect(html).toContain("Open config.toml");
+    expect(html).toContain("Send app traffic to your local services");
+    expect(html).toContain(
+      "Pick the endpoints you&#x27;re working on and Beholder sends them to your machine. Everything else keeps going to the real server.",
+    );
+    expect(html).toContain("Beholder looks for a local stack on localhost. Nothing leaves your machine.");
+    expect(html).toContain(">Connect services<");
+    expect(html).toContain(">Choose file…<");
+    expect(html).not.toContain("[routes]");
     expect(html).not.toContain("Enable all");
+    expect(html).not.toContain("No rerouted requests yet");
+  });
+
+  it("offers to connect, choose and remove files from the list", () => {
+    const html = render(files);
+    expect(html).toContain(">Connect services<");
+    expect(html).toContain(">Choose file…<");
+    expect(html.match(/>Remove</g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Remove local stack"');
+  });
+
+  it("shows whether disabled routes are ready to be enabled", () => {
+    const html = render(files, {
+      "/stack/routes.json::orders": "up",
+      "/stack/routes.json::catalog": "down",
+    });
+    expect(html).toContain(">Ready<");
+    expect(html).toContain(">Not running<");
+    expect(html).not.toContain(">Off<");
+  });
+
+  it("hints how to see traffic until a request is rerouted", () => {
+    const html = render(files);
+    expect(html).toContain("No rerouted requests yet");
+    expect(html).toContain("Turn on a route above, start a capture and use your app.");
+    useTraffic.getState().ingest([routed]);
+    patch(useTraffic, { routedHits: useTraffic.getState().routedHits });
+    expect(render(files)).not.toContain("No rerouted requests yet");
+  });
+
+  it("shows the connected banner until dismissed", () => {
+    const banner = "Connected to local stack Dev. Turn on the services you want to use locally.";
+    expect(render(files)).not.toContain(banner);
+    patch(useConnect, { banner });
+    const html = render(files);
+    expect(html).toContain(banner);
+    expect(html).toContain(">Got it<");
   });
 
   it("groups routes by file and shows parse errors", () => {
@@ -108,7 +151,7 @@ describe("RoutesView", () => {
     expect(html).toContain("Disable all");
     expect(html.match(/>Reload</g)).toHaveLength(2);
     expect(html.match(/role="switch" aria-checked="false"/g)).toHaveLength(2);
-    expect(html.match(/>Off</g)).toHaveLength(2);
+    expect(html.match(/>Checking</g)).toHaveLength(2);
   });
 
   it("summarizes enabled, rerouted and unreachable routes with hit counts", () => {

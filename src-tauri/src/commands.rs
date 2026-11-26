@@ -1,4 +1,5 @@
 use crate::console::ShellBatchSink;
+use crate::discovery::{RouteConfigError, RouteFilesUpdate};
 use crate::state::{AppState, ConsoleState, ShellSlot};
 use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession, PtyShell, adb_shell_command};
 use bh_core::{har_to_string, to_curl, HttpExchange};
@@ -39,11 +40,9 @@ pub async fn test_apks_list_url(
 pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<(), String> {
     let normalized = crate::apks::normalize_list_url(&list_url)?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.apks.list_url != normalized {
-        let mut next = cfg.clone();
-        next.apks.list_url = normalized;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.apks.list_url = normalized)
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -52,11 +51,9 @@ pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<
 #[tauri::command]
 pub async fn clear_apks_source(app: tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if !cfg.apks.list_url.is_empty() {
-        let mut next = cfg.clone();
-        next.apks.list_url = String::new();
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.apks.list_url.clear())
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -569,11 +566,9 @@ pub async fn set_config(
 pub async fn set_accent_color(app: tauri::AppHandle, color: Option<String>) -> Result<(), String> {
     let normalized = crate::config::normalize_accent_color(color.as_deref())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.colors.accent != normalized {
-        let mut next = cfg.clone();
-        next.colors.accent = normalized;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.colors.accent = normalized)
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -635,6 +630,46 @@ pub async fn routes_health(
     state: State<'_, AppState>,
 ) -> Result<std::collections::BTreeMap<String, crate::routes::Health>, String> {
     Ok(crate::routes::health(&state.routes).await)
+}
+
+#[tauri::command]
+pub async fn discover_routes(
+    address: String,
+) -> Result<crate::discovery::DiscoveryResult, crate::discovery::DiscoverFailure> {
+    crate::discovery::discover(&address).await
+}
+
+fn config_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, RouteConfigError> {
+    app.path()
+        .app_local_data_dir()
+        .map_err(|e| RouteConfigError::Config {
+            message: e.to_string(),
+        })
+}
+
+#[tauri::command]
+pub async fn connect_route_file(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+    replaces: Vec<String>,
+) -> Result<RouteFilesUpdate, RouteConfigError> {
+    let dir = config_dir(&app)?;
+    let (update, config) = state.connect_route_file(&dir, &path, &replaces).await?;
+    let _ = app.emit("config-changed", &config);
+    Ok(update)
+}
+
+#[tauri::command]
+pub async fn remove_route_file(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<RouteFilesUpdate, RouteConfigError> {
+    let dir = config_dir(&app)?;
+    let (update, config) = state.remove_route_file(&dir, &path).await?;
+    let _ = app.emit("config-changed", &config);
+    Ok(update)
 }
 
 fn snapshot_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -1296,12 +1331,10 @@ pub async fn agent_set_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.agent.enabled != enabled {
-        let mut next = cfg.clone();
-        next.agent.enabled = enabled;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
-        let _ = app.emit("config-changed", &next);
+    let (cfg, changed) = crate::config::update(&dir, |c| c.agent.enabled = enabled)
+        .map_err(|e| e.to_string())?;
+    if changed {
+        let _ = app.emit("config-changed", &cfg);
     }
     let mut server = agent.server.lock().await;
     if enabled {

@@ -8,9 +8,9 @@ const STATUSES = [200, 200, 200, 201, 204, 304, 400, 404, 500];
 
 const MOCK_ROUTES_PATH = "/mock/routes.json";
 
-function mockRoute(id: string, port: number) {
+function mockRoute(id: string, port: number, path = MOCK_ROUTES_PATH) {
   return {
-    key: `${MOCK_ROUTES_PATH}::${id}`,
+    key: `${path}::${id}`,
     id,
     path_prefix: `/v1/${id}`,
     host: null,
@@ -19,7 +19,7 @@ function mockRoute(id: string, port: number) {
   };
 }
 
-export const MOCK_ROUTE_FILES: RouteFileStatus[] = [
+const MOCK_ROUTE_FILES: RouteFileStatus[] = [
   {
     path: MOCK_ROUTES_PATH,
     name: "local stack",
@@ -34,9 +34,105 @@ export const MOCK_ROUTE_FILES: RouteFileStatus[] = [
   },
 ];
 
-export const MOCK_ROUTE_HEALTH: Record<string, RouteHealth> = Object.fromEntries(
-  MOCK_ROUTE_FILES[0].routes.map((r) => [r.key, r.id === "items" ? "down" : "up"]),
-);
+const MOCK_DISCOVERED = [
+  { id: "dev", label: "Dev", path: "/mock/routes-dev.json", hint: "make dev" },
+  { id: "staging", label: "Staging", path: "/mock/routes-staging.json", hint: "make staging" },
+  { id: "preview", label: "Preview", path: "/mock/routes-broken.json", hint: null },
+];
+
+const MOCK_BROKEN = "invalid route file: missing field `routes` at line 1 column 14";
+
+function mockFile(path: string): RouteFileStatus {
+  const known = MOCK_ROUTE_FILES.find((file) => file.path === path);
+  if (known) return known;
+  const base = path.includes("staging") ? 5000 : 4000;
+  return {
+    path,
+    name: path.split("/").pop()?.replace(/\.json$/, "") ?? path,
+    error: null,
+    routes: ["orders", "items", "session"].map((id, i) => mockRoute(id, base + (i + 1) * 10, path)),
+  };
+}
+
+function mockHealth(target: string): RouteHealth {
+  return /:(4020|50\d\d)$/.test(target) ? "down" : "up";
+}
+
+export const ROUTE_MOCK_COMMANDS = [
+  "list_routes",
+  "reload_routes",
+  "routes_health",
+  "discover_routes",
+  "connect_route_file",
+  "remove_route_file",
+];
+
+export function createRoutesMock(search: string, delayMs = 700) {
+  const params = new URLSearchParams(search);
+  let files = params.get("routes") === "empty" ? [] : MOCK_ROUTE_FILES;
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const paths = () => files.map((file) => file.path);
+  const fail = (kind: string, message: string) => Promise.reject({ kind, message });
+
+  async function discover(address: string) {
+    const local = /^http:\/\/(localhost|127\.0\.0\.1):(\d+)\/?$/.exec(address);
+    if (!local) return fail("invalidAddress", `\`${address}\` is not a local address`);
+    const port = local[2];
+    await wait(port === "8092" ? delayMs * 90 : delayMs);
+    if (port === "8091") {
+      return fail("invalidResponse", "unsupported discovery version 2 (supported: 1)");
+    }
+    if (port !== "8090" && port !== "8092") return fail("unreachable", "connection refused");
+    return {
+      name: "local stack",
+      address: address.replace(/\/$/, ""),
+      files: MOCK_DISCOVERED.map((file) => {
+        const error = file.path.includes("broken") ? MOCK_BROKEN : null;
+        const routes = error ? [] : mockFile(file.path).routes;
+        const up = routes.filter((r) => mockHealth(r.target) === "up").length;
+        return { ...file, routes: routes.length, up, error };
+      }),
+    };
+  }
+
+  async function connect(path: string, replaces: string[]) {
+    await wait(delayMs);
+    if (path.includes("broken")) return fail("invalidFile", MOCK_BROKEN);
+    if (params.get("config") === "broken") {
+      return fail("config", "parse error: TOML parse error at line 3, column 8");
+    }
+    const before = paths();
+    const next = before.filter((file) => file === path || !replaces.includes(file));
+    if (!next.includes(path)) next.push(path);
+    files = next.map(mockFile);
+    const reset = [...before.filter((f) => !next.includes(f)), ...next.filter((f) => !before.includes(f))];
+    return { files: next, name: mockFile(path).name, reset };
+  }
+
+  return {
+    pickFile: () => (params.get("file") === "broken" ? "/mock/broken.json" : "/mock/chosen.json"),
+    async invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
+      switch (cmd) {
+        case "discover_routes":
+          return discover(String(args.address));
+        case "connect_route_file":
+          return connect(String(args.path), args.replaces as string[]);
+        case "remove_route_file": {
+          const path = String(args.path);
+          const reset = paths().filter((file) => file === path);
+          files = files.filter((file) => file.path !== path);
+          return { files: paths(), name: "", reset };
+        }
+        case "routes_health":
+          return Object.fromEntries(
+            files.flatMap((f) => f.routes.map((r) => [r.key, mockHealth(r.target)])),
+          );
+        default:
+          return files;
+      }
+    },
+  };
+}
 
 function mockRouted(path: string): RoutedTo | null {
   const enabled = loadEnabledRoutes();

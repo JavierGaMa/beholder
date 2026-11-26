@@ -68,7 +68,7 @@ pub async fn refresh(
     });
 }
 
-async fn load_file(path: &str) -> LoadedFile {
+pub async fn load_file(path: &str) -> LoadedFile {
     let parsed = match tokio::fs::read_to_string(path).await {
         Ok(text) => bh_core::parse_route_file(&text).map_err(|e| e.to_string()),
         Err(e) => Err(format!("cannot read route file: {e}")),
@@ -141,11 +141,32 @@ pub fn set_all_enabled(table: &SharedRoutes, enabled: bool) {
     };
 }
 
+pub async fn apply(
+    table: &SharedRoutes,
+    catalog: &mut Option<RouteCatalog>,
+    paths: &[String],
+    reset: &[String],
+) {
+    let prefixes: Vec<String> = reset.iter().map(|path| format!("{path}::")).collect();
+    table
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .enabled
+        .retain(|key| !prefixes.iter().any(|prefix| key.starts_with(prefix)));
+    refresh(table, catalog, paths, true).await;
+}
+
 pub async fn health(table: &SharedRoutes) -> BTreeMap<String, Health> {
-    let targets: Vec<(String, String)> = table
+    let routes = table
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .routes
+        .clone();
+    probe_all(&routes).await
+}
+
+pub async fn probe_all(routes: &[Route]) -> BTreeMap<String, Health> {
+    let targets: Vec<(String, String)> = routes
         .iter()
         .map(|r| (r.key.clone(), r.target.clone()))
         .collect();
@@ -364,6 +385,30 @@ mod tests {
         assert_eq!(report.get(&format!("{a}::catalog")), Some(&Health::Down));
         assert_eq!(serde_json::to_string(&Health::Up).unwrap(), r#""up""#);
         assert_eq!(serde_json::to_string(&Health::Down).unwrap(), r#""down""#);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn applying_a_new_file_list_disables_the_routes_of_reset_files() {
+        let dir = scratch("apply");
+        let a = write(&dir, "a.json", &file("a", &[("orders", 4000)]));
+        let b = write(&dir, "b.json", &file("b", &[("orders", 4001)]));
+        let c = write(&dir, "c.json", &file("c", &[("orders", 4002)]));
+        let table = SharedRoutes::default();
+        let mut catalog = None;
+        refresh(&table, &mut catalog, &[a.clone(), b.clone()], true).await;
+        set_enabled(&table, format!("{a}::orders"), true);
+        set_enabled(&table, format!("{b}::orders"), true);
+        set_enabled(&table, format!("{c}::orders"), true);
+
+        let paths = [a.clone(), c.clone()];
+        apply(&table, &mut catalog, &paths, &[b, c]).await;
+
+        assert_eq!(enabled(&table), [format!("{a}::orders")]);
+        let files = snapshot(&table, &catalog);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[1].name, "c");
+        assert_eq!(table.read().unwrap().routes.len(), 2);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

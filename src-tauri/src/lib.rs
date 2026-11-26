@@ -3,6 +3,7 @@ mod batch;
 mod commands;
 mod config;
 mod console;
+mod discovery;
 mod metro;
 mod routes;
 mod state;
@@ -137,6 +138,9 @@ pub fn run() {
             commands::set_route_enabled,
             commands::set_all_routes_enabled,
             commands::routes_health,
+            commands::discover_routes,
+            commands::connect_route_file,
+            commands::remove_route_file,
             commands::format_curl,
             commands::export_har,
             commands::export_postman,

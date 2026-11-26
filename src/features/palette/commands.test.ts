@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildPaletteCommands, searchCommands, type PaletteHandlers } from "./commands";
 import { useRoutes } from "../routes/store";
+import { useConnect } from "../routes/connectStore";
 import { useTraffic, type View } from "../../store/traffic";
 import type { TrafficEvent } from "../../store/types";
 
@@ -103,6 +104,17 @@ describe("palette command registry", () => {
   it("opens settings on run", () => {
     buildPaletteCommands(handlers()).find((c) => c.id === "open-settings")?.run();
     expect(useTraffic.getState().settingsOpen).toBe(true);
+  });
+
+  it("opens the connect services wizard on the routes view", () => {
+    const cmd = buildPaletteCommands(handlers()).find((c) => c.id === "connect-services");
+    expect(cmd?.label).toBe("Connect services");
+    useTraffic.setState({ settingsOpen: true });
+    cmd?.run();
+    expect(useTraffic.getState().activeView).toBe("routes");
+    expect(useTraffic.getState().settingsOpen).toBe(false);
+    expect(useConnect.getState().step.kind).toBe("detecting");
+    useConnect.getState().close();
   });
 
   it("registers an MCP config copy action", () => {
