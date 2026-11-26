@@ -60,8 +60,9 @@ pub fn release_device(
     port: Option<u16>,
 ) {
     let device = bh_device::AdbDevice::new(runner, serial);
-    let previous = dir.and_then(|dir| lookup(dir, serial)).flatten();
-    if device.restore_proxy(previous.as_deref()).is_ok() {
+    let saved = dir.and_then(|dir| lookup(dir, serial));
+    let owned = saved.is_some() || dir.is_none() || bh_device::is_emulator_serial(serial);
+    if owned && device.restore_proxy(saved.flatten().as_deref()).is_ok() {
         if let Some(dir) = dir {
             let _ = forget(dir, serial);
         }
@@ -152,6 +153,29 @@ mod tests {
         release_device(&runner, Some(&dir), "R5CT91", None);
         assert_eq!(lookup(&dir, "R5CT91"), Some(Some("corp:3128".into())));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn releasing_a_phone_twice_never_clears_the_restored_proxy() {
+        let dir = temp_dir("twice");
+        remember(&dir, "R5CT91", Some("corp:3128".into())).unwrap();
+        let runner = bh_device::FakeRunner::new();
+        runner.enqueue_ok("");
+        release_device(&runner, Some(&dir), "R5CT91", None);
+        release_device(&runner, Some(&dir), "R5CT91", None);
+        assert_eq!(runner.calls.lock().unwrap().len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn releasing_an_emulator_without_a_saved_value_still_clears() {
+        let dir = temp_dir("emulator-clear");
+        let runner = bh_device::FakeRunner::new();
+        for _ in 0..4 {
+            runner.enqueue_ok("");
+        }
+        release_device(&runner, Some(&dir), "emulator-5554", None);
+        assert_eq!(runner.calls.lock().unwrap().len(), 4);
     }
 
     #[test]

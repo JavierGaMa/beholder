@@ -1137,6 +1137,7 @@ mod tests {
         deny_listing(&runner);
         runner.enqueue_ok("uid=2000(shell)");
         runner.enqueue_fail("");
+        runner.enqueue_ok("0");
         runner.enqueue_ok(LS_OUTPUT);
         let files = list_databases(&runner, "R5CT91", "com.x").unwrap();
         assert_eq!(files.len(), 2);
@@ -1152,6 +1153,7 @@ mod tests {
         deny_listing(&runner);
         runner.enqueue_ok("uid=2000(shell)");
         runner.enqueue_fail("");
+        runner.enqueue_ok("0");
         runner.enqueue_fail("run-as: package not debuggable: com.x");
         let msg = list_databases(&runner, "R5CT91", "com.x")
             .unwrap_err()
@@ -1176,6 +1178,7 @@ mod tests {
         runner.enqueue_fail(NO_ROOT);
         runner.enqueue_ok("uid=2000(shell)");
         runner.enqueue_fail("");
+        runner.enqueue_ok("0");
         for body in ["main", "wal!!", "shm"] {
             runner.enqueue_ok(&body.len().to_string());
             runner.enqueue_ok(body);
@@ -1201,6 +1204,7 @@ mod tests {
         runner.enqueue_fail(NO_ROOT);
         runner.enqueue_ok("uid=2000(shell)");
         runner.enqueue_fail("");
+        runner.enqueue_ok("0");
         runner.enqueue_ok("4096");
         runner.enqueue_ok("run-as: boom");
         let dest = temp_dest("truncated");

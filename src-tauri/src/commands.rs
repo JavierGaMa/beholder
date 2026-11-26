@@ -5,7 +5,7 @@ use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession
 use bh_core::{har_to_string, to_curl, HttpExchange};
 use bh_device::{
     accept_licenses, create_avd_with_stdin, find_aapt, launch_emulator_detached, read_apk_package,
-    ApkInstaller, AvdManager, CertificateInstaller, CommandRunner, DeviceScanner, DeviceState,
+    ApkInstaller, AvdManager, CommandRunner, DeviceScanner, DeviceState,
     ProxyConfigurator, RealSdkRunner, SdkTool,
 };
 use serde::Serialize;
@@ -586,7 +586,7 @@ pub async fn run_doctor(
     let ca_installed = bh_ca::load_or_create(&dir).ok().and_then(|ca| {
         bh_ca::system_cert_filename(&ca.cert_pem).ok().map(|name| {
             bh_device::AdbDevice::new(runner.as_ref(), &serial)
-                .is_cert_installed(&name, &ca.cert_pem)
+                .is_cert_trusted(&name, &ca.cert_pem)
                 .unwrap_or(false)
         })
     });
@@ -1082,15 +1082,21 @@ async fn start_capture(
         previous_port = Some(existing.port);
         existing.stop().await;
     }
-    let previous_serial = state.active_serial.lock().await.clone();
-    if let Some(previous) = previous_serial.filter(|s| s != serial) {
+    if let Some(prev) = state.tunnel_task.lock().await.take() {
+        prev.stop().await;
+    }
+    let previous_serial = {
+        let mut active = state.active_serial.lock().await;
+        if active.as_deref() == Some(serial) {
+            None
+        } else {
+            active.take()
+        }
+    };
+    if let Some(previous) = previous_serial {
         crate::proxy_restore::release_device(runner.as_ref(), Some(&dir), &previous, previous_port);
     }
     if let Some(prev) = state.metro_task.lock().await.take() {
-        prev.stop().await;
-    }
-
-    if let Some(prev) = state.tunnel_task.lock().await.take() {
         prev.stop().await;
     }
 
@@ -1821,8 +1827,19 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
                 let scanner = bh_device::AdbScanner::new(runner.as_ref());
                 scanner.list().map_err(|e| e.to_string())?
             };
+            let mut failures = Vec::new();
             for d in serials.into_iter().filter(|d| d.state == DeviceState::Online) {
-                let _ = bh_device::remove_system_ca(runner.as_ref(), &d.serial, &name);
+                if let Err(e) = bh_device::remove_system_ca(runner.as_ref(), &d.serial, &name) {
+                    if !d.is_emulator {
+                        failures.push(format!("{}: {e}", d.serial));
+                    }
+                }
+            }
+            if !failures.is_empty() {
+                return Err(format!(
+                    "certificate not removed from every device:\n{}",
+                    failures.join("\n")
+                ));
             }
         }
     }

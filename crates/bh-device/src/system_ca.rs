@@ -26,7 +26,7 @@ pub fn ensure_system_ca(
     pem: &str,
 ) -> Result<CaOutcome, DeviceError> {
     let device = AdbDevice::new(runner, serial);
-    if device.is_cert_installed(filename, pem)? {
+    if device.is_cert_trusted(filename, pem)? {
         return Ok(CaOutcome::AlreadyInstalled);
     }
     if is_emulator_serial(serial) {
@@ -63,9 +63,14 @@ pub fn remove_system_ca(
         return Ok(());
     }
     match root_access(runner, serial)? {
-        RootAccess::Su => device.with_su().uninstall_cert(filename),
-        RootAccess::AdbRoot => device.uninstall_cert(filename),
+        RootAccess::Su => device.with_su().remove_mounted_cert(filename),
+        RootAccess::AdbRoot => {
+            device.root()?;
+            device.remove_mounted_cert(filename)
+        }
         RootAccess::SuDenied => Err(DeviceError::Other(SU_GRANT_HINT.into())),
-        RootAccess::None => Ok(()),
+        RootAccess::None => Err(DeviceError::Other(
+            "no root available to remove the certificate; reboot the phone to drop it".into(),
+        )),
     }
 }

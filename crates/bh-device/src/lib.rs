@@ -136,9 +136,43 @@ impl<'a> AdbDevice<'a> {
     }
 
     pub fn has_staged_cert(&self, filename: &str) -> Result<bool, DeviceError> {
-        Ok(self
-            .plain_shell(&format!("ls /data/local/tmp/beholder-ca-stage/{filename}"))?
-            .success)
+        let out = self.plain_shell(&format!("ls /data/local/tmp/beholder-ca-stage/{filename}"))?;
+        if out.success {
+            return Ok(true);
+        }
+        let combined = format!("{}{}", out.stdout, out.stderr);
+        if combined.contains("No such file") {
+            return Ok(false);
+        }
+        Err(DeviceError::Other(format!(
+            "cannot check the staged certificate: {}",
+            combined.trim()
+        )))
+    }
+
+    pub fn is_cert_trusted(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError> {
+        if is_emulator_serial(&self.serial) {
+            return self.is_cert_installed(filename, cert_pem);
+        }
+        if self.shell(&format!("ls {APEX_CACERTS}"))?.success {
+            return self.store_matches(APEX_CACERTS, filename, cert_pem);
+        }
+        self.store_matches(SYSTEM_CACERTS, filename, cert_pem)
+    }
+
+    pub fn remove_mounted_cert(&self, filename: &str) -> Result<(), DeviceError> {
+        self.shell(&format!("rm -f {SYSTEM_CACERTS}/{filename}"))?;
+        self.shell(&format!("nsenter -t 1 -m -- umount {APEX_CACERTS}"))?;
+        self.shell(&format!("nsenter -t 1 -m -- umount {SYSTEM_CACERTS}"))?;
+        for dir in [SYSTEM_CACERTS, APEX_CACERTS] {
+            if self.shell(&format!("ls {dir}/{filename}"))?.success {
+                return Err(DeviceError::Other(format!(
+                    "certificate is still present in {dir}; reboot the phone to drop it"
+                )));
+            }
+        }
+        self.shell("rm -rf /data/local/tmp/beholder-ca-stage")?;
+        Ok(())
     }
 
     pub fn boot_completed(&self) -> Result<bool, DeviceError> {

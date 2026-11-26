@@ -18,6 +18,7 @@ fn runner(root: &[Result<&str, &str>]) -> FakeRunner {
 
 fn finish(runner: &FakeRunner, companion: &str, cert: Result<&str, &str>) {
     runner.enqueue_ok(companion);
+    runner.enqueue_fail("no apex");
     match cert {
         Ok(stdout) => runner.enqueue_ok(stdout),
         Err(stderr) => runner.enqueue_fail(stderr),
@@ -30,7 +31,7 @@ fn run(runner: &FakeRunner) -> DeviceProbe {
 
 #[test]
 fn reads_identity_companion_and_missing_ca() {
-    let r = runner(&[Ok("uid=2000(shell)\n"), Err("")]);
+    let r = runner(&[Ok("uid=2000(shell)\n"), Err(""), Ok("0\n")]);
     finish(&r, "    versionName=0.3.0\n", Err("No such file"));
     let p = run(&r);
     assert_eq!(p.model, "SM-S911B");
@@ -75,6 +76,7 @@ fn rejected_su_is_denied() {
         Ok("uid=2000(shell)\n"),
         Ok("/system/bin/su\n"),
         Err("Permission denied"),
+        Ok("0\n"),
     ]);
     finish(&r, "", Err(""));
     assert_eq!(run(&r).root, RootAccess::SuDenied);

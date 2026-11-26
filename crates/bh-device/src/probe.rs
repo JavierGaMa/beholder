@@ -1,5 +1,5 @@
 use crate::runner::{CommandRunner, DeviceError};
-use crate::{is_emulator_serial, AdbDevice, CertificateInstaller};
+use crate::{is_emulator_serial, AdbDevice};
 use serde::Serialize;
 
 pub const COMPANION_PACKAGE: &str = "dev.beholder.app";
@@ -60,14 +60,17 @@ pub fn root_access(runner: &dyn CommandRunner, serial: &str) -> Result<RootAcces
     if device.shell("id")?.stdout.contains("uid=0") {
         return Ok(RootAccess::AdbRoot);
     }
-    if !device.shell("command -v su")?.success {
-        return Ok(RootAccess::None);
+    let has_su = device.shell("command -v su")?.success;
+    if has_su && device.shell("timeout 10 su -c id")?.stdout.contains("uid=0") {
+        return Ok(RootAccess::Su);
     }
-    let granted = device.shell("timeout 10 su -c id")?;
-    Ok(if granted.stdout.contains("uid=0") {
-        RootAccess::Su
-    } else {
+    if device.shell("getprop ro.debuggable")?.stdout.trim() == "1" {
+        return Ok(RootAccess::AdbRoot);
+    }
+    Ok(if has_su {
         RootAccess::SuDenied
+    } else {
+        RootAccess::None
     })
 }
 
@@ -91,7 +94,7 @@ pub fn probe(
         .find_map(|line| line.trim().strip_prefix("versionName="))
         .map(str::to_string);
     let system_ca_installed = device
-        .is_cert_installed(cert_filename, cert_pem)
+        .is_cert_trusted(cert_filename, cert_pem)
         .unwrap_or(false);
     Ok(DeviceProbe {
         serial: serial.to_string(),
