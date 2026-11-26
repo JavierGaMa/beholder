@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write};
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use thiserror::Error;
-use toml_edit::{Array, Document, DocumentMut, Item, Table, TableLike, Value};
+use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ColorOverrides {
@@ -371,160 +370,11 @@ fn edit(raw: &str, config: &UiConfig) -> Result<String, ConfigError> {
     let invalid = |e: String| ConfigError::Parse(e);
     let known = toml::Table::try_from(parse(raw)?).map_err(|e| invalid(e.to_string()))?;
     let next = toml::Table::try_from(config).map_err(|e| invalid(e.to_string()))?;
-    let raw = raw.strip_prefix('\u{feff}').unwrap_or(raw);
-    let mut document = cut_removed_lines(raw, &known, &next)?
+    let mut document = raw
         .parse::<DocumentMut>()
         .map_err(|e| invalid(e.to_string()))?;
     merge(document.as_table_mut(), &known, &next)?;
     Ok(document.to_string())
-}
-
-fn cut_removed_lines(
-    raw: &str,
-    known: &toml::Table,
-    next: &toml::Table,
-) -> Result<String, ConfigError> {
-    let document = Document::parse(raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
-    let mut ranges = Vec::new();
-    removed_ranges(raw, document.as_table(), known, next, &mut ranges);
-    ranges.sort_by_key(|range: &Range<usize>| range.start);
-    let mut text = raw.to_string();
-    for range in ranges.into_iter().rev() {
-        text.replace_range(range, "");
-    }
-    Ok(text)
-}
-
-fn removed_ranges(
-    raw: &str,
-    source: &dyn TableLike,
-    known: &toml::Table,
-    next: &toml::Table,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    for (key, previous) in known {
-        let Some((written, item)) = source.get_key_value(key) else {
-            continue;
-        };
-        match next.get(key) {
-            Some(value) => {
-                if let (Some(child), Some(previous), Some(value)) =
-                    (item.as_table_like(), previous.as_table(), value.as_table())
-                {
-                    removed_ranges(raw, child, previous, value, ranges);
-                }
-            }
-            None => {
-                if let (Some(key), Some(value)) = (written.span(), item.span()) {
-                    ranges.extend(line_range(raw, key.start, value.end));
-                }
-            }
-        }
-    }
-}
-
-fn line_range(raw: &str, start: usize, end: usize) -> Option<Range<usize>> {
-    let line = raw[..start].rfind('\n').map_or(0, |at| at + 1);
-    if raw[line..start].contains(['{', ',']) {
-        return None;
-    }
-    let rest = &raw[end..];
-    let newline = rest.find('\n').map_or(rest.len(), |at| at + 1);
-    if rest[..newline].trim().is_empty() {
-        Some(line..end + newline)
-    } else {
-        Some(line..end)
-    }
-}
-
-fn merge_array(current: &mut Array, next: &[Value]) {
-    let mut index = 0;
-    while index < current.len() {
-        let keep = current
-            .get(index)
-            .is_some_and(|item| next.iter().any(|value| same_value(item, value)));
-        if keep {
-            index += 1;
-        } else {
-            remove_element(current, index);
-        }
-    }
-    let ordered = current.len() <= next.len()
-        && current.iter().zip(next).all(|(a, b)| same_value(a, b));
-    if !ordered {
-        current.clear();
-    }
-    for value in next.iter().skip(current.len()) {
-        append_element(current, value.clone());
-    }
-}
-
-fn same_value(a: &Value, b: &Value) -> bool {
-    match (a.as_str(), b.as_str()) {
-        (Some(a), Some(b)) => a == b,
-        _ => a.clone().decorated("", "").to_string() == b.clone().decorated("", "").to_string(),
-    }
-}
-
-fn prefix_of(value: &Value) -> String {
-    value
-        .decor()
-        .prefix()
-        .and_then(|raw| raw.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn trailing_of(array: &Array) -> String {
-    array.trailing().as_str().unwrap_or("").to_string()
-}
-
-fn remove_element(array: &mut Array, index: usize) {
-    let removed = prefix_of(&array.remove(index));
-    let comments = removed.contains('#').then(|| removed.trim_end().to_string());
-    match array.get_mut(index) {
-        Some(following) => {
-            let after = prefix_of(following);
-            if let Some(comments) = comments {
-                following.decor_mut().set_prefix(format!("{comments}{after}"));
-            } else if index == 0 && !after.contains('\n') {
-                following.decor_mut().set_prefix(removed);
-            }
-        }
-        None => {
-            let trailing = trailing_of(array);
-            if let Some(comments) = comments {
-                array.set_trailing(format!("{comments}{trailing}"));
-            }
-            if array.is_empty() && !trailing_of(array).contains('#') {
-                array.set_trailing("");
-                array.set_trailing_comma(false);
-            }
-        }
-    }
-}
-
-fn append_element(array: &mut Array, mut value: Value) {
-    let trailing = trailing_of(array);
-    let last = array.iter().last().map(prefix_of);
-    let multiline = trailing.contains('\n') || last.as_ref().is_some_and(|p| p.contains('\n'));
-    let prefix = if multiline {
-        let indent = last
-            .as_deref()
-            .and_then(|p| p.rsplit_once('\n'))
-            .map_or("  ", |(_, indent)| indent)
-            .to_string();
-        array.set_trailing("\n");
-        array.set_trailing_comma(true);
-        format!("{}\n{indent}", trailing.trim_end())
-    } else if array.is_empty() {
-        String::new()
-    } else {
-        " ".to_string()
-    };
-    value.decor_mut().set_prefix(prefix);
-    value.decor_mut().set_suffix("");
-    array.push_formatted(value);
 }
 
 fn merge(
@@ -562,13 +412,6 @@ fn merge(
             .parse::<Value>()
             .map_err(|e| ConfigError::Parse(e.to_string()))?;
         match target.get_mut(key).and_then(Item::as_value_mut) {
-            Some(Value::Array(current)) if replacement.is_array() => {
-                let elements: Vec<Value> = replacement
-                    .as_array()
-                    .map(|a| a.iter().cloned().collect())
-                    .unwrap_or_default();
-                merge_array(current, &elements);
-            }
             Some(current) => {
                 *replacement.decor_mut() = current.decor().clone();
                 *current = replacement;
@@ -1123,80 +966,5 @@ mod tests {
         write_config(&dir, &config).unwrap();
         assert_eq!(load(&dir).unwrap(), config);
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    fn rewrite(name: &str, raw: &str, change: impl FnOnce(&mut UiConfig)) -> String {
-        let dir = scratch(name);
-        std::fs::write(config_path(&dir), raw).unwrap();
-        let (next, _) = update(&dir, change).unwrap();
-        let written = std::fs::read_to_string(config_path(&dir)).unwrap();
-        assert_eq!(load(&dir).unwrap(), next, "{written}");
-        std::fs::remove_dir_all(&dir).ok();
-        written
-    }
-
-    #[test]
-    fn removing_a_setting_keeps_its_comments() {
-        let raw = "[colors]\n# --- my palette ---\n# bg = \"#101010\"\naccent = \"#22d3ee\" # brand\n";
-        assert_eq!(
-            rewrite("rm-comment", raw, |c| c.colors.accent = None),
-            "[colors]\n# --- my palette ---\n# bg = \"#101010\"\n # brand\n"
-        );
-    }
-
-    #[test]
-    fn removing_a_setting_handles_dotted_and_inline_forms() {
-        let dotted = "# top\ncolors.accent = \"#22d3ee\"\ncolors.bg = \"#101010\"\n";
-        assert_eq!(
-            rewrite("rm-dotted", dotted, |c| c.colors.accent = None),
-            "# top\ncolors.bg = \"#101010\"\n"
-        );
-        let inline = "colors = { accent = \"#22d3ee\", bg = \"#101010\" }\n";
-        let written = rewrite("rm-inline", inline, |c| c.colors.accent = None);
-        assert!(!written.contains("accent"), "{written}");
-        assert!(written.contains("bg = \"#101010\""), "{written}");
-    }
-
-    const LIST: &str = "[routes]\nfiles = [\n  # backend\n  \"/a.json\", # api\n  # \"/off.json\",\n]\n";
-
-    #[test]
-    fn appending_to_a_list_keeps_its_comments() {
-        assert_eq!(
-            rewrite("list-add", LIST, |c| c.routes.files.push("/b.json".into())),
-            "[routes]\nfiles = [\n  # backend\n  \"/a.json\", # api\n  # \"/off.json\",\n  \"/b.json\",\n]\n"
-        );
-    }
-
-    #[test]
-    fn removing_from_a_list_keeps_its_comments() {
-        let raw = "[routes]\nfiles = [\n  # one\n  \"/a.json\", # api\n  # two\n  \"/b.json\",\n  \"/c.json\", # last\n]\n";
-        for removed in ["/a.json", "/b.json", "/c.json"] {
-            let written = rewrite("list-rm", raw, |c| c.routes.files.retain(|f| f != removed));
-            assert!(!written.contains(removed), "{written}");
-            for comment in ["# one", "# api", "# two", "# last"] {
-                assert!(written.contains(comment), "{removed}: {written}");
-            }
-        }
-        let emptied = rewrite("list-empty", raw, |c| c.routes.files.clear());
-        for comment in ["# one", "# api", "# two", "# last"] {
-            assert!(emptied.contains(comment), "{emptied}");
-        }
-    }
-
-    #[test]
-    fn single_line_lists_stay_tidy() {
-        let raw = "[routes]\nfiles = [\"/a.json\", \"/b.json\"]\n";
-        assert_eq!(
-            rewrite("inline-add", raw, |c| c.routes.files.push("/c.json".into())),
-            "[routes]\nfiles = [\"/a.json\", \"/b.json\", \"/c.json\"]\n"
-        );
-        assert_eq!(
-            rewrite("inline-rm", raw, |c| c.routes.files.retain(|f| f != "/a.json")),
-            "[routes]\nfiles = [\"/b.json\"]\n"
-        );
-        assert_eq!(
-            rewrite("inline-first", "[routes]\nfiles = []\n", |c| c.routes.files.push("/a.json".into())),
-            "[routes]\nfiles = [\"/a.json\"]\n"
-        );
     }
 }
