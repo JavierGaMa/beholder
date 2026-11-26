@@ -86,6 +86,7 @@ async fn bypassed_host_relays_real_certificate() {
             enabled: false,
         },
         vec!["localhost".to_string()],
+        Default::default(),
     )
     .await
     .unwrap();
@@ -133,6 +134,7 @@ async fn non_bypassed_host_is_intercepted() {
             enabled: false,
         },
         Vec::new(),
+        Default::default(),
     )
     .await
     .unwrap();

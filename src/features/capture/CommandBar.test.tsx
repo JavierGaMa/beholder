@@ -18,6 +18,8 @@ vi.stubGlobal(
 
 const { CommandBar } = await import("./CommandBar");
 const { useTraffic } = await import("../../store/traffic");
+const { useRoutes } = await import("../routes/store");
+const { routesQueryKey, routesHealthQueryKey } = await import("../../queries/routes");
 
 type TrafficState = ReturnType<typeof useTraffic.getState>;
 
@@ -26,9 +28,9 @@ function setStore(patch: Partial<TrafficState>) {
   Object.assign(useTraffic.getInitialState(), patch);
 }
 
-function render() {
+function render(client = new QueryClient()) {
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <CommandBar />
     </QueryClientProvider>,
   );
@@ -42,6 +44,7 @@ const ALL_VIEWS: View[] = [
   "apks",
   "database",
   "console",
+  "routes",
 ];
 
 beforeEach(() => {
@@ -95,5 +98,43 @@ describe("CommandBar", () => {
     const html = render();
     expect(html).not.toMatch(/\d+ req</);
     expect(html).not.toContain("sidebar");
+  });
+});
+
+describe("CommandBar local routes chip", () => {
+  const route = (id: string) => ({
+    key: `/r.json::${id}`,
+    id,
+    path_prefix: `/v1/${id}`,
+    host: null,
+    target: "http://127.0.0.1:4000",
+    enabled: false,
+  });
+  const files = [
+    { path: "/r.json", name: "local stack", error: null, routes: [route("orders"), route("catalog")] },
+  ];
+
+  function renderRoutes(enabled: string[], health: Record<string, "up" | "down">) {
+    useRoutes.setState({ enabled });
+    Object.assign(useRoutes.getInitialState(), { enabled });
+    const client = new QueryClient();
+    client.setQueryData(routesQueryKey([]), files);
+    client.setQueryData(routesHealthQueryKey(files), health);
+    return render(client);
+  }
+
+  it("is hidden while every route is disabled", () => {
+    expect(renderRoutes([], {})).not.toContain("Local 0/2");
+  });
+
+  it("counts the enabled routes", () => {
+    const html = renderRoutes(["/r.json::orders"], { "/r.json::orders": "up" });
+    expect(html).toContain("Local 1/2");
+    expect(html).not.toContain("text-danger");
+  });
+
+  it("turns danger when an enabled route is unreachable", () => {
+    const html = renderRoutes(["/r.json::orders"], { "/r.json::orders": "down" });
+    expect(html).toMatch(/<button[^>]*text-danger[^>]*>Local 1\/2</);
   });
 });

@@ -586,6 +586,57 @@ pub async fn reveal_config(app: tauri::AppHandle) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
+fn configured_route_files(app: &tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    crate::config::load(&dir)
+        .map(|c| c.routes.files)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_routes(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::routes::RouteFileStatus>, String> {
+    let files = configured_route_files(&app)?;
+    Ok(state.refresh_routes(&files, false).await)
+}
+
+#[tauri::command]
+pub async fn reload_routes(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::routes::RouteFileStatus>, String> {
+    let files = configured_route_files(&app)?;
+    Ok(state.refresh_routes(&files, true).await)
+}
+
+#[tauri::command]
+pub async fn set_route_enabled(
+    state: State<'_, AppState>,
+    key: String,
+    enabled: bool,
+) -> Result<(), String> {
+    crate::routes::set_enabled(&state.routes, key, enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_all_routes_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    crate::routes::set_all_enabled(&state.routes, enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn routes_health(
+    state: State<'_, AppState>,
+) -> Result<std::collections::BTreeMap<String, crate::routes::Health>, String> {
+    Ok(crate::routes::health(&state.routes).await)
+}
+
 fn snapshot_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     Ok(dir.join("db-snapshots"))
@@ -892,6 +943,11 @@ async fn start_capture(
     let cap = body_cap.unwrap_or(256 * 1024);
     let cfg = crate::config::load(&dir).ok();
     let metro_cfg = cfg.as_ref().map(|c| c.metro.clone()).unwrap_or_default();
+    let route_files = cfg
+        .as_ref()
+        .map(|c| c.routes.files.clone())
+        .unwrap_or_default();
+    state.refresh_routes(&route_files, true).await;
     let tls_bypass_hosts = cfg
         .map(|c| c.proxy.tls_bypass_hosts)
         .unwrap_or_else(|| crate::config::ProxyConfig::default().tls_bypass_hosts);
@@ -906,6 +962,7 @@ async fn start_capture(
         state.current_sink(),
         metro,
         tls_bypass_hosts,
+        state.routes.clone(),
     )
     .await
     .map_err(|e| e.to_string())?;

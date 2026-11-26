@@ -11,6 +11,7 @@ const base: Filters = {
   inBodies: false,
   includeDomains: [],
   excludeDomains: [],
+  localOnly: false,
 };
 
 function ex(partial: {
@@ -174,5 +175,31 @@ describe("quick modes", () => {
       errors: 2,
       slow: 2,
     });
+  });
+});
+
+describe("localOnly", () => {
+  const plain = ex({});
+  const routed: HttpExchange = {
+    ...plain,
+    request: { ...plain.request, routed: { route_id: "orders", target: "http://127.0.0.1:4000" } },
+  };
+
+  it("keeps only routed requests", () => {
+    expect(matchFilters(routed, { ...base, localOnly: true })).toBe(true);
+    expect(matchFilters(plain, { ...base, localOnly: true })).toBe(false);
+    expect(
+      matchFilters({ ...plain, request: { ...plain.request, routed: null } }, { ...base, localOnly: true }),
+    ).toBe(false);
+  });
+
+  it("leaves every request visible when off", () => {
+    expect(matchFilters(routed, base)).toBe(true);
+    expect(matchFilters(plain, base)).toBe(true);
+  });
+
+  it("counts as an active filter and scopes the quick counts", () => {
+    expect(activeFilterCount({ ...base, localOnly: true })).toBe(1);
+    expect(quickCounts([plain, routed], { ...base, localOnly: true }).all).toBe(1);
   });
 });

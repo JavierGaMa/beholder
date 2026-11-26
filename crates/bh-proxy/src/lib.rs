@@ -3,14 +3,16 @@ pub mod handler;
 pub mod ws;
 
 use bh_ca::Ca;
+use bh_core::Route;
 use bh_core::TrafficSink;
 use handler::RecordingHttpHandler;
 use hudsucker::certificate_authority::RcgenAuthority;
 use hudsucker::rcgen::{CertificateParams, KeyPair};
 use hudsucker::rustls::crypto::aws_lc_rs;
 use hudsucker::Proxy;
+use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 use ws::RecordingWsHandler;
 
@@ -19,6 +21,14 @@ pub struct MetroBypass {
     pub port: u16,
     pub enabled: bool,
 }
+
+#[derive(Debug, Default)]
+pub struct ActiveRoutes {
+    pub routes: Vec<Route>,
+    pub enabled: HashSet<String>,
+}
+
+pub type SharedRoutes = Arc<RwLock<ActiveRoutes>>;
 
 #[derive(Debug, Error)]
 pub enum ProxyError {
@@ -59,6 +69,7 @@ pub async fn start_mitm(
     sink: Arc<dyn TrafficSink>,
     metro: MetroBypass,
     tls_bypass_hosts: Vec<String>,
+    routes: SharedRoutes,
 ) -> Result<ProxyHandle, ProxyError> {
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))
         .await
@@ -85,6 +96,7 @@ pub async fn start_mitm(
             body_cap,
             metro,
             tls_bypass_hosts,
+            routes,
         ))
         .with_websocket_handler(RecordingWsHandler::new(sink, body_cap, metro))
         .with_graceful_shutdown(async {
@@ -119,6 +131,7 @@ mod tests {
                 enabled: false,
             },
             Vec::new(),
+            SharedRoutes::default(),
         )
         .await
         .unwrap();

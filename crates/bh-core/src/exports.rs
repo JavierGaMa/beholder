@@ -243,6 +243,7 @@ mod tests {
                 ],
                 body,
                 started_at: 0.0,
+                routed: None,
             },
             response: Some(HttpResponse {
                 status: 200,

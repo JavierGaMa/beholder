@@ -7,6 +7,7 @@ import {
   Gauge,
   MonitorSmartphone,
   Package,
+  Route,
   Settings,
   SquareTerminal,
   Waves,
@@ -25,6 +26,9 @@ import type { Filters } from "./features/requests/filters";
 import { RequestsView } from "./features/requests/RequestsView";
 import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { MetricsView } from "./features/metrics/MetricsView";
+import { RoutesView } from "./features/routes/RoutesView";
+import { useRoutes } from "./features/routes/store";
+import { useRefreshRoutesOnCapture } from "./queries/routes";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
 import { DatabasesView } from "./features/database/DatabasesView";
@@ -55,6 +59,7 @@ const NAV_GROUPS: { label: string; items: { id: View; label: string; icon: typeo
       { id: "requests", label: "Requests", icon: ArrowLeftRight },
       { id: "websockets", label: "WebSockets", icon: Waves },
       { id: "metrics", label: "Metrics", icon: Gauge },
+      { id: "routes", label: "Routes", icon: Route },
     ],
   },
   {
@@ -85,6 +90,7 @@ export default function App() {
   const [agentConnections, setAgentConnections] = useState<AgentConnections | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const settingsCloseRef = useRef<HTMLButtonElement>(null);
+  useRefreshRoutesOnCapture();
 
   const paletteCommands = useMemo(
     () =>
@@ -128,6 +134,7 @@ export default function App() {
 
   useEffect(() => {
     if (isTauri) {
+      useRoutes.getState().sync();
       invoke<UiConfig>("get_config")
         .then((c) => {
           useTraffic.getState().setUiConfig(c);
@@ -337,6 +344,7 @@ export default function App() {
             )}
             {activeView === "websockets" && <WebSocketsView />}
             {activeView === "metrics" && <MetricsView />}
+            {activeView === "routes" && <RoutesView />}
             {activeView === "emulators" && <EmulatorsView />}
             {activeView === "apks" && <ApksView />}
             {activeView === "database" && <DatabasesView />}

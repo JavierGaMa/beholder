@@ -216,6 +216,13 @@ export function DetailPane({ ex, onClose, onCollapse }: { ex: HttpExchange; onCl
           <span className="font-normal text-muted">{ex.request.host}</span>
           {ex.request.path}
         </button>
+        {ex.request.routed && (
+          <p className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-muted">
+            <span>Routed to</span>
+            <span className="font-semibold text-accent">{ex.request.routed.route_id}</span>
+            <span className="break-all font-mono text-txt">{ex.request.routed.target}</span>
+          </p>
+        )}
         {ex.error && <p className="mt-1.5 font-mono text-[12px] text-danger">{ex.error}</p>}
         <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-[10px] bg-surface-2">
           <Fact label="Duration" value={t.total_ms == null ? "none" : formatMs(t.total_ms)} />

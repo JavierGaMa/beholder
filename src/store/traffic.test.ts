@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_EXCHANGES, MAX_WS_FRAMES, useTraffic } from "./traffic";
+import { hitKey } from "../features/routes/routes";
 import type { TrafficEvent } from "./types";
 
 const started = (id: number): TrafficEvent => ({
@@ -203,5 +204,44 @@ describe("traffic store session totals", () => {
     expect(st.sessionBytesIn).toBe(0);
     expect(st.sessionBytesOut).toBe(0);
     expect(st.sessionFailed).toBe(0);
+  });
+});
+
+describe("traffic store routed hits", () => {
+  const routed = (id: number, routeId: string): TrafficEvent => ({
+    type: "ExchangeStarted",
+    id,
+    request: {
+      method: "GET",
+      url: "https://a.dev/v1",
+      host: "a.dev",
+      path: "/v1",
+      headers: [],
+      body: null,
+      started_at: 1,
+      routed: { route_id: routeId, target: "http://127.0.0.1:4000" },
+    },
+  });
+
+  it("counts each routed exchange once per route and resets on clear", () => {
+    useTraffic.getState().clear();
+    useTraffic.getState().ingest([routed(1, "orders"), routed(2, "orders"), started(3)]);
+    useTraffic.getState().ingest([routed(1, "orders"), routed(4, "catalog")]);
+    const hits = useTraffic.getState().routedHits;
+    expect(hits.get(hitKey("orders", "http://127.0.0.1:4000"))).toBe(2);
+    expect(hits.get(hitKey("catalog", "http://127.0.0.1:4000"))).toBe(1);
+    expect(hits.size).toBe(2);
+    useTraffic.getState().clear();
+    expect(useTraffic.getState().routedHits.size).toBe(0);
+  });
+
+  it("keeps counting hits that left the request window", () => {
+    useTraffic.getState().clear();
+    const events = Array.from({ length: MAX_EXCHANGES + 5 }, (_, i) => routed(i + 1, "orders"));
+    useTraffic.getState().ingest(events);
+    expect(useTraffic.getState().routedHits.get(hitKey("orders", "http://127.0.0.1:4000"))).toBe(
+      MAX_EXCHANGES + 5,
+    );
+    useTraffic.getState().clear();
   });
 });

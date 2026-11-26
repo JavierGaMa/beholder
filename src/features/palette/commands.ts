@@ -9,6 +9,8 @@ import {
   MonitorSmartphone,
   Package,
   Pin,
+  Route,
+  RouteOff,
   Search,
   Settings,
   SquareTerminal,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTraffic, type View } from "../../store/traffic";
 import { useShortcuts } from "../shortcuts/store";
+import { useRoutes } from "../routes/store";
 import { toast } from "../../components/ui/toast";
 import { fuzzyScore } from "./fuzzy";
 
@@ -42,10 +45,11 @@ const VIEW_COMMANDS: { view: View; label: string; icon: PaletteIcon; shortcut: s
   { view: "requests", label: "Go to Requests", icon: ArrowLeftRight, shortcut: "1" },
   { view: "websockets", label: "Go to WebSockets", icon: Waves, shortcut: "2" },
   { view: "metrics", label: "Go to Metrics", icon: Gauge, shortcut: "3" },
-  { view: "emulators", label: "Go to Emulators", icon: MonitorSmartphone, shortcut: "4" },
-  { view: "apks", label: "Go to APKs", icon: Package, shortcut: "5" },
-  { view: "database", label: "Go to Databases", icon: Database, shortcut: "6" },
-  { view: "console", label: "Go to Console", icon: SquareTerminal, shortcut: "7" },
+  { view: "routes", label: "Go to Routes", icon: Route, shortcut: "4" },
+  { view: "emulators", label: "Go to Emulators", icon: MonitorSmartphone, shortcut: "5" },
+  { view: "apks", label: "Go to APKs", icon: Package, shortcut: "6" },
+  { view: "database", label: "Go to Databases", icon: Database, shortcut: "7" },
+  { view: "console", label: "Go to Console", icon: SquareTerminal, shortcut: "8" },
 ];
 
 export const PALETTE_SECTIONS: PaletteSection[] = ["Navigate", "Actions"];
@@ -112,6 +116,13 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
       section: "Actions",
       icon: Trash2,
       run: () => useTraffic.getState().clear(),
+    },
+    {
+      id: "disable-all-routes",
+      label: "Disable all routes",
+      section: "Actions",
+      icon: RouteOff,
+      run: () => useRoutes.getState().disableAll(),
     },
     {
       id: "focus-search",

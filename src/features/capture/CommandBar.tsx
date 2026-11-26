@@ -7,6 +7,7 @@ import { loadBodyCapMb } from "../../lib/prefs";
 import { useAdbDevicesQuery } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
+import { useRoutesStatus } from "../../queries/routes";
 import type { AvdInfo } from "../../store/types";
 import { useTraffic } from "../../store/traffic";
 import { usePalette } from "../palette/store";
@@ -230,6 +231,8 @@ export function CommandBar() {
           />
         )}
 
+        <LocalRoutesChip />
+
         <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
 
         <button
@@ -251,6 +254,33 @@ export function CommandBar() {
         </div>
       )}
     </header>
+  );
+}
+
+function LocalRoutesChip() {
+  const { summary } = useRoutesStatus();
+  if (summary.enabled === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        useTraffic.getState().setActiveView("routes");
+        useTraffic.getState().setSettingsOpen(false);
+      }}
+      title={
+        summary.unreachable > 0
+          ? `Open routes (${summary.unreachable} unreachable)`
+          : "Open routes"
+      }
+      className={clsx(
+        "press focus-ring h-6 shrink-0 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-medium tabular-nums",
+        summary.unreachable > 0
+          ? "border-danger/30 bg-danger/10 text-danger"
+          : "border-line text-muted hover:text-txt",
+      )}
+    >
+      {`Local ${summary.enabled}/${summary.total}`}
+    </button>
   );
 }
 
