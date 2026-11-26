@@ -12,6 +12,7 @@ Non-invasive network traffic inspector for React Native apps on Android emulator
 
 - **HTTPS and WebSocket inspection** — bodies, headers, timing, JSON tree with click-to-copy paths, inline image previews
 - **Zero changes to your app** — certificate and proxy are applied when a capture starts and reverted when it stops ([how it works](https://JavierGaMa.github.io/beholder/guide/capture))
+- **Local routes** — send selected path prefixes to services on your machine without touching the app ([local routes](https://JavierGaMa.github.io/beholder/guide/routes))
 - **Metrics** — downloaded/uploaded wire bytes per session and per domain, p50/p95 latency, slowest requests, media and download breakdowns, saved snapshots to compare runs
 - **SQL console** — pull any app database from the emulator and query it read-only with schema-aware autocomplete
 - **Agent bridge + MCP** — a local read-only API and an MCP server so coding agents can inspect traffic, metrics, and query databases without leaving the terminal

@@ -34,6 +34,15 @@ mono-font-family = ""       # e.g. "JetBrains Mono"
 # danger = "#f44747"
 ```
 
+## Local routes
+
+```toml
+[routes]
+files = []                  # absolute paths of route files
+```
+
+See [Local routes](/guide/routes) for the route file format.
+
 ## Themes
 
 | Theme | Feel |
