@@ -106,4 +106,12 @@ describe("routes store", () => {
       ["set_route_enabled", { key: "b", enabled: true }],
     ]);
   });
+
+  it("forgets every route of the given files", () => {
+    useRoutes.setState({ enabled: ["/a.json::x", "/a.json.bak::x", "/b.json::y"] });
+    useRoutes.getState().forget(["/a.json"]);
+    expect(useRoutes.getState().enabled).toEqual(["/a.json.bak::x", "/b.json::y"]);
+    expect(loadEnabledRoutes()).toEqual(["/a.json.bak::x", "/b.json::y"]);
+    expect(calls).toEqual([["set_route_enabled", { key: "/a.json::x", enabled: false }]]);
+  });
 });

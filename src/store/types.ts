@@ -47,6 +47,38 @@ export interface RouteFileStatus {
 
 export type RouteHealth = "up" | "down";
 
+export interface DiscoveredFile {
+  id: string;
+  label: string;
+  path: string;
+  hint: string | null;
+  routes: number;
+  up: number;
+  error: string | null;
+}
+
+export interface DiscoveryResult {
+  name: string;
+  address: string;
+  files: DiscoveredFile[];
+}
+
+export interface DiscoverFailure {
+  kind: "invalidAddress" | "unreachable" | "invalidResponse";
+  message: string;
+}
+
+export interface RouteConfigFailure {
+  kind: "invalidFile" | "config";
+  message: string;
+}
+
+export interface RouteFilesUpdate {
+  files: string[];
+  name: string;
+  reset: string[];
+}
+
 export interface HttpResponse {
   status: number;
   headers: Header[];

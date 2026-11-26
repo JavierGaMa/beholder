@@ -54,6 +54,20 @@ export function saveEnabledRoutes(keys: string[]) {
   localStorage.setItem("beholder.enabledRoutes", JSON.stringify(keys));
 }
 
+export const DEFAULT_DISCOVERY_ADDRESS = "http://localhost:8090";
+
+export function loadDiscoveryAddress(): string {
+  try {
+    return localStorage.getItem("beholder.discoveryAddress") || DEFAULT_DISCOVERY_ADDRESS;
+  } catch {
+    return DEFAULT_DISCOVERY_ADDRESS;
+  }
+}
+
+export function saveDiscoveryAddress(address: string) {
+  localStorage.setItem("beholder.discoveryAddress", address);
+}
+
 export function loadFollow(): boolean {
   return localStorage.getItem("beholder.follow") !== "false";
 }

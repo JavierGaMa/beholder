@@ -1,4 +1,4 @@
-import { MOCK_ROUTE_FILES, MOCK_ROUTE_HEALTH } from "./mock";
+import { createRoutesMock, ROUTE_MOCK_COMMANDS } from "./mock";
 
 export const isTauri =
   typeof window !== "undefined" &&
@@ -12,18 +12,27 @@ export async function listenTraffic(onBatch: (events: unknown[]) => void): Promi
 }
 
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri) return mockInvoke<T>(cmd);
+  if (!isTauri) return mockInvoke<T>(cmd, args);
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
 }
 
-async function mockInvoke<T>(cmd: string): Promise<T> {
+export async function pickRouteFile(): Promise<string | null> {
+  if (!isTauri) return routesMock.pickFile();
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const chosen = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Route file", extensions: ["json"] }],
+  });
+  return typeof chosen === "string" ? chosen : null;
+}
+
+const routesMock = createRoutesMock(typeof window === "undefined" ? "" : (window.location?.search ?? ""));
+
+async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (ROUTE_MOCK_COMMANDS.includes(cmd)) return routesMock.invoke(cmd, args) as Promise<T>;
   switch (cmd) {
-    case "list_routes":
-    case "reload_routes":
-      return MOCK_ROUTE_FILES as T;
-    case "routes_health":
-      return MOCK_ROUTE_HEALTH as T;
     case "adb_status":
       return "/opt/mock/adb" as T;
     case "list_devices":

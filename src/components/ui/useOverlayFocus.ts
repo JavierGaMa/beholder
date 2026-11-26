@@ -15,7 +15,8 @@ export function useOverlayFocus(
     const previouslyFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusables = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
-    const first = focusables[0] ?? panel;
+    const preferred = panel?.querySelector<HTMLElement>("[data-autofocus]");
+    const first = preferred ?? focusables[0] ?? panel;
     first?.focus();
 
     function onKeyDown(e: KeyboardEvent) {

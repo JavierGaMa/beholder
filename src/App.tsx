@@ -28,6 +28,7 @@ import { WebSocketsView } from "./features/websockets/WebSocketsView";
 import { MetricsView } from "./features/metrics/MetricsView";
 import { RoutesView } from "./features/routes/RoutesView";
 import { useRoutes } from "./features/routes/store";
+import { ConnectWizard } from "./features/routes/ConnectWizard";
 import { useRefreshRoutesOnCapture } from "./queries/routes";
 import { EmulatorsView } from "./features/emulators/EmulatorsView";
 import { ApksView } from "./features/apks/ApksView";
@@ -378,6 +379,8 @@ export default function App() {
           )}
         </main>
       </div>
+
+      <ConnectWizard />
 
       <Palette commands={paletteCommands} />
 

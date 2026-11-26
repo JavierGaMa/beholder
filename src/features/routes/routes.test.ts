@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONFIG_SNIPPET,
   hitKey,
   routePill,
   summarizeRoutes,
@@ -47,9 +46,10 @@ describe("summarizeRoutes", () => {
 });
 
 describe("routePill", () => {
-  it("is off for a disabled route whatever its health", () => {
-    expect(routePill(false, "up")).toBe("off");
-    expect(routePill(false, "down")).toBe("off");
+  it("tells whether a disabled route is ready to be enabled", () => {
+    expect(routePill(false, "up")).toBe("ready");
+    expect(routePill(false, "down")).toBe("stopped");
+    expect(routePill(false, undefined)).toBe("checking");
   });
 
   it("reflects health for an enabled route", () => {
@@ -128,11 +128,5 @@ describe("enableRoutes", () => {
       "/gone.json::x",
       "/mx.json::orders",
     ]);
-  });
-});
-
-describe("config snippet", () => {
-  it("shows the routes section with an absolute path", () => {
-    expect(CONFIG_SNIPPET).toBe('[routes]\nfiles = ["/abs/path/routes.json"]\n');
   });
 });

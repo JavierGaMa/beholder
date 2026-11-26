@@ -1,8 +1,6 @@
 import type { RouteFileStatus, RouteHealth } from "../../store/types";
 
-export type RoutePill = "healthy" | "unreachable" | "checking" | "off";
-
-export const CONFIG_SNIPPET = '[routes]\nfiles = ["/abs/path/routes.json"]\n';
+export type RoutePill = "healthy" | "unreachable" | "checking" | "ready" | "stopped";
 
 export function summarizeRoutes(
   files: RouteFileStatus[],
@@ -19,10 +17,9 @@ export function summarizeRoutes(
 }
 
 export function routePill(isEnabled: boolean, health: RouteHealth | undefined): RoutePill {
-  if (!isEnabled) return "off";
-  if (health === "up") return "healthy";
-  if (health === "down") return "unreachable";
-  return "checking";
+  if (health === undefined) return "checking";
+  if (health === "up") return isEnabled ? "healthy" : "ready";
+  return isEnabled ? "unreachable" : "stopped";
 }
 
 export function hitKey(routeId: string, target: string): string {
