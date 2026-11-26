@@ -35,6 +35,10 @@ export function useRoutesStatus() {
   });
   const files = query.data ?? NO_FILES;
   const enabled = useRoutes((s) => s.enabled);
+  const reconcile = useRoutes((s) => s.reconcile);
+  useEffect(() => {
+    reconcile(files);
+  }, [files, enabled, reconcile]);
   const visible = useTraffic((s) => s.activeView === "routes");
   const poll = files.some((f) => f.routes.length > 0) &&
     (visible || summarizeRoutes(files, enabled, NO_HEALTH).enabled > 0);
