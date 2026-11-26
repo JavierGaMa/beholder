@@ -2,12 +2,20 @@
 
 Local routes send selected path prefixes of your app's traffic to services running on your machine, while everything else keeps going to its real destination. The app under test does not change: it still calls the same URLs, and Beholder forwards the matching requests during a capture.
 
-## Quick start
+## Connect services
 
-1. Write a route file, or let your tooling generate one
-2. Add its absolute path to the `[routes]` section of `config.toml`
-3. Open the **Routes** view and enable the routes you want
+1. Open the **Routes** view and press **Connect services**, or run **Connect services** from the command palette
+2. Beholder looks for a local stack at `http://localhost:8090`. Choose one of the environments it lists and press **Connect**
+3. Turn on the routes you want. Every newly connected route starts off
 4. Start a capture and use your app
+
+Each environment shows how many of its targets are running. You can connect an environment whose services are stopped and start them later. Connecting an environment removes the other files listed by the same local stack, because environments can share the same paths; files that stack does not list stay configured.
+
+If nothing answers, enter the address of your local stack and press **Try again**. The last address used is remembered.
+
+If you already have a route file, press **Choose file…** instead. The file is validated first and added only if it can be used.
+
+**Remove** on a file group drops that file from the configuration and turns its routes off. The file itself is not deleted.
 
 ## Route file
 
@@ -46,7 +54,9 @@ A target must be `http://` with host `127.0.0.1` or `localhost` and an explicit 
 
 Requests reach your service with every header and the body unchanged, including `Authorization`. Only enable routes that point at services you trust.
 
-## Configuration
+## Manual configuration
+
+**Connect services**, **Choose file…** and **Remove** only edit the `files` list shown here, so you can also manage it by hand.
 
 ```toml
 [routes]
@@ -55,7 +65,46 @@ files = ["/abs/path/routes.json"]
 
 The default is an empty list. A newly created `config.toml` already contains the section; a file created by an earlier version may not. Edit the `files` value if the section exists, and add the section only if it is missing.
 
+The app applies changes without a restart. When it writes the file, every setting is preserved, but the file is regenerated, so comments and unknown keys you added are not kept. A `config.toml` that cannot be parsed is never overwritten: the error is shown instead.
+
 Files are read when the file list changes, when a capture starts, and when you press **Reload** in the Routes view. A file that cannot be read or parsed is listed with its error, contributes no routes, and does not block the capture.
+
+## Discovery
+
+A local stack tells Beholder which route files it has by answering `GET <base>/.well-known/beholder-routes`:
+
+```json
+{
+  "version": 1,
+  "name": "local stack",
+  "files": [
+    {
+      "id": "dev",
+      "label": "Dev",
+      "path": "/abs/path/routes-dev.json",
+      "hint": "make dev"
+    }
+  ]
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `version` | yes | Must be `1`. Any other value is rejected with `unsupported discovery version <n> (supported: 1)` |
+| `name` | yes | Name of the local stack |
+| `files` | yes | Non-empty list of route files |
+| `files[].id` | yes | Unique inside the document |
+| `files[].label` | yes | Name of the environment |
+| `files[].path` | yes | Absolute path of a route file on this machine, ending in `.json` |
+| `files[].hint` | no | Command that starts the environment, shown when none of its services are running |
+
+### Discovery safety
+
+- The base address must be `http://localhost:<port>` or `http://127.0.0.1:<port>`, with an optional trailing slash. Nothing else is queried
+- Redirects are not followed and the system proxy is not used
+- The request times out after 2 seconds and the response is limited to 64 KiB
+- Every listed file goes through the same validation as a manually configured one. A file that fails is shown with its error and cannot be selected
+- Discovery only reads. Configuration changes when you press **Connect**
 
 ## Matching and rewriting
 
@@ -67,6 +116,8 @@ Files are read when the file list changes, when a capture starts, and when you p
 
 ## The Routes view
 
+The header offers **Connect services** and **Choose file…** to change or add files, and each file group has **Reload** and **Remove**.
+
 Every route starts disabled. Toggles are remembered between sessions and apply to the next request without restarting the capture. **Enable all** and **Disable all** change every route at once; the command palette also offers **Disable all routes**.
 
 Only one route per host and path prefix can be enabled, for example when two files describe two environments. Enabling a route disables the one with the same match, and **Enable all** keeps the route already enabled, or the first listed one.
@@ -75,10 +126,11 @@ Each route shows one status:
 
 | Status | Meaning |
 | --- | --- |
-| **Off** | The route is disabled |
-| **Checking** | The route is enabled and has not been probed yet |
-| **Healthy** | The target accepted a TCP connection |
-| **Unreachable** | The target did not accept a connection within 500 ms |
+| **Ready** | The route is disabled and its target accepted a TCP connection |
+| **Not running** | The route is disabled and its target did not accept a connection |
+| **Checking** | The target has not been probed yet |
+| **Healthy** | The route is enabled and its target accepted a TCP connection |
+| **Unreachable** | The route is enabled and its target did not accept a connection within 500 ms |
 
 Health is checked every 5 seconds while the Routes view is visible or at least one route is enabled. When a route is enabled, the command bar shows a `Local n/total` chip that turns red if an enabled target is unreachable.
 

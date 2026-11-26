@@ -16,7 +16,7 @@ Network traffic inspector for React Native apps on Android emulators (Tauri 2).
 - Frontend: feature-based under `src/features/`; shared UI in `src/components/ui/`; theming via CSS variables in `src/lib/theme/`
 - Commits as work units: `type(scope): subject`, imperative, lowercase, max 50 chars; tests ship with the behavior they verify
 - No code comments. No emojis in artifacts. English-only artifacts and commits
-- All UI customization reads from `config.toml` (Ghostty-style, live reload); never add settings UI that duplicates the file
+- All configuration lives in `config.toml` (Ghostty-style, live reload); never add settings UI that keeps a second source of truth, assistants that write that file are allowed
 - Verify MITM changes with curl/OpenSSL against the e2e example, not only with Rust HTTP clients
 - Never commit secrets, captured traffic, or personal paths
 
