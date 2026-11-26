@@ -204,3 +204,74 @@ fn clear_proxy_fix_neutralizes_legacy_and_deletes_granular_keys() {
     assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_port".to_string()));
     assert!(joined.contains(&"-s emulator-5554 shell settings delete global global_http_proxy_exclusion_list".to_string()));
 }
+
+fn phone_runner(root_lines: &[&str], tail: &[(&str, bool)]) -> ScriptedRunner {
+    let runner = ScriptedRunner {
+        outputs: Mutex::new(VecDeque::new()),
+    };
+    runner.push("1\n", true);
+    for line in root_lines {
+        runner.push(line, !line.is_empty());
+    }
+    for (stdout, success) in tail {
+        runner.push(stdout, *success);
+    }
+    runner
+}
+
+#[test]
+fn phone_without_root_warns_and_skips_the_emulator_host_ping() {
+    let runner = phone_runner(
+        &["uid=2000(shell)\n", ""],
+        &[("0\n", true), ("", true), ("", true), ("null\n", true), ("off\n", true)],
+    );
+    let checks = run_checks(&runner, "R5CT91", None, &|_| true, None);
+    let root = checks.iter().find(|c| c.id == "root").unwrap();
+    assert_eq!(root.status, CheckStatus::Warn);
+    assert!(root.detail.contains("user certificates"));
+    assert!(checks.iter().all(|c| c.id != "host"));
+    let tunnel = checks.iter().find(|c| c.id == "tunnel").unwrap();
+    assert_eq!(tunnel.status, CheckStatus::Ok);
+    assert!(tunnel.detail.contains("created when capture starts"));
+    assert!(checks.iter().all(|c| !c.detail.contains("Emulator")), "{checks:?}");
+}
+
+#[test]
+fn phone_with_su_passes_the_root_check() {
+    let runner = phone_runner(&["uid=2000(shell)\n", "/system/bin/su\n"], &[]);
+    let checks = run_checks(&runner, "R5CT91", None, &|_| true, None);
+    let root = checks.iter().find(|c| c.id == "root").unwrap();
+    assert_eq!(root.status, CheckStatus::Ok);
+    assert!(root.detail.contains("su"));
+}
+
+#[test]
+fn phone_with_missing_tunnel_fails_while_capturing() {
+    let runner = phone_runner(
+        &["uid=2000(shell)\n", ""],
+        &[
+            ("0\n", true),
+            ("", true),
+            ("", true),
+            ("", true),
+            ("127.0.0.1:43127\n", true),
+            ("off\n", true),
+        ],
+    );
+    let checks = run_checks(&runner, "R5CT91", None, &|_| true, Some(43127));
+    let tunnel = checks.iter().find(|c| c.id == "tunnel").unwrap();
+    assert_eq!(tunnel.status, CheckStatus::Fail);
+}
+
+#[test]
+fn phone_dead_loopback_proxy_offers_fix() {
+    let runner = phone_runner(
+        &["uid=2000(shell)\n", ""],
+        &[("0\n", true), ("", true), ("", true), ("127.0.0.1:59999\n", true), ("off\n", true)],
+    );
+    let checks = run_checks(&runner, "R5CT91", None, &|_| false, None);
+    let proxy = checks.iter().find(|c| c.id == "proxy").unwrap();
+    assert_eq!(proxy.status, CheckStatus::Fail);
+    assert_eq!(proxy.fix, Some(FixId::ClearProxy));
+    assert!(proxy.detail.contains("dead port"));
+}

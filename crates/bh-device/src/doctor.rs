@@ -52,6 +52,28 @@ pub fn parse_proxy_value(raw: &str) -> Option<(String, u16)> {
     Some((host.to_string(), port))
 }
 
+fn tunnel_check(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    active_proxy_port: Option<u16>,
+) -> DoctorCheck {
+    let (status, detail) = match active_proxy_port {
+        None => (CheckStatus::Ok, "adb reverse is created when capture starts".to_string()),
+        Some(port) => match crate::AdbDevice::new(runner, serial).has_reverse(port) {
+            Ok(true) => (CheckStatus::Ok, format!("adb reverse tcp:{port} is active")),
+            Ok(false) => (CheckStatus::Fail, format!("adb reverse tcp:{port} is missing")),
+            Err(e) => (CheckStatus::Fail, e.to_string()),
+        },
+    };
+    DoctorCheck {
+        id: "tunnel".into(),
+        title: "Tunnel to your Mac".into(),
+        status,
+        detail,
+        fix: None,
+    }
+}
+
 pub fn run_checks(
     runner: &dyn CommandRunner,
     serial: &str,
@@ -60,6 +82,8 @@ pub fn run_checks(
     active_proxy_port: Option<u16>,
 ) -> Vec<DoctorCheck> {
     let mut checks = Vec::new();
+    let is_emulator = crate::is_emulator_serial(serial);
+    let target = if is_emulator { "Emulator" } else { "Device" };
 
     let boot = getprop(runner, serial, "sys.boot_completed");
     checks.push(DoctorCheck {
@@ -73,27 +97,41 @@ pub fn run_checks(
         detail: if boot == "1" {
             "Android is fully booted".into()
         } else {
-            "Emulator is still booting — wait and re-run".into()
+            format!("{target} is still booting — wait and re-run")
         },
         fix: None,
     });
 
     let id_out = sh(runner, serial, "id").stdout;
-    let build_type = getprop(runner, serial, "ro.build.type");
-    let debuggable = getprop(runner, serial, "ro.debuggable") == "1";
     let is_root = id_out.contains("uid=0");
-    let root_status = if is_root {
+    let root_status = if is_emulator {
+        let build_type = getprop(runner, serial, "ro.build.type");
+        let debuggable = getprop(runner, serial, "ro.debuggable") == "1";
+        if is_root {
+            (CheckStatus::Ok, "adbd is running as root".to_string())
+        } else if debuggable && build_type != "user" {
+            (
+                CheckStatus::Ok,
+                format!("Image is {build_type} — adbd will root on capture start"),
+            )
+        } else {
+            (
+                CheckStatus::Fail,
+                "Image refuses root (user build) — recreate this AVD with a google_apis image"
+                    .to_string(),
+            )
+        }
+    } else if is_root {
         (CheckStatus::Ok, "adbd is running as root".to_string())
-    } else if debuggable && build_type != "user" {
+    } else if sh(runner, serial, "command -v su").success {
         (
             CheckStatus::Ok,
-            format!("Image is {build_type} — adbd will root on capture start"),
+            "su is available — Beholder can install a system certificate".to_string(),
         )
     } else {
         (
-            CheckStatus::Fail,
-            "Image refuses root (user build) — recreate this AVD with a google_apis image"
-                .to_string(),
+            CheckStatus::Warn,
+            "no root: HTTPS is limited to apps that trust user certificates".to_string(),
         )
     };
     checks.push(DoctorCheck {
@@ -138,9 +176,13 @@ pub fn run_checks(
             CheckStatus::Fail
         },
         detail: if ip_ok {
-            "Emulator reaches 8.8.8.8".into()
+            format!("{target} reaches 8.8.8.8")
         } else {
-            "No raw IP connectivity — check your Mac's network or the AVD network settings".into()
+            if is_emulator {
+                "No raw IP connectivity — check your Mac's network or the AVD network settings".into()
+            } else {
+                "No raw IP connectivity — check the phone network".into()
+            }
         },
         fix: None,
     });
@@ -166,22 +208,26 @@ pub fn run_checks(
         fix: None,
     });
 
-    let host_ok = sh(runner, serial, "ping -c 1 -W 2 10.0.2.2").success;
-    checks.push(DoctorCheck {
-        id: "host".into(),
-        title: "Host reachable (10.0.2.2)".into(),
-        status: if host_ok {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        detail: if host_ok {
-            "Emulator reaches your Mac — Beholder proxy endpoint is reachable".into()
-        } else {
-            "Emulator cannot reach your Mac (10.0.2.2)".into()
-        },
-        fix: None,
-    });
+    if is_emulator {
+        let host_ok = sh(runner, serial, "ping -c 1 -W 2 10.0.2.2").success;
+        checks.push(DoctorCheck {
+            id: "host".into(),
+            title: "Host reachable (10.0.2.2)".into(),
+            status: if host_ok {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Fail
+            },
+            detail: if host_ok {
+                "Emulator reaches your Mac — Beholder proxy endpoint is reachable".into()
+            } else {
+                "Emulator cannot reach your Mac (10.0.2.2)".into()
+            },
+            fix: None,
+        });
+    } else {
+        checks.push(tunnel_check(runner, serial, active_proxy_port));
+    }
 
     let device = crate::AdbDevice::new(runner, serial);
     let parsed = crate::ProxyConfigurator::current_proxy(&device)
@@ -196,12 +242,13 @@ pub fn run_checks(
             None,
         ),
         (Some((host, port)), _) => {
-            if host == "10.0.2.2" && !port_alive(*port) {
+            let own_host = if is_emulator { "10.0.2.2" } else { "127.0.0.1" };
+            if host == own_host && !port_alive(*port) {
                 (
                     CheckStatus::Fail,
                     format!(
-                        "Proxy {}:{} points to a dead port on your Mac — this kills all emulator internet. Likely a leftover session.",
-                        host, port
+                        "Proxy {}:{} points to a dead port on your Mac — this kills all {} internet. Likely a leftover session.",
+                        host, port, target.to_lowercase()
                     ),
                     Some(FixId::ClearProxy),
                 )

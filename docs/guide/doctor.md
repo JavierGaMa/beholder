@@ -1,17 +1,18 @@
 # Doctor
 
-The Doctor diagnoses a running emulator and repairs common problems in one click. Open it from the **Doctor** button on any running AVD.
+The Doctor diagnoses a running emulator or a connected phone and repairs common problems in one click. Open it from the **Doctor** button on any running AVD.
 
 ## Checks
 
 | Check | What it verifies |
 | --- | --- |
 | Boot completed | `sys.boot_completed` is set |
-| Root access | adbd runs as root, or the image is a debuggable build that will root on capture |
+| Root access | Emulators: adbd runs as root, or the image is a debuggable build that will root on capture. Phones: adbd or `su` is available, otherwise a warning |
 | Radio on | Airplane mode is off |
 | Internet (raw IP) | The emulator can reach `8.8.8.8` |
 | DNS resolution | The emulator can resolve `google.com` |
-| Host reachable | The emulator can reach your Mac at `10.0.2.2` — the Beholder proxy endpoint |
+| Host reachable | Emulators: the emulator can reach your Mac at `10.0.2.2`, the Beholder proxy endpoint |
+| Tunnel to your Mac | Phones: the `adb reverse` rule is present while capturing |
 | HTTP proxy | The global proxy state, including the \#1 cause of "no internet" |
 | Private DNS | Encrypted DNS modes that hide traffic from inspection |
 | Beholder CA | The CA is present with the expected content |
