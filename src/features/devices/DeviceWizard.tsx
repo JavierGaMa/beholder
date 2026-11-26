@@ -3,6 +3,7 @@ import { invoke } from "../../lib/tauri";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
+import { toast } from "../../components/ui/toast";
 import { qError } from "../../lib/query";
 import { useDeviceProbeQuery, useWatchedDevicesQuery } from "../../queries/deviceProbe";
 import { useTraffic } from "../../store/traffic";
@@ -44,6 +45,13 @@ function WizardBody({ serial }: { serial: string }) {
 
   function onAction(tier: TierId, action: CardAction) {
     setOpenCard((current) => (current === tier && action !== "unlock" ? null : tier));
+    if (action === "unlock") {
+      void run(async () => {
+        await invoke("install_system_ca", { serial });
+        toast("Certificate installed. Restart the app you want to inspect");
+        await probeQ.refetch();
+      });
+    }
     if (action === "steps" && openCard !== tier) {
       void run(async () => {
         await invoke("push_user_ca", { serial });

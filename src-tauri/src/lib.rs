@@ -129,6 +129,7 @@ pub fn run() {
             commands::probe_device,
             commands::push_user_ca,
             commands::open_security_settings,
+            commands::install_system_ca,
             commands::run_doctor,
             commands::apply_doctor_fix,
             commands::clear_stale_proxies,

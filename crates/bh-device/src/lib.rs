@@ -4,6 +4,7 @@ pub mod host_bootstrap;
 pub mod host_doctor;
 pub mod probe;
 pub mod runner;
+pub mod system_ca;
 pub mod types;
 
 pub use avd::{
@@ -17,6 +18,7 @@ pub use probe::{
     probe, root_access, tiers, DeviceProbe, RootAccess, Tier, TierState, TierStatus,
     COMPANION_PACKAGE, SU_GRANT_HINT,
 };
+pub use system_ca::{ensure_system_ca, remove_system_ca, CaOutcome};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
 pub use types::{AvdInfo, Device, DeviceState, SystemImage};
 
@@ -91,9 +93,17 @@ impl<'a> DeviceScanner for AdbScanner<'a> {
     }
 }
 
+const SYSTEM_CACERTS: &str = "/system/etc/security/cacerts";
+const APEX_CACERTS: &str = "/apex/com.android.conscrypt/cacerts";
+
 pub struct AdbDevice<'a> {
     runner: &'a dyn CommandRunner,
     pub serial: String,
+    su: bool,
+}
+
+pub fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 impl<'a> AdbDevice<'a> {
@@ -101,11 +111,30 @@ impl<'a> AdbDevice<'a> {
         AdbDevice {
             runner,
             serial: serial.to_string(),
+            su: false,
         }
     }
 
+    pub fn with_su(mut self) -> Self {
+        self.su = true;
+        self
+    }
+
     fn shell(&self, cmd: &str) -> Result<Output, DeviceError> {
+        if self.su {
+            return self.plain_shell(&format!("su -c {}", sh_quote(cmd)));
+        }
+        self.plain_shell(cmd)
+    }
+
+    fn plain_shell(&self, cmd: &str) -> Result<Output, DeviceError> {
         self.runner.run(&["-s", &self.serial, "shell", cmd])
+    }
+
+    pub fn has_staged_cert(&self, filename: &str) -> Result<bool, DeviceError> {
+        Ok(self
+            .plain_shell(&format!("ls /data/local/tmp/beholder-ca-stage/{filename}"))?
+            .success)
     }
 
     pub fn boot_completed(&self) -> Result<bool, DeviceError> {
@@ -215,15 +244,17 @@ impl<'a> AdbDevice<'a> {
         std::fs::write(&tmp, cert_pem)
             .map_err(|e| DeviceError::Other(format!("write temp cert: {e}")))?;
         let src = tmp.to_string_lossy().to_string();
-        let out = self.runner.run(&[
-            "-s",
-            &self.serial,
-            "shell",
-            "ls /data/local/tmp/beholder-ca-stage",
-        ])?;
+        let out = self.plain_shell("ls /data/local/tmp/beholder-ca-stage")?;
         if !out.success || out.stdout.trim().is_empty() {
-            self.shell_ok("mkdir -p /data/local/tmp/beholder-ca-stage")?;
-            let _ = self.shell(
+            let created = self.plain_shell("mkdir -p /data/local/tmp/beholder-ca-stage")?;
+            if !created.success {
+                return Err(DeviceError::Other(format!(
+                    "shell 'mkdir -p /data/local/tmp/beholder-ca-stage' failed: {}{}",
+                    created.stdout.trim(),
+                    created.stderr.trim()
+                )));
+            }
+            let _ = self.plain_shell(
                 "cp /system/etc/security/cacerts/* /data/local/tmp/beholder-ca-stage/ 2>/dev/null",
             );
         }
@@ -242,6 +273,33 @@ impl<'a> AdbDevice<'a> {
             });
         }
         Ok(())
+    }
+
+    fn store_matches(
+        &self,
+        dir: &str,
+        filename: &str,
+        cert_pem: &str,
+    ) -> Result<bool, DeviceError> {
+        let out = self.shell(&format!("cat {dir}/{filename}"))?;
+        if !out.success {
+            return Ok(false);
+        }
+        let normalize = |pem: &str| -> String {
+            pem.lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty() && !l.starts_with("-----"))
+                .collect::<Vec<_>>()
+                .join("")
+        };
+        Ok(normalize(&out.stdout) == normalize(cert_pem))
+    }
+
+    fn apex_store_has(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError> {
+        if !self.shell(&format!("ls {APEX_CACERTS}"))?.success {
+            return Ok(true);
+        }
+        self.store_matches(APEX_CACERTS, filename, cert_pem)
     }
 
     fn try_direct_push(&self, filename: &str) -> bool {
@@ -298,33 +356,31 @@ impl<'a> AdbDevice<'a> {
 impl<'a> CertificateInstaller for AdbDevice<'a> {
     fn install_system_cert(&self, filename: &str, pem: &str) -> Result<(), DeviceError> {
         self.stage_certs(pem, filename)?;
-        if self.try_direct_push(filename) {
+        if !self.su && self.try_direct_push(filename) {
             return Ok(());
         }
         self.try_tmpfs_install()?;
         self.propagate_to_zygote();
-        if self.is_cert_installed(filename, pem)? {
-            Ok(())
-        } else {
-            Err(DeviceError::Other(
+        if !self.is_cert_installed(filename, pem)? {
+            return Err(DeviceError::Other(
                 "certificate not present in system store after install".into(),
-            ))
+            ));
         }
+        if self.su && !self.apex_store_has(filename, pem)? {
+            return Err(DeviceError::Other(
+                "certificate not present in the apex store after install".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn is_cert_installed(&self, filename: &str, cert_pem: &str) -> Result<bool, DeviceError> {
-        let out = self.shell(&format!("cat /system/etc/security/cacerts/{}", filename))?;
-        if !out.success {
-            return Ok(false);
+        if self.store_matches(SYSTEM_CACERTS, filename, cert_pem)? {
+            return Ok(true);
         }
-        let normalize = |pem: &str| -> String {
-            pem.lines()
-                .map(|l| l.trim())
-                .filter(|l| !l.is_empty() && !l.starts_with("-----"))
-                .collect::<Vec<_>>()
-                .join("")
-        };
-        Ok(normalize(&out.stdout) == normalize(cert_pem))
+        Ok(self
+            .store_matches(APEX_CACERTS, filename, cert_pem)
+            .unwrap_or(false))
     }
 
     fn uninstall_cert(&self, filename: &str) -> Result<(), DeviceError> {

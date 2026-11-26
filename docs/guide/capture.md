@@ -6,7 +6,7 @@ Use the **Capture** button in the command bar. The status dot turns green and pu
 
 Behind the scenes, starting a capture:
 
-1. Runs `adb root` on the target emulator
+1. Runs `adb root` on the target emulator. On a phone it uses `adb root` or `su` when available, and skips the system certificate otherwise
 2. Installs the Beholder CA as a system certificate — through a tmpfs mount bound over the Conscrypt apex on Android 14+, with correct SELinux contexts and zygote propagation
 3. Starts a local MITM proxy on a random port
 4. Saves the current global proxy and sets it to `10.0.2.2:<port>`

@@ -553,6 +553,29 @@ pub async fn open_security_settings(
 }
 
 #[tauri::command]
+pub async fn install_system_ca(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let ca = bh_ca::load_or_create(&dir).map_err(|e| e.to_string())?;
+    let filename = bh_ca::system_cert_filename(&ca.cert_pem).map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        match bh_device::ensure_system_ca(runner.as_ref(), &serial, &filename, &ca.cert_pem) {
+            Ok(bh_device::CaOutcome::Skipped) => {
+                Err("no root available on this phone".to_string())
+            }
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn run_doctor(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
@@ -1013,16 +1036,9 @@ async fn start_capture(
     let cert_serial = serial.to_string();
     let cert_pem = ca.cert_pem.clone();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let device = bh_device::AdbDevice::new(cert_runner.as_ref(), &cert_serial);
-        let installed = device
-            .is_cert_installed(&filename, &cert_pem)
-            .map_err(|e| e.to_string())?;
-        if !installed {
-            device.root().map_err(|e| e.to_string())?;
-            CertificateInstaller::install_system_cert(&device, &filename, &cert_pem)
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
+        bh_device::ensure_system_ca(cert_runner.as_ref(), &cert_serial, &filename, &cert_pem)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -1806,8 +1822,7 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
                 scanner.list().map_err(|e| e.to_string())?
             };
             for d in serials.into_iter().filter(|d| d.state == DeviceState::Online) {
-                let device = bh_device::AdbDevice::new(runner.as_ref(), &d.serial);
-                let _ = CertificateInstaller::uninstall_cert(&device, &name);
+                let _ = bh_device::remove_system_ca(runner.as_ref(), &d.serial, &name);
             }
         }
     }
