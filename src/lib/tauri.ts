@@ -40,6 +40,24 @@ async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
         { serial: "emulator-5554", state: "Online", is_emulator: true, model: "sdk gphone64 arm64" },
         { serial: "ABC123", state: "Online", is_emulator: false, model: "SM S911B" },
       ] as T;
+    case "probe_device":
+      return {
+        probe: {
+          serial: String(args?.serial ?? "ABC123"),
+          model: "SM-S911B",
+          android_release: "14",
+          sdk: 34,
+          is_emulator: false,
+          root: "none",
+          system_ca_installed: false,
+          companion_version: null,
+        },
+        tiers: [
+          { tier: "basic", state: "ready", detail: "Logcat, shell, APK install, plain HTTP and Metro." },
+          { tier: "user_ca", state: "action", detail: "Install the certificate in Settings and add the config to your debug build." },
+          { tier: "full", state: "locked", detail: "Needs Magisk root. Unlocks HTTPS of any app without pinning and the database viewer." },
+        ],
+      } as T;
     case "current_proxy":
       return null as T;
     case "format_curl":

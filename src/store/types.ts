@@ -151,3 +151,29 @@ export interface ApkEntry {
   size_bytes: number;
   last_modified: string;
 }
+
+export type RootAccess = "none" | "adb_root" | "su" | "su_denied";
+export type TierId = "basic" | "user_ca" | "full";
+export type TierState = "ready" | "action" | "locked";
+
+export interface DeviceProbe {
+  serial: string;
+  model: string;
+  android_release: string;
+  sdk: number | null;
+  is_emulator: boolean;
+  root: RootAccess;
+  system_ca_installed: boolean;
+  companion_version: string | null;
+}
+
+export interface TierStatus {
+  tier: TierId;
+  state: TierState;
+  detail: string;
+}
+
+export interface DeviceReport {
+  probe: DeviceProbe;
+  tiers: TierStatus[];
+}

@@ -2,6 +2,7 @@ pub mod avd;
 pub mod doctor;
 pub mod host_bootstrap;
 pub mod host_doctor;
+pub mod probe;
 pub mod runner;
 pub mod types;
 
@@ -12,6 +13,10 @@ pub use avd::{
     SdkToolRunner,
 };
 pub use doctor::{apply_basic_fix, run_checks, CheckStatus, DoctorCheck, FixId};
+pub use probe::{
+    probe, root_access, tiers, DeviceProbe, RootAccess, Tier, TierState, TierStatus,
+    COMPANION_PACKAGE, SU_GRANT_HINT,
+};
 pub use runner::{CommandRunner, DeviceError, FakeRunner, Output, RealRunner};
 pub use types::{AvdInfo, Device, DeviceState, SystemImage};
 

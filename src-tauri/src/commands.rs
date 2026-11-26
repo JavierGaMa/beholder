@@ -493,6 +493,32 @@ pub async fn clear_stale_proxies(
     Ok(cleared)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceReport {
+    pub probe: bh_device::DeviceProbe,
+    pub tiers: Vec<bh_device::TierStatus>,
+}
+
+#[tauri::command]
+pub async fn probe_device(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+) -> Result<DeviceReport, String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let ca = bh_ca::load_or_create(&dir).map_err(|e| e.to_string())?;
+    let filename = bh_ca::system_cert_filename(&ca.cert_pem).map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        let probe = bh_device::probe(runner.as_ref(), &serial, &filename, &ca.cert_pem)
+            .map_err(|e| e.to_string())?;
+        let tiers = bh_device::tiers(&probe);
+        Ok(DeviceReport { probe, tiers })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn run_doctor(
     state: State<'_, AppState>,

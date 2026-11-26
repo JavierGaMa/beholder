@@ -126,6 +126,7 @@ pub fn run() {
             commands::apply_host_fix,
             commands::preview_shell_env,
             commands::create_avd,
+            commands::probe_device,
             commands::run_doctor,
             commands::apply_doctor_fix,
             commands::clear_stale_proxies,
