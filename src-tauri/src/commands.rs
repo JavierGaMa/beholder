@@ -40,11 +40,9 @@ pub async fn test_apks_list_url(
 pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<(), String> {
     let normalized = crate::apks::normalize_list_url(&list_url)?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.apks.list_url != normalized {
-        let mut next = cfg.clone();
-        next.apks.list_url = normalized;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.apks.list_url = normalized)
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -53,11 +51,9 @@ pub async fn set_apks_config(app: tauri::AppHandle, list_url: String) -> Result<
 #[tauri::command]
 pub async fn clear_apks_source(app: tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if !cfg.apks.list_url.is_empty() {
-        let mut next = cfg.clone();
-        next.apks.list_url = String::new();
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.apks.list_url.clear())
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -570,11 +566,9 @@ pub async fn set_config(
 pub async fn set_accent_color(app: tauri::AppHandle, color: Option<String>) -> Result<(), String> {
     let normalized = crate::config::normalize_accent_color(color.as_deref())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.colors.accent != normalized {
-        let mut next = cfg.clone();
-        next.colors.accent = normalized;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
+    let (next, changed) = crate::config::update(&dir, |c| c.colors.accent = normalized)
+        .map_err(|e| e.to_string())?;
+    if changed {
         let _ = app.emit("config-changed", &next);
     }
     Ok(())
@@ -1337,12 +1331,10 @@ pub async fn agent_set_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let cfg = crate::config::load(&dir).map_err(|e| e.to_string())?;
-    if cfg.agent.enabled != enabled {
-        let mut next = cfg.clone();
-        next.agent.enabled = enabled;
-        crate::config::write_config(&dir, &next).map_err(|e| e.to_string())?;
-        let _ = app.emit("config-changed", &next);
+    let (cfg, changed) = crate::config::update(&dir, |c| c.agent.enabled = enabled)
+        .map_err(|e| e.to_string())?;
+    if changed {
+        let _ = app.emit("config-changed", &cfg);
     }
     let mut server = agent.server.lock().await;
     if enabled {

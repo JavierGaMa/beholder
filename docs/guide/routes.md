@@ -65,7 +65,7 @@ files = ["/abs/path/routes.json"]
 
 The default is an empty list. A newly created `config.toml` already contains the section; a file created by an earlier version may not. Edit the `files` value if the section exists, and add the section only if it is missing.
 
-The app applies changes without a restart. When it writes the file, every setting is preserved, but the file is regenerated, so comments and unknown keys you added are not kept. A `config.toml` that cannot be parsed is never overwritten: the error is shown instead.
+The app applies changes without a restart. When it writes the file, it changes only the settings that differ, so your comments and unknown keys are kept. The file is replaced atomically. A `config.toml` that cannot be parsed is never overwritten: the error is shown instead.
 
 Files are read when the file list changes, when a capture starts, and when you press **Reload** in the Routes view. A file that cannot be read or parsed is listed with its error, contributes no routes, and does not block the capture.
 

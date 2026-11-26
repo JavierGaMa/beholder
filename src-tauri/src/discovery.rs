@@ -154,20 +154,20 @@ fn update(
     let failed = |e: ConfigError| RouteConfigError::Config {
         message: e.to_string(),
     };
-    let mut config = config::load(dir).map_err(failed)?;
-    let next = change(&config.routes.files);
+    let mut next: Vec<String> = Vec::new();
     let mut reset: Vec<String> = Vec::new();
-    let removed = config.routes.files.iter().filter(|f| !next.contains(f));
-    let added = next.iter().filter(|f| !config.routes.files.contains(f));
-    for file in removed.chain(added) {
-        if !reset.contains(file) {
-            reset.push(file.clone());
+    let (config, _) = config::update(dir, |config| {
+        next = change(&config.routes.files);
+        let removed = config.routes.files.iter().filter(|f| !next.contains(f));
+        let added = next.iter().filter(|f| !config.routes.files.contains(f));
+        for file in removed.chain(added) {
+            if !reset.contains(file) {
+                reset.push(file.clone());
+            }
         }
-    }
-    if next != config.routes.files {
         config.routes.files = next.clone();
-        config::write_config(dir, &config).map_err(failed)?;
-    }
+    })
+    .map_err(failed)?;
     Ok((
         RouteFilesUpdate {
             files: next,
