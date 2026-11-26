@@ -21,6 +21,22 @@ const storage = vi.hoisted(() => {
 const { useRoutes } = await import("./store");
 const { loadEnabledRoutes } = await import("../../lib/prefs");
 
+const twins = ["mx", "br"].map((country) => ({
+  path: `/${country}.json`,
+  name: country,
+  error: null,
+  routes: [
+    {
+      key: `/${country}.json::orders`,
+      id: "orders",
+      path_prefix: "/v1/orders",
+      host: null,
+      target: "http://127.0.0.1:4000",
+      enabled: false,
+    },
+  ],
+}));
+
 beforeEach(() => {
   calls.length = 0;
   storage.clear();
@@ -51,10 +67,27 @@ describe("routes store", () => {
     ]);
   });
 
-  it("enables every listed route", () => {
-    useRoutes.getState().enableAll(["a", "b"]);
-    expect(loadEnabledRoutes()).toEqual(["a", "b"]);
-    expect(calls).toEqual([["set_all_routes_enabled", { enabled: true }]]);
+  it("enables every listed route that does not conflict", () => {
+    useRoutes.getState().enableAll(twins);
+    expect(loadEnabledRoutes()).toEqual(["/mx.json::orders"]);
+    expect(calls).toEqual([["set_route_enabled", { key: "/mx.json::orders", enabled: true }]]);
+  });
+
+  it("switches off the conflicting route when another is enabled", () => {
+    useRoutes.setState({ enabled: ["/mx.json::orders"] });
+    useRoutes.getState().setEnabled("/br.json::orders", true, twins);
+    expect(loadEnabledRoutes()).toEqual(["/br.json::orders"]);
+    expect(calls).toEqual([
+      ["set_route_enabled", { key: "/mx.json::orders", enabled: false }],
+      ["set_route_enabled", { key: "/br.json::orders", enabled: true }],
+    ]);
+  });
+
+  it("drops persisted conflicts, keeping the one the proxy would use", () => {
+    useRoutes.setState({ enabled: ["/br.json::orders", "/mx.json::orders"] });
+    useRoutes.getState().reconcile(twins);
+    expect(loadEnabledRoutes()).toEqual(["/mx.json::orders"]);
+    expect(calls).toEqual([["set_route_enabled", { key: "/br.json::orders", enabled: false }]]);
   });
 
   it("disables every route including stale ones", () => {

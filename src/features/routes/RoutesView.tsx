@@ -45,7 +45,9 @@ function RouteRow({
   enabled,
   health,
   hits,
+  files,
 }: {
+  files: RouteFileStatus[];
   route: RouteStatus;
   enabled: boolean;
   health: RouteHealth | undefined;
@@ -55,7 +57,7 @@ function RouteRow({
   const pill = PILLS[routePill(enabled, health)];
   return (
     <li className="grid grid-cols-[32px_minmax(80px,140px)_minmax(0,1fr)_14px_minmax(0,1fr)_96px_64px] items-center gap-3 px-3 py-2 text-[12px]">
-      <Toggle checked={enabled} onChange={(on) => setEnabled(route.key, on)} label={`Enable ${route.id}`} />
+      <Toggle checked={enabled} onChange={(on) => setEnabled(route.key, on, files)} label={`Enable ${route.id}`} />
       <span className="truncate font-semibold text-txt" title={route.id}>
         {route.id}
       </span>
@@ -81,7 +83,9 @@ function RouteGroup({
   health,
   reloading,
   onReload,
+  files,
 }: {
+  files: RouteFileStatus[];
   file: RouteFileStatus;
   enabled: string[];
   health: Record<string, RouteHealth>;
@@ -113,6 +117,7 @@ function RouteGroup({
           {file.routes.map((route) => (
             <RouteRow
               key={route.key}
+              files={files}
               route={route}
               enabled={enabled.includes(route.key)}
               health={health[route.key]}
@@ -192,7 +197,7 @@ export function RoutesView() {
             variant="subtle"
             size="sm"
             disabled={summary.total === 0}
-            onClick={() => enableAll(files.flatMap((f) => f.routes.map((r) => r.key)))}
+            onClick={() => enableAll(files)}
           >
             Enable all
           </Button>
@@ -208,6 +213,7 @@ export function RoutesView() {
         {files.map((file) => (
           <RouteGroup
             key={file.path}
+            files={files}
             file={file}
             enabled={enabled}
             health={health}

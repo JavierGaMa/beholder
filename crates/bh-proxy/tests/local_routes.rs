@@ -264,3 +264,33 @@ async fn websocket_upgrade_is_never_routed() {
     assert_eq!(harness.requests()[0].routed, None);
     harness.handle.stop().await;
 }
+
+#[tokio::test]
+async fn unreachable_target_records_a_failed_exchange() {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = closed.local_addr().unwrap().port();
+    drop(closed);
+    let harness = Harness::start(orders_route(port)).await;
+    harness.enable("orders");
+
+    let resp = harness
+        .client
+        .get("https://gateway.example.test/v1/orders/api")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 502);
+
+    let events = harness.sink.events.lock().unwrap().clone();
+    assert!(
+        matches!(
+            events.as_slice(),
+            [
+                TrafficEvent::ExchangeStarted { id: started, .. },
+                TrafficEvent::ExchangeFailed { id: failed, error },
+            ] if started == failed && !error.is_empty()
+        ),
+        "{events:?}"
+    );
+    harness.handle.stop().await;
+}
