@@ -13,6 +13,8 @@ pub struct AppState {
     pub sink: StdMutex<Arc<BatchSink>>,
     pub active_serial: AsyncMutex<Option<String>>,
     pub metro_task: AsyncMutex<Option<crate::metro::MetroTaskHandle>>,
+    pub routes: bh_proxy::SharedRoutes,
+    pub route_catalog: AsyncMutex<Option<crate::routes::RouteCatalog>>,
 }
 
 impl AppState {
@@ -23,6 +25,8 @@ impl AppState {
             sink: StdMutex::new(sink),
             active_serial: AsyncMutex::new(None),
             metro_task: AsyncMutex::new(None),
+            routes: bh_proxy::SharedRoutes::default(),
+            route_catalog: AsyncMutex::new(None),
         }
     }
 
@@ -37,6 +41,16 @@ impl AppState {
         let sink = Arc::new(BatchSink::spawn(app.clone(), agent));
         *self.sink.lock().unwrap() = sink.clone();
         sink
+    }
+
+    pub async fn refresh_routes(
+        &self,
+        paths: &[String],
+        force: bool,
+    ) -> Vec<crate::routes::RouteFileStatus> {
+        let mut catalog = self.route_catalog.lock().await;
+        crate::routes::refresh(&self.routes, &mut catalog, paths, force).await;
+        crate::routes::snapshot(&self.routes, &catalog)
     }
 
     pub async fn get_runner(&self) -> Result<Arc<RealRunner>, bh_device::DeviceError> {

@@ -162,6 +162,12 @@ impl Default for ProxyConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct RoutesConfig {
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
@@ -188,6 +194,8 @@ pub struct UiConfig {
     pub metro: MetroConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default)]
+    pub routes: RoutesConfig,
     #[serde(default)]
     pub window: WindowConfig,
 }
@@ -223,6 +231,7 @@ impl Default for UiConfig {
             apks: ApksConfig::default(),
             metro: MetroConfig::default(),
             proxy: ProxyConfig::default(),
+            routes: RoutesConfig::default(),
             window: WindowConfig::default(),
         }
     }
@@ -266,6 +275,8 @@ const METRO_CAPTURE_DOC: &str = "# capture = true also records Metro traffic to 
 
 const PROXY_TLS_BYPASS_DOC: &str = "# tls_bypass_hosts = CONNECT tunnels to these hosts are relayed without TLS\n# interception so Android network validation probes see the real certificates;\n# set to an empty list to intercept everything\n";
 
+const ROUTES_DOC: &str = "# files = absolute paths of route files that redirect matching requests to\n# local services; every route starts disabled and is toggled in the Routes view\n";
+
 const WINDOW_OVERRIDE_DOC: &str = "# keys are optional per-field overrides; unset fields follow the theme's\n# curated look, so delete the section to return to it\n# sidebar_opacity = 86      # 0-100, 100 = solid\n# main_pane_glass = false   # also glaze the request panes\n# blur_radius = 30          # 0-64, desktop blur behind the glaze\n";
 
 pub fn config_path(app_data: &std::path::Path) -> PathBuf {
@@ -295,6 +306,7 @@ pub fn write_config(dir: &std::path::Path, config: &UiConfig) -> Result<(), Conf
     let body = toml::to_string_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let body = body.replacen("[metro]", &format!("[metro]\n{METRO_CAPTURE_DOC}"), 1);
     let body = body.replacen("[proxy]", &format!("[proxy]\n{PROXY_TLS_BYPASS_DOC}"), 1);
+    let body = body.replacen("[routes]", &format!("[routes]\n{ROUTES_DOC}"), 1);
     let body = body.replacen("[window]", &format!("[window]\n{WINDOW_OVERRIDE_DOC}"), 1);
     std::fs::write(config_path(dir), format!("{}{}", TEMPLATE_HEADER, body))
         .map_err(ConfigError::Io)
@@ -538,6 +550,36 @@ mod tests {
             .next()
             .unwrap_or("")
             .to_string()
+    }
+
+    #[test]
+    fn routes_default_to_an_empty_documented_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-routes-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(config_path(&dir), "theme = \"carbon\"\n").unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.routes.files.is_empty());
+        write_config(&dir, &loaded).unwrap();
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("[routes]\n# files = absolute paths of route files"));
+        assert!(raw.contains("files = []"));
+        assert_eq!(load(&dir).unwrap(), loaded);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn roundtrip_toml_with_routes_section() {
+        let dir = std::env::temp_dir().join(format!("bh-cfg-routes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = UiConfig::default();
+        config.routes.files = vec!["/abs/path/routes.json".into()];
+        write_config(&dir, &config).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded, config);
+        let raw = std::fs::read_to_string(config_path(&dir)).unwrap();
+        assert!(raw.contains("/abs/path/routes.json"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

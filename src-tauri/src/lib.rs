@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod console;
 mod metro;
+mod routes;
 mod state;
 mod window_blur;
 
@@ -131,6 +132,11 @@ pub fn run() {
             commands::capture_health,
             commands::capture_restart,
             commands::full_cleanup,
+            commands::list_routes,
+            commands::reload_routes,
+            commands::set_route_enabled,
+            commands::set_all_routes_enabled,
+            commands::routes_health,
             commands::format_curl,
             commands::export_har,
             commands::export_postman,
