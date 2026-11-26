@@ -478,8 +478,24 @@ pub async fn clear_stale_proxies(
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let scanner = bh_device::AdbScanner::new(runner.as_ref());
     let devices = scanner.list().map_err(|e| e.to_string())?;
+    let _capturing = state.capture_lock.lock().await;
     let active = state.proxy.lock().await.as_ref().map(|h| h.port);
-    let mut cleared = 0;
+    let online: Vec<String> = devices
+        .iter()
+        .filter(|d| d.state == DeviceState::Online)
+        .map(|d| d.serial.clone())
+        .collect();
+    let capturing_companion = if *state.companion.lock().await {
+        state.active_serial.lock().await.clone()
+    } else {
+        None
+    };
+    let mut cleared = crate::companion_session::sweep(
+        runner.as_ref(),
+        &dir,
+        &online,
+        capturing_companion.as_deref(),
+    );
     for d in devices.iter().filter(|d| d.state == DeviceState::Online) {
         let device = bh_device::AdbDevice::new(runner.as_ref(), &d.serial);
         if let Ok(Some(proxy)) = ProxyConfigurator::current_proxy(&device) {
@@ -1027,6 +1043,7 @@ pub async fn capture_start(
     body_cap: Option<usize>,
     package: Option<String>,
 ) -> Result<u16, String> {
+    let _capturing = state.capture_lock.lock().await;
     start_capture(&state, &app, &serial, port, body_cap, package).await
 }
 
@@ -1101,7 +1118,10 @@ async fn start_capture(
     }
     if std::mem::take(&mut *state.companion.lock().await) {
         if let Some(previous) = state.active_serial.lock().await.clone() {
-            let _ = bh_device::companion::stop(runner.as_ref(), &previous);
+            if let Err(e) = crate::companion_session::stop(runner.as_ref(), Some(&dir), &previous)
+            {
+                eprintln!("{e}");
+            }
         }
     }
     let previous_serial = {
@@ -1142,6 +1162,13 @@ async fn start_capture(
                 }
                 _ => None,
             };
+            if crate::companion_session::recorded(&proxy_dir).contains(&proxy_serial) {
+                let _ = crate::companion_session::stop(
+                    proxy_runner.as_ref(),
+                    Some(&proxy_dir),
+                    &proxy_serial,
+                );
+            }
             if !bh_device::is_emulator_serial(&proxy_serial) {
                 device.reverse(port).map_err(|e| e.to_string())?;
                 let _ = device.reverse(metro_port);
@@ -1153,6 +1180,8 @@ async fn start_capture(
                     &proxy_serial,
                     None,
                 );
+                crate::companion_session::record(&proxy_dir, &proxy_serial)
+                    .map_err(|e| format!("cannot save the companion session: {e}"))?;
                 if let Err(e) = bh_device::companion::start(
                     proxy_runner.as_ref(),
                     &proxy_serial,
@@ -1161,7 +1190,11 @@ async fn start_capture(
                     COMPANION_ATTEMPTS,
                     COMPANION_INTERVAL,
                 ) {
-                    let _ = bh_device::companion::stop(proxy_runner.as_ref(), &proxy_serial);
+                    let _ = crate::companion_session::stop(
+                        proxy_runner.as_ref(),
+                        Some(&proxy_dir),
+                        &proxy_serial,
+                    );
                     let _ = device.remove_reverse(port);
                     return Err(e.to_string());
                 }
@@ -1205,6 +1238,7 @@ pub async fn capture_stop(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _capturing = state.capture_lock.lock().await;
     stop_capture(&state, &app).await
 }
 
@@ -1221,20 +1255,25 @@ async fn stop_capture(state: &AppState, app: &tauri::AppHandle) -> Result<(), St
         handle.stop().await;
     }
     let through_companion = std::mem::take(&mut *state.companion.lock().await);
+    let mut leftover = None;
     let serial = state.active_serial.lock().await.take();
     if let Some(serial) = serial {
         if let Ok(runner) = state.get_runner().await {
-            if through_companion {
-                let _ = bh_device::companion::stop(runner.as_ref(), &serial);
-            }
             let dir = app.path().app_local_data_dir().ok();
+            if through_companion {
+                leftover =
+                    crate::companion_session::stop(runner.as_ref(), dir.as_deref(), &serial).err();
+            }
             crate::proxy_restore::release_device(runner.as_ref(), dir.as_deref(), &serial, port);
         }
     }
     if let Some(agent) = app.try_state::<crate::state::AgentState>() {
         agent.store.set_capture(false);
     }
-    Ok(())
+    match leftover {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1450,6 +1489,7 @@ pub async fn capture_restart(
     body_cap: Option<usize>,
     package: Option<String>,
 ) -> Result<u16, String> {
+    let _capturing = state.capture_lock.lock().await;
     stop_capture(&state, &app).await?;
     state.restart_sink(&app);
     start_capture(&state, &app, &serial, None, body_cap, package).await
@@ -1910,9 +1950,21 @@ pub fn export_bruno_folder(
 
 #[tauri::command]
 pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    capture_stop(state.clone(), app.clone()).await?;
+    let stopped = capture_stop(state.clone(), app.clone()).await;
     let runner = state.get_runner().await.map_err(|e| e.to_string())?;
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    {
+        let scanner = bh_device::AdbScanner::new(runner.as_ref());
+        let online: Vec<String> = scanner
+            .list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|d| d.state == DeviceState::Online)
+            .map(|d| d.serial)
+            .collect();
+        let _capturing = state.capture_lock.lock().await;
+        crate::companion_session::sweep(runner.as_ref(), &dir, &online, None);
+    }
     if let Ok(ca) = bh_ca::load_or_create(&dir) {
         if let Ok(name) = bh_ca::system_cert_filename(&ca.cert_pem) {
             let serials = {
@@ -1935,7 +1987,7 @@ pub async fn full_cleanup(state: State<'_, AppState>, app: tauri::AppHandle) -> 
             }
         }
     }
-    Ok(())
+    stopped
 }
 
 #[tauri::command]

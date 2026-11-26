@@ -568,6 +568,7 @@ function DeviceMaintenance() {
       setCapture(false);
       setMsg("Proxy reverted and CA removed from all connected devices.");
     } catch (e) {
+      setCapture(false);
       setMsg(String(e));
     } finally {
       setBusy(false);

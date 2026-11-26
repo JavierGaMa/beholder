@@ -1,6 +1,7 @@
 mod apks;
 mod batch;
 mod commands;
+mod companion_session;
 mod config;
 mod console;
 mod discovery;
@@ -205,10 +206,14 @@ pub fn run() {
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
-                        if through_companion {
-                            let _ = bh_device::companion::stop(&runner, &serial);
-                        }
                         let dir = app_handle.path().app_local_data_dir().ok();
+                        if through_companion {
+                            if let Err(e) =
+                                companion_session::stop(&runner, dir.as_deref(), &serial)
+                            {
+                                eprintln!("{e}");
+                            }
+                        }
                         proxy_restore::release_device(&runner, dir.as_deref(), &serial, port);
                     }
                 }

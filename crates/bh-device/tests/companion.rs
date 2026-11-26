@@ -89,7 +89,7 @@ fn start_waits_until_the_companion_reports_the_capture() {
     );
     assert_eq!(
         calls[2],
-        "-s R5CT91 shell am start -n dev.beholder.app/.ControlActivity -a dev.beholder.app.DESKTOP_START --es package com.x.app --ei port 8080"
+        "-s R5CT91 shell am start --activity-multiple-task -n dev.beholder.app/.ControlActivity -a dev.beholder.app.DESKTOP_START --es package com.x.app --ei port 8080"
     );
 }
 

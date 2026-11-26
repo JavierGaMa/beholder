@@ -59,10 +59,17 @@ export function CommandBar() {
 
   useEffect(() => {
     void refreshAvds();
+  }, [refreshAvds]);
+
+  const onlineSerials = (adbQ.data ?? [])
+    .filter((d) => d.state === "Online")
+    .map((d) => d.serial)
+    .join(",");
+  useEffect(() => {
     if (isTauri) {
       invoke("clear_stale_proxies").catch(() => {});
     }
-  }, [refreshAvds]);
+  }, [onlineSerials]);
 
   async function selectAvd(avd: AvdInfo) {
     setTarget(avd.running ? avd.serial : null, avd.name, "emulator");

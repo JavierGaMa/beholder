@@ -95,9 +95,14 @@ pub fn ca_installed(
     }
 }
 
-fn send(runner: &dyn CommandRunner, serial: &str, action: &str) -> Result<(), DeviceError> {
+fn send(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    flags: &str,
+    action: &str,
+) -> Result<(), DeviceError> {
     let out = AdbDevice::new(runner, serial).exec(&format!(
-        "am start -n {COMPANION_PACKAGE}/.ControlActivity -a {action}"
+        "am start{flags} -n {COMPANION_PACKAGE}/.ControlActivity -a {action}"
     ))?;
     if !out.success || raw(&out).contains("Error:") {
         return Err(DeviceError::Other(format!(
@@ -130,6 +135,7 @@ pub fn start(
     send(
         runner,
         serial,
+        " --activity-multiple-task",
         &format!("{ACTION_START} --es package {package} --ei port {port}"),
     )?;
     let mut last_error = String::new();
@@ -155,5 +161,5 @@ pub fn start(
 }
 
 pub fn stop(runner: &dyn CommandRunner, serial: &str) -> Result<(), DeviceError> {
-    send(runner, serial, ACTION_STOP)
+    send(runner, serial, "", ACTION_STOP)
 }
