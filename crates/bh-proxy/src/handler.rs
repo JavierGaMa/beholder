@@ -6,9 +6,10 @@ use futures::SinkExt;
 use http_body::Body as HttpBodyTrait;
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
-    hyper::{header::HeaderValue, http::uri::Authority, HeaderMap, Request, Response},
+    hyper::{header::HeaderValue, http::uri::Authority, HeaderMap, Request, Response, StatusCode},
     Body, Error, HttpContext, HttpHandler, RequestOrResponse,
 };
+use hudsucker::hyper_util::client::legacy::Error as ForwardError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -299,6 +300,23 @@ impl HttpHandler for RecordingHttpHandler {
         }
 
         Request::from_parts(parts, rebuilt_body).into()
+    }
+
+    async fn handle_error(&mut self, _ctx: &HttpContext, err: ForwardError) -> Response<Body> {
+        if let Some(id) = self.current.filter(|_| !self.bypassing) {
+            let mut error = err.to_string();
+            let mut source = std::error::Error::source(&err);
+            while let Some(cause) = source {
+                error = format!("{error}: {cause}");
+                source = cause.source();
+            }
+            self.shared
+                .sink
+                .emit(TrafficEvent::ExchangeFailed { id, error });
+        }
+        let mut res = Response::new(Body::empty());
+        *res.status_mut() = StatusCode::BAD_GATEWAY;
+        res
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
