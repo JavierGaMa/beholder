@@ -161,7 +161,7 @@ impl SdkToolRunner for FakeSdkRunner {
 }
 
 fn is_rootable_tag(tag: &str) -> bool {
-    tag == "google_apis" || tag == "default"
+    tag == "default" || (tag.starts_with("google_apis") && !tag.contains("playstore"))
 }
 
 pub fn parse_avdmanager_list(stdout: &str) -> Vec<AvdInfo> {
@@ -243,32 +243,62 @@ pub fn enrich_avds_from_config(avds: &mut [AvdInfo]) {
     }
 }
 
+fn sdk_list_package_path(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("system-images;") && !trimmed.starts_with("system-images/") {
+        return None;
+    }
+    let raw = trimmed
+        .split('|')
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+    let end = raw
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(raw.len());
+    let path = raw[..end].trim();
+    (!path.is_empty()).then_some(path)
+}
+
+fn split_system_image_path(path: &str) -> Option<[&str; 4]> {
+    let sep = if path.contains(';') {
+        ';'
+    } else if path.contains('/') {
+        '/'
+    } else {
+        return None;
+    };
+    let parts: Vec<&str> = path.split(sep).collect();
+    if parts.len() != 4 || parts[0] != "system-images" {
+        return None;
+    }
+    Some([parts[0], parts[1], parts[2], parts[3]])
+}
+
+fn normalize_system_image_pkg(parts: [&str; 4]) -> String {
+    format!("{};{};{};{}", parts[0], parts[1], parts[2], parts[3])
+}
+
 pub fn parse_sdkmanager_images(stdout: &str) -> Vec<SystemImage> {
     let mut installed_section = false;
     let mut images: Vec<SystemImage> = Vec::new();
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("Installed packages") {
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("installed packages") {
             installed_section = true;
             continue;
         }
-        if trimmed.starts_with("Available Packages") {
+        if lower.starts_with("available packages") || lower.starts_with("available updates") {
             installed_section = false;
             continue;
         }
-        if !trimmed.starts_with("system-images;") {
+        let Some(path) = sdk_list_package_path(trimmed) else {
             continue;
-        }
-        let pkg = trimmed
-            .split('|')
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        let parts: Vec<&str> = pkg.split(';').collect();
-        if parts.len() != 4 {
+        };
+        let Some(parts) = split_system_image_path(path) else {
             continue;
-        }
+        };
         let tag = parts[2].to_string();
         let abi = parts[3].to_string();
         if !is_rootable_tag(&tag) || abi != "arm64-v8a" {
@@ -281,6 +311,7 @@ pub fn parse_sdkmanager_images(stdout: &str) -> Vec<SystemImage> {
             Some(v) => v,
             None => continue,
         };
+        let pkg = normalize_system_image_pkg(parts);
         if let Some(existing) = images.iter_mut().find(|i| i.pkg == pkg) {
             if installed_section {
                 existing.installed = true;
@@ -341,6 +372,13 @@ impl<'a> AvdManager<'a> {
 
     pub fn list_images(&self) -> Result<Vec<SystemImage>, DeviceError> {
         let out = self.runner.run(SdkTool::SdkManager, &["--list"])?;
+        if !out.success && out.stdout.trim().is_empty() {
+            return Err(DeviceError::CommandFailed {
+                program: "sdkmanager --list".into(),
+                args: vec!["--list".into()],
+                stderr: out.stderr,
+            });
+        }
         Ok(parse_sdkmanager_images(&out.stdout))
     }
 

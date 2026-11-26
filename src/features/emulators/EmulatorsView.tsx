@@ -277,6 +277,7 @@ export function EmulatorsView() {
                 imagePkg={imagePkg}
                 setImagePkg={setImagePkg}
                 images={images}
+                imagesLoading={imagesQ.isPending}
                 selectedImage={selectedImage}
                 installing={installing}
                 installLog={installLog}
@@ -305,6 +306,7 @@ function CreateForm({
   imagePkg,
   setImagePkg,
   images,
+  imagesLoading,
   selectedImage,
   installing,
   installLog,
@@ -322,6 +324,7 @@ function CreateForm({
   imagePkg: string;
   setImagePkg: (v: string) => void;
   images: SystemImage[];
+  imagesLoading: boolean;
   selectedImage: SystemImage | undefined;
   installing: string | null;
   installLog: string | null;
@@ -383,6 +386,13 @@ function CreateForm({
               </option>
             ))}
           </Select>
+          {!imagesLoading && images.length === 0 && (
+            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+              No rootable <code className="font-mono text-txt/80">google_apis</code> /{" "}
+              <code className="font-mono text-txt/80">default</code> arm64-v8a images found. Install one
+              with Android Studio SDK Manager (not Play Store), then refresh.
+            </p>
+          )}
         </div>
       </div>
       {selectedImage && !selectedImage.installed && (

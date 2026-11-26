@@ -66,6 +66,22 @@ fn embedded_tag_abi_line_parses() {
 }
 
 #[test]
+fn google_apis_ps16k_is_rootable() {
+    let stdout = "\
+Name: Pixel_Ps16k
+Device: pixel_10_pro_xl (Google)
+Path: /Users/x/.android/avd/Pixel_Ps16k.avd
+Target: Google APIs (Google Inc.)
+ Based on: Android 17.0 Tag/ABI: google_apis_ps16k/arm64-v8a
+---------
+";
+    let avds = parse_avdmanager_list(stdout);
+    assert_eq!(avds.len(), 1);
+    assert_eq!(avds[0].image_tag.as_deref(), Some("google_apis_ps16k"));
+    assert!(avds[0].beholder_ready);
+}
+
+#[test]
 fn enrich_overrides_from_config_ini() {
     let dir = std::env::temp_dir().join(format!("bh-avd-test-{}", std::process::id()));
     let avd_home = dir.join("MyAvd.avd");
@@ -106,6 +122,62 @@ fn sdkmanager_filters_rootable_arm64_and_sorts_desc() {
     );
     assert!(images.iter().find(|i| i.api == 36).unwrap().installed);
     assert!(!images.iter().find(|i| i.api == 37).unwrap().installed);
+}
+
+const SDK_LIST_SLASH: &str = "\
+Installed packages:
+  build-tools/36.0.0                                                                      36.0.0                                      Android SDK Build-Tools 36
+  system-images/android-35/google_apis/arm64-v8a                                          9.0.0                                       Google APIs ARM 64 v8a System Image
+  system-images/android-37.0/google_apis_playstore/arm64-v8a                              6.0.0                                       Google Play ARM 64 v8a System Image
+  system-images/android-37.2/google_apis_ps16k/arm64-v8a                                  6.0.0                                       16 KB Page Size Google APIs ARM 64 v8a System Image
+
+Available packages:
+  system-images/android-36/google_apis/arm64-v8a                                          8.0.0                                       Google APIs ARM 64 v8a System Image
+  system-images/android-37.0/google_apis/arm64-v8a                                        7.0.0                                       Google APIs ARM 64 v8a System Image
+  system-images/android-37.0/google_apis/x86_64                                           7.0.0                                       Google APIs Intel x86_64 Atom System Image
+  system-images/android-34/default/arm64-v8a                                              5.0.0                                       ARM 64 v8a System Image
+";
+
+#[test]
+fn sdkmanager_slash_format_normalizes_to_semicolon_pkgs() {
+    let images = parse_sdkmanager_images(SDK_LIST_SLASH);
+    let pkgs: Vec<&str> = images.iter().map(|i| i.pkg.as_str()).collect();
+    assert_eq!(
+        pkgs,
+        vec![
+            "system-images;android-37.0;google_apis;arm64-v8a",
+            "system-images;android-37.2;google_apis_ps16k;arm64-v8a",
+            "system-images;android-36;google_apis;arm64-v8a",
+            "system-images;android-35;google_apis;arm64-v8a",
+            "system-images;android-34;default;arm64-v8a",
+        ]
+    );
+    assert_eq!(images.iter().find(|i| i.api == 37).unwrap().api, 37);
+    assert!(images.iter().find(|i| i.api == 35).unwrap().installed);
+    assert!(images
+        .iter()
+        .find(|i| i.tag == "google_apis_ps16k")
+        .unwrap()
+        .installed);
+    assert!(!images.iter().find(|i| i.api == 36).unwrap().installed);
+    assert!(!images.iter().any(|i| i.tag.contains("playstore")));
+    assert!(!images.iter().any(|i| i.abi == "x86_64"));
+}
+
+#[test]
+fn sdkmanager_mixed_formats_dedupe_by_normalized_pkg() {
+    let mixed = "\
+Installed packages:
+  system-images;android-35;google_apis;arm64-v8a                  | 9.0.0 | Google APIs
+Available packages:
+  system-images/android-35/google_apis/arm64-v8a                                          9.0.0                                       Google APIs ARM 64 v8a System Image
+  system-images/android-36/google_apis/arm64-v8a                                          8.0.0                                       Google APIs ARM 64 v8a System Image
+";
+    let images = parse_sdkmanager_images(mixed);
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[0].pkg, "system-images;android-36;google_apis;arm64-v8a");
+    assert_eq!(images[1].pkg, "system-images;android-35;google_apis;arm64-v8a");
+    assert!(images[1].installed);
 }
 
 #[test]
