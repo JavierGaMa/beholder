@@ -7,6 +7,11 @@ use std::sync::Mutex as StdMutex;
 use tauri::Manager;
 use tokio::sync::Mutex as AsyncMutex;
 
+type RouteChange = Result<
+    (crate::discovery::RouteFilesUpdate, crate::config::UiConfig),
+    crate::discovery::RouteConfigError,
+>;
+
 pub struct AppState {
     runner: AsyncMutex<Option<Arc<RealRunner>>>,
     pub proxy: AsyncMutex<Option<bh_proxy::ProxyHandle>>,
@@ -51,6 +56,25 @@ impl AppState {
         let mut catalog = self.route_catalog.lock().await;
         crate::routes::refresh(&self.routes, &mut catalog, paths, force).await;
         crate::routes::snapshot(&self.routes, &catalog)
+    }
+
+    pub async fn connect_route_file(
+        &self,
+        dir: &std::path::Path,
+        path: &str,
+        replaces: &[String],
+    ) -> RouteChange {
+        let mut catalog = self.route_catalog.lock().await;
+        let (update, config) = crate::discovery::connect(dir, path, replaces).await?;
+        crate::routes::apply(&self.routes, &mut catalog, &update.files, &update.reset).await;
+        Ok((update, config))
+    }
+
+    pub async fn remove_route_file(&self, dir: &std::path::Path, path: &str) -> RouteChange {
+        let mut catalog = self.route_catalog.lock().await;
+        let (update, config) = crate::discovery::remove(dir, path)?;
+        crate::routes::apply(&self.routes, &mut catalog, &update.files, &update.reset).await;
+        Ok((update, config))
     }
 
     pub async fn get_runner(&self) -> Result<Arc<RealRunner>, bh_device::DeviceError> {

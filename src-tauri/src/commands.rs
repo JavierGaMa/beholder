@@ -1,4 +1,5 @@
 use crate::console::ShellBatchSink;
+use crate::discovery::{RouteConfigError, RouteFilesUpdate};
 use crate::state::{AppState, ConsoleState, ShellSlot};
 use bh_console::{AdbLogcatFactory, ConsoleSink, LogBuffer, LogFilter, LogSession, PtyShell, adb_shell_command};
 use bh_core::{har_to_string, to_curl, HttpExchange};
@@ -635,6 +636,46 @@ pub async fn routes_health(
     state: State<'_, AppState>,
 ) -> Result<std::collections::BTreeMap<String, crate::routes::Health>, String> {
     Ok(crate::routes::health(&state.routes).await)
+}
+
+#[tauri::command]
+pub async fn discover_routes(
+    address: String,
+) -> Result<crate::discovery::DiscoveryResult, crate::discovery::DiscoverFailure> {
+    crate::discovery::discover(&address).await
+}
+
+fn config_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, RouteConfigError> {
+    app.path()
+        .app_local_data_dir()
+        .map_err(|e| RouteConfigError::Config {
+            message: e.to_string(),
+        })
+}
+
+#[tauri::command]
+pub async fn connect_route_file(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+    replaces: Vec<String>,
+) -> Result<RouteFilesUpdate, RouteConfigError> {
+    let dir = config_dir(&app)?;
+    let (update, config) = state.connect_route_file(&dir, &path, &replaces).await?;
+    let _ = app.emit("config-changed", &config);
+    Ok(update)
+}
+
+#[tauri::command]
+pub async fn remove_route_file(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<RouteFilesUpdate, RouteConfigError> {
+    let dir = config_dir(&app)?;
+    let (update, config) = state.remove_route_file(&dir, &path).await?;
+    let _ = app.emit("config-changed", &config);
+    Ok(update)
 }
 
 fn snapshot_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
