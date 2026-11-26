@@ -164,14 +164,31 @@ impl<'a> AdbDevice<'a> {
         self.shell(&format!("rm -f {SYSTEM_CACERTS}/{filename}"))?;
         self.shell(&format!("nsenter -t 1 -m -- umount {APEX_CACERTS}"))?;
         self.shell(&format!("nsenter -t 1 -m -- umount {SYSTEM_CACERTS}"))?;
+        self.ensure_cert_absent(filename)?;
+        self.remove_cert_stage()
+    }
+
+    pub fn ensure_cert_absent(&self, filename: &str) -> Result<(), DeviceError> {
         for dir in [SYSTEM_CACERTS, APEX_CACERTS] {
-            if self.shell(&format!("ls {dir}/{filename}"))?.success {
+            let out = self.shell(&format!("ls {dir}/{filename}"))?;
+            if out.success {
                 return Err(DeviceError::Other(format!(
                     "certificate is still present in {dir}; reboot the phone to drop it"
                 )));
             }
+            let combined = format!("{}{}", out.stdout, out.stderr);
+            if !combined.contains("No such file") {
+                return Err(DeviceError::Other(format!(
+                    "cannot verify that the certificate was removed from {dir}: {}",
+                    combined.trim()
+                )));
+            }
         }
-        self.shell("rm -rf /data/local/tmp/beholder-ca-stage")?;
+        Ok(())
+    }
+
+    pub fn remove_cert_stage(&self) -> Result<(), DeviceError> {
+        self.shell_ok("rm -rf /data/local/tmp/beholder-ca-stage")?;
         Ok(())
     }
 
@@ -394,7 +411,8 @@ impl<'a> AdbDevice<'a> {
 impl<'a> CertificateInstaller for AdbDevice<'a> {
     fn install_system_cert(&self, filename: &str, pem: &str) -> Result<(), DeviceError> {
         self.stage_certs(pem, filename)?;
-        if !self.su && self.try_direct_push(filename) {
+        let emulator = is_emulator_serial(&self.serial);
+        if emulator && self.try_direct_push(filename) {
             return Ok(());
         }
         self.try_tmpfs_install()?;
@@ -404,7 +422,7 @@ impl<'a> CertificateInstaller for AdbDevice<'a> {
                 "certificate not present in system store after install".into(),
             ));
         }
-        if self.su && !self.apex_store_has(filename, pem)? {
+        if !emulator && !self.apex_store_has(filename, pem)? {
             return Err(DeviceError::Other(
                 "certificate not present in the apex store after install".into(),
             ));

@@ -68,9 +68,13 @@ pub fn remove_system_ca(
             device.root()?;
             device.remove_mounted_cert(filename)
         }
-        RootAccess::SuDenied => Err(DeviceError::Other(SU_GRANT_HINT.into())),
-        RootAccess::None => Err(DeviceError::Other(
-            "no root available to remove the certificate; reboot the phone to drop it".into(),
-        )),
+        RootAccess::SuDenied => drop_stage_if_gone(&device, filename)
+            .map_err(|e| DeviceError::Other(format!("{SU_GRANT_HINT}\n{e}"))),
+        RootAccess::None => drop_stage_if_gone(&device, filename),
     }
+}
+
+fn drop_stage_if_gone(device: &AdbDevice, filename: &str) -> Result<(), DeviceError> {
+    device.ensure_cert_absent(filename)?;
+    device.remove_cert_stage()
 }

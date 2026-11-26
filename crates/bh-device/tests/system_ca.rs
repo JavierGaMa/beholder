@@ -245,3 +245,64 @@ fn phone_cleanup_roots_adbd_before_removing() {
     remove_system_ca(&runner, "R5CT91", "abc.0").unwrap();
     assert_eq!(joined(&runner)[4], "-s R5CT91 root");
 }
+
+#[test]
+fn phone_cleanup_fails_when_removal_cannot_be_verified() {
+    let runner = FakeRunner::new();
+    staged_with_su(&runner);
+    runner.enqueue_fail("error: device offline");
+    let err = remove_system_ca(&runner, "R5CT91", "abc.0").unwrap_err();
+    assert!(err.to_string().contains("device offline"), "{err}");
+    assert!(shell_commands(&runner).iter().all(|c| !c.contains("rm -rf")));
+}
+
+#[test]
+fn phone_cleanup_after_a_reboot_without_root_drops_the_stage() {
+    let runner = FakeRunner::new();
+    runner.enqueue_ok("/data/local/tmp/beholder-ca-stage/abc.0");
+    runner.enqueue_ok("uid=2000(shell)");
+    runner.enqueue_fail("");
+    runner.enqueue_ok("0");
+    runner.enqueue_fail("No such file");
+    runner.enqueue_fail("No such file");
+    runner.enqueue_ok("");
+    remove_system_ca(&runner, "R5CT91", "abc.0").unwrap();
+    assert!(shell_commands(&runner)
+        .last()
+        .unwrap()
+        .starts_with("rm -rf /data/local/tmp/beholder-ca-stage"));
+}
+
+#[test]
+fn phone_cleanup_without_root_fails_while_the_certificate_is_mounted() {
+    let runner = FakeRunner::new();
+    runner.enqueue_ok("/data/local/tmp/beholder-ca-stage/abc.0");
+    runner.enqueue_ok("uid=2000(shell)");
+    runner.enqueue_fail("");
+    runner.enqueue_ok("0");
+    runner.enqueue_ok("/system/etc/security/cacerts/abc.0");
+    let err = remove_system_ca(&runner, "R5CT91", "abc.0").unwrap_err();
+    assert!(err.to_string().contains("reboot the phone"), "{err}");
+}
+
+#[test]
+fn phone_install_as_adb_root_requires_the_apex_entry() {
+    let runner = FakeRunner::new();
+    runner.enqueue_fail("no such dir");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("");
+    runner.enqueue_ok("1 file pushed");
+    for _ in 0..8 {
+        runner.enqueue_ok("");
+    }
+    runner.enqueue_ok(PEM);
+    runner.enqueue_ok("other.0");
+    runner.enqueue_fail("No such file");
+    let err = AdbDevice::new(&runner, "R5CT91")
+        .install_system_cert("abc.0", PEM)
+        .unwrap_err();
+    assert!(err.to_string().contains("apex"), "{err}");
+    assert!(shell_commands(&runner)
+        .iter()
+        .all(|c| !c.contains("cp /data/local/tmp/beholder-ca-stage/abc.0 /system")));
+}
