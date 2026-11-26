@@ -32,6 +32,7 @@ function build(patch: Partial<TargetItemsInput> = {}) {
     onSelectAvd: (a) => picked.push(`avd:${a.name}`),
     onSelectDevice: (d) => picked.push(`device:${d.serial}`),
     onCreate: () => picked.push("create"),
+    onSetup: () => picked.push("setup"),
     ...patch,
   });
   return { items, picked };
@@ -88,6 +89,16 @@ describe("buildTargetItems", () => {
   it("shows the empty row only without emulators and devices", () => {
     expect(labels({})).toEqual(["No emulators found — create one below.", "Create emulator"]);
     expect(labels({ devices: [phone()] })).not.toContain("No emulators found — create one below.");
+  });
+
+  it("offers device setup only while a phone is the target", () => {
+    const { items, picked } = build({ devices: [phone()], targetSerial: "R5CT91" });
+    items.find((i) => i.key === "device-setup")?.onSelect();
+    expect(picked).toEqual(["setup"]);
+    expect(labels({ devices: [phone()] })).not.toContain("Device setup");
+    expect(labels({ avds: [avd("A", true)], targetSerial: "emulator-5554" })).not.toContain(
+      "Device setup",
+    );
   });
 
   it("shows the adb error instead of targets", () => {

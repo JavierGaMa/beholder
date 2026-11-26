@@ -183,6 +183,20 @@ impl<'a> AdbDevice<'a> {
         }))
     }
 
+    pub fn push_user_ca(&self, cert_pem: &str) -> Result<(), DeviceError> {
+        let tmp = std::env::temp_dir().join("beholder-ca.crt");
+        std::fs::write(&tmp, cert_pem)
+            .map_err(|e| DeviceError::Other(format!("write temp cert: {e}")))?;
+        let src = tmp.to_string_lossy().to_string();
+        self.adb_ok(&["push", &src, "/sdcard/Download/beholder-ca.crt"])?;
+        Ok(())
+    }
+
+    pub fn open_security_settings(&self) -> Result<(), DeviceError> {
+        self.shell_ok("am start -a android.settings.SECURITY_SETTINGS")?;
+        Ok(())
+    }
+
     fn shell_ok(&self, cmd: &str) -> Result<Output, DeviceError> {
         let out = self.shell(cmd)?;
         if !out.success {

@@ -127,6 +127,8 @@ pub fn run() {
             commands::preview_shell_env,
             commands::create_avd,
             commands::probe_device,
+            commands::push_user_ca,
+            commands::open_security_settings,
             commands::run_doctor,
             commands::apply_doctor_fix,
             commands::clear_stale_proxies,

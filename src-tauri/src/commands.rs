@@ -520,6 +520,39 @@ pub async fn probe_device(
 }
 
 #[tauri::command]
+pub async fn push_user_ca(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    serial: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let ca = bh_ca::load_or_create(&dir).map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        bh_device::AdbDevice::new(runner.as_ref(), &serial)
+            .push_user_ca(&ca.cert_pem)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn open_security_settings(
+    state: State<'_, AppState>,
+    serial: String,
+) -> Result<(), String> {
+    let runner = state.get_runner().await.map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        bh_device::AdbDevice::new(runner.as_ref(), &serial)
+            .open_security_settings()
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn run_doctor(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

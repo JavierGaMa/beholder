@@ -42,6 +42,7 @@ import { rememberActiveSection } from "./features/settings/sections";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
+import { DeviceWizard } from "./features/devices/DeviceWizard";
 import { shouldOpenSetup } from "./features/setup/shouldOpenSetup";
 import type { Device } from "./store/types";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
@@ -392,6 +393,8 @@ export default function App() {
       <ShortcutsOverlay />
 
       <Toaster />
+
+      <DeviceWizard />
 
       <Modal
         open={setupOpen}

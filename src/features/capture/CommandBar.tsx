@@ -3,10 +3,11 @@ import clsx from "clsx";
 import { ChevronDown, Play, RotateCcw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
-import { loadBodyCapMb } from "../../lib/prefs";
 import { useAdbDevicesQuery, useInvalidateDevices } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
 import { buildTargetItems } from "./targetItems";
+import { startCapture } from "./startCapture";
+import { useDeviceWizard } from "../devices/store";
 import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
 import { useRoutesStatus } from "../../queries/routes";
 import type { AvdInfo } from "../../store/types";
@@ -82,12 +83,7 @@ export function CommandBar() {
         await invoke("capture_stop");
         setCapture(false);
       } else if (targetSerial) {
-        const capMb = loadBodyCapMb();
-        const port = await invoke<number>("capture_start", {
-          serial: targetSerial,
-          bodyCap: Math.round(capMb * 1024 * 1024),
-        });
-        setCapture(true, port);
+        await startCapture(targetSerial);
       }
     } catch (e) {
       setCapture(false);
@@ -102,12 +98,7 @@ export function CommandBar() {
     setBusy(true);
     setError(null);
     try {
-      const capMb = loadBodyCapMb();
-      const port = await invoke<number>("capture_restart", {
-        serial: targetSerial,
-        bodyCap: Math.round(capMb * 1024 * 1024),
-      });
-      setCapture(true, port);
+      await startCapture(targetSerial, "capture_restart");
       useTraffic.getState().clear();
     } catch (e) {
       setCapture(false);
@@ -126,7 +117,11 @@ export function CommandBar() {
     targetAvd,
     adbError,
     onSelectAvd: (a) => void selectAvd(a),
-    onSelectDevice: (d) => setTarget(d.serial, d.model ?? d.serial, "device"),
+    onSelectDevice: (d) => {
+      setTarget(d.serial, d.model ?? d.serial, "device");
+      useDeviceWizard.getState().openFirstTime(d.serial);
+    },
+    onSetup: (serial) => useDeviceWizard.getState().open(serial),
     onCreate: () => setActiveView("emulators"),
   });
 

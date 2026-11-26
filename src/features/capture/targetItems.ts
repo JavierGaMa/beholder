@@ -1,4 +1,4 @@
-import { Check, CircleDot, Plus } from "lucide-react";
+import { Check, CircleDot, Plus, Settings2 } from "lucide-react";
 import type { MenuOption } from "../../components/ui/Menu";
 import type { AvdInfo, Device } from "../../store/types";
 
@@ -11,6 +11,7 @@ export interface TargetItemsInput {
   onSelectAvd: (avd: AvdInfo) => void;
   onSelectDevice: (device: Device) => void;
   onCreate: () => void;
+  onSetup: (serial: string) => void;
 }
 
 function header(key: string, label: string): MenuOption {
@@ -64,6 +65,15 @@ export function buildTargetItems(input: TargetItemsInput): MenuOption[] {
     stopped.forEach((a) => items.push(avdItem(a, input)));
     if (phones.length > 0) items.push(header("hdr-devices", "devices"));
     phones.forEach((d) => items.push(deviceItem(d, input)));
+  }
+  const target = phones.find((d) => d.serial === input.targetSerial);
+  if (target) {
+    items.push({
+      key: "device-setup",
+      label: "Device setup",
+      icon: Settings2,
+      onSelect: () => input.onSetup(target.serial),
+    });
   }
   items.push({ key: "create-emulator", label: "Create emulator", icon: Plus, onSelect: input.onCreate });
   return items;
