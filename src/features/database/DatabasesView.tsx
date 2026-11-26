@@ -51,14 +51,13 @@ import { copyText } from "./clipboard";
 import { PackagePicker } from "./PackagePicker";
 import { SqlConsole } from "./SqlConsole";
 import { TableGrid } from "./TableGrid";
-import { usePaneResize } from "./usePaneResize";
+import { usePaneResize } from "../../lib/usePaneResize";
+import { clampPaneWidth, resolvePaneWidth } from "../../lib/pane";
 import {
   DBS_WIDTH_BOUNDS,
   DEFAULT_DBS_WIDTH,
   clampDockHeight,
-  clampPaneWidth,
   defaultDockHeight,
-  resolvePaneWidth,
   type DbLayout,
 } from "./layout";
 import {

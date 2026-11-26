@@ -1,15 +1,12 @@
+import type { PaneBounds } from "../../lib/pane";
+
+export { clampPaneWidth, resolvePaneWidth, RAIL_WIDTH, type PaneBounds } from "../../lib/pane";
+
 export const DEFAULT_DBS_WIDTH = 288;
 export const DBS_WIDTH_BOUNDS: PaneBounds = { min: 180, max: 420, fallback: DEFAULT_DBS_WIDTH };
 export const DOCK_MIN_HEIGHT = 120;
 export const DOCK_MAX_RATIO = 0.7;
 export const DOCK_DEFAULT_RATIO = 0.4;
-export const RAIL_WIDTH = 44;
-
-export interface PaneBounds {
-  min: number;
-  max: number;
-  fallback: number;
-}
 
 export interface DbLayout {
   dbsCollapsed: boolean;
@@ -22,15 +19,6 @@ export const DEFAULT_DB_LAYOUT: DbLayout = {
   dbsWidth: DEFAULT_DBS_WIDTH,
   sqlDockHeight: null,
 };
-
-export function clampPaneWidth(width: number, bounds: PaneBounds): number {
-  if (!Number.isFinite(width)) return bounds.fallback;
-  return Math.min(Math.max(width, bounds.min), bounds.max);
-}
-
-export function resolvePaneWidth(input: { collapsed: boolean; width: number; bounds: PaneBounds }): number {
-  return input.collapsed ? RAIL_WIDTH : clampPaneWidth(input.width, input.bounds);
-}
 
 export function clampDockHeight(height: number, containerHeight: number): number {
   if (!Number.isFinite(height)) return defaultDockHeight(containerHeight);

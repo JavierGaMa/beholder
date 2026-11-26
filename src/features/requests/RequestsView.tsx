@@ -6,7 +6,9 @@ import type { HttpExchange } from "../../store/types";
 
 type HttpExchangeLike = HttpExchange;
 import { invoke, isTauri } from "../../lib/tauri";
-import { loadSlowMs } from "../../lib/prefs";
+import { loadRequestDetailLayout, loadSlowMs, saveRequestDetailLayout } from "../../lib/prefs";
+import { clampPaneWidth, RAIL_WIDTH } from "../../lib/pane";
+import { usePaneResize } from "../../lib/usePaneResize";
 import { EmptyState } from "../../components/ui/primitives";
 import { Button } from "../../components/ui/Button";
 import { matchFilters, quickCounts, type Filters } from "./filters";
@@ -15,10 +17,29 @@ import { RequestsToolbar } from "./RequestsToolbar";
 import { TimeStrip } from "./TimeStrip";
 import { inWindow, timeWindow } from "./stripGeometry";
 import { ContextMenu, type MenuItem } from "../../components/ui/ContextMenu";
-import { ArrowDown, Copy, FileDown, FileJson, FolderGit2, Link2, Package, PanelRight, Pin, Terminal } from "lucide-react";
+import {
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  FileDown,
+  FileJson,
+  FolderGit2,
+  Link2,
+  Package,
+  PanelRight,
+  Pin,
+  Terminal,
+} from "lucide-react";
 import { DetailEmpty, DetailPane } from "./DetailPane";
 import { togglePinned } from "./pins";
 import { followTarget, PROGRAMMATIC_SCROLL_RESET_MS, shouldUnfollow } from "./follow";
+import {
+  DEFAULT_DETAIL_WIDTH,
+  DETAIL_WIDTH_BOUNDS,
+  maxDetailWidth,
+  type RequestDetailLayout,
+} from "./layout";
 
 export function RequestsView({
   filters,
@@ -40,7 +61,7 @@ export function RequestsView({
   const [newCount, setNewCount] = useState(0);
   const [flashIds, setFlashIds] = useState<Set<number>>(new Set());
   const [pinned, setPinned] = useState<Set<number>>(new Set());
-  const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [detailLayout, setDetailLayout] = useState<RequestDetailLayout>(loadRequestDetailLayout);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
@@ -48,6 +69,24 @@ export function RequestsView({
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const programmaticScrollRef = useRef(false);
   const programmaticScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    saveRequestDetailLayout(detailLayout);
+  }, [detailLayout]);
+
+  const clampDetailWidth = (w: number) => {
+    const containerWidth = splitRef.current?.clientWidth ?? 0;
+    const max = maxDetailWidth(containerWidth);
+    return clampPaneWidth(w, { ...DETAIL_WIDTH_BOUNDS, max });
+  };
+
+  const detailResize = usePaneResize({
+    grow: "left",
+    getSize: () => detailLayout.width,
+    clamp: clampDetailWidth,
+    onResized: (w) => setDetailLayout((l) => ({ ...l, width: w })),
+  });
   const slowMs = loadSlowMs();
   const hideDomain = filters.includeDomains.length === 1;
 
@@ -290,120 +329,183 @@ export function RequestsView({
     setTimeout(() => setExportNote(null), 3500);
   }
 
+  const listCollapsed = detailLayout.listCollapsed;
+  const detailCollapsed = detailLayout.collapsed;
+
   return (
-    <div className="flex h-full min-h-0 gap-2">
-      <section className="panel flex min-w-0 flex-1 flex-col">
-        <TimeStrip rows={stripRows} range={range} selectedId={selected} onSelect={selectAndReveal} />
-        <div className="flex shrink-0 items-center px-3 py-2.5">
-          <RequestsToolbar
-            filters={filters}
-            onChange={onFiltersChange}
-            follow={follow}
-            onFollowChange={onFollowChange}
-            searchRef={searchRef}
-            counts={counts}
-            actions={
-              <>
-                {exportNote && <span className="text-[11px] text-accent">{exportNote}</span>}
-                {filters.includeDomains.length > 0 && (
-                  <span className="hidden text-[11px] text-muted lg:inline">
-                    {filters.includeDomains.length} domains included
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={FileDown}
-                  className="ring-1 ring-inset ring-line"
-                  onClick={(e) => {
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setExportMenu({ x: r.left, y: r.bottom + 4 });
-                  }}
-                >
-                  Export
-                </Button>
-              </>
+    <div ref={splitRef} className="flex h-full min-h-0">
+      {listCollapsed ? (
+        <aside
+          className="panel flex shrink-0 flex-col items-center gap-2 py-2"
+          style={{ width: RAIL_WIDTH }}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setDetailLayout((l) => ({ ...l, listCollapsed: false }))}
+            title="Expand the request list"
+            aria-label="Expand the request list"
+          >
+            <ChevronRight size={14} />
+          </Button>
+          <span className="font-mono text-[10px] tabular-nums text-muted">{rows.length}</span>
+        </aside>
+      ) : (
+        <section className="panel flex min-w-0 flex-1 flex-col">
+          <TimeStrip
+            rows={stripRows}
+            range={range}
+            selectedId={selected}
+            onSelect={selectAndReveal}
+            trailing={
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDetailLayout((l) => ({ ...l, listCollapsed: true }))}
+                title="Collapse the request list"
+                aria-label="Collapse the request list"
+              >
+                <ChevronLeft size={14} />
+              </Button>
             }
           />
-        </div>
-        <div className="shrink-0 px-1.5">
-          <RequestListHeader hideDomain={hideDomain} />
-        </div>
-        <div className="relative min-h-0 flex-1">
-          <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto px-1.5 pb-1.5">
-            {rows.length === 0 ? (
-              <EmptyState
-                title="No requests captured"
-                hint="Start capture in Setup, then use your app on the emulator"
-              />
-            ) : (
-              <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-                {virtualizer.getVirtualItems().map((vi) => {
-                  const ex = rows[vi.index];
-                  return (
-                    <RequestRow
-                      key={ex.id}
-                      ex={ex}
-                      selected={ex.id === selected}
-                      flash={flashIds.has(ex.id)}
-                      pinned={pinned.has(ex.id)}
-                      slowMs={slowMs}
-                      hideDomain={hideDomain}
-                      range={range}
-                      onSelect={() => setSelected(ex.id)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setSelected(ex.id);
-                        setCtxMenu({ x: e.clientX, y: e.clientY, id: ex.id });
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: vi.size,
-                        transform: `translateY(${vi.start}px)`,
-                      }}
-                    />
-                  );
-                })}
-              </div>
+          <div className="flex min-w-0 shrink-0 items-center overflow-visible px-3 py-2.5">
+            <RequestsToolbar
+              filters={filters}
+              onChange={onFiltersChange}
+              follow={follow}
+              onFollowChange={onFollowChange}
+              searchRef={searchRef}
+              counts={counts}
+              actions={
+                <>
+                  {exportNote && <span className="text-[11px] text-accent">{exportNote}</span>}
+                  {filters.includeDomains.length > 0 && (
+                    <span className="hidden text-[11px] text-muted lg:inline">
+                      {filters.includeDomains.length} domains included
+                    </span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={FileDown}
+                    className="ring-1 ring-inset ring-line"
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setExportMenu({ x: r.left, y: r.bottom + 4 });
+                    }}
+                  >
+                    Export
+                  </Button>
+                </>
+              }
+            />
+          </div>
+          <div className="shrink-0 px-1.5">
+            <RequestListHeader hideDomain={hideDomain} />
+          </div>
+          <div className="relative min-h-0 flex-1">
+            <div ref={parentRef} onScroll={onScroll} className="h-full overflow-auto px-1.5 pb-1.5">
+              {rows.length === 0 ? (
+                <EmptyState
+                  title="No requests captured"
+                  hint="Start capture in Setup, then use your app on the emulator"
+                />
+              ) : (
+                <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+                  {virtualizer.getVirtualItems().map((vi) => {
+                    const ex = rows[vi.index];
+                    return (
+                      <RequestRow
+                        key={ex.id}
+                        ex={ex}
+                        selected={ex.id === selected}
+                        flash={flashIds.has(ex.id)}
+                        pinned={pinned.has(ex.id)}
+                        slowMs={slowMs}
+                        hideDomain={hideDomain}
+                        range={range}
+                        onSelect={() => setSelected(ex.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setSelected(ex.id);
+                          setCtxMenu({ x: e.clientX, y: e.clientY, id: ex.id });
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: vi.size,
+                          transform: `translateY(${vi.start}px)`,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {!follow && newCount > 0 && (
+              <Button
+                variant="subtle"
+                icon={ArrowDown}
+                onClick={jumpToLatest}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full! text-accent shadow-[var(--shadow-2)]"
+              >
+                {newCount} new requests
+              </Button>
             )}
           </div>
-          {!follow && newCount > 0 && (
-            <Button
-              variant="subtle"
-              icon={ArrowDown}
-              onClick={jumpToLatest}
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full! text-accent shadow-[var(--shadow-2)]"
-            >
-              {newCount} new requests
-            </Button>
-          )}
-        </div>
-      </section>
+        </section>
+      )}
+      {listCollapsed || detailCollapsed ? (
+        <div className="w-2 shrink-0" />
+      ) : (
+        <div
+          {...detailResize}
+          onDoubleClick={() => setDetailLayout((l) => ({ ...l, width: DEFAULT_DETAIL_WIDTH }))}
+          title="Drag to resize, double-click to reset"
+          className="w-2 shrink-0 cursor-col-resize touch-none select-none"
+        />
+      )}
       {detailCollapsed ? (
         <button
           type="button"
           title="Show detail"
-          onClick={() => setDetailCollapsed(false)}
-          className="panel press focus-ring flex w-8 shrink-0 flex-col items-center justify-center gap-2 text-muted hover:text-accent"
+          onClick={() => setDetailLayout((l) => ({ ...l, collapsed: false }))}
+          className="panel press focus-ring flex shrink-0 flex-col items-center justify-center gap-2 text-muted hover:text-accent"
+          style={{ width: RAIL_WIDTH }}
         >
           <PanelRight size={14} className="rotate-180" />
           <span className="text-[10px] [writing-mode:vertical-rl]">detail</span>
         </button>
       ) : (
-        <section className="panel anim-slide-in-right flex w-[440px] shrink-0 flex-col">
-          {selectedEx ? (
-            <DetailPane
-              key={selectedEx.id}
-              ex={selectedEx}
-              onClose={() => setSelected(null)}
-              onCollapse={() => setDetailCollapsed(true)}
-            />
-          ) : (
-            <DetailEmpty />
-          )}
+        <section
+          className={
+            listCollapsed
+              ? "panel anim-slide-in-right flex min-w-0 flex-1 flex-col"
+              : "panel anim-slide-in-right flex shrink-0 flex-col"
+          }
+          style={listCollapsed ? undefined : { width: clampDetailWidth(detailLayout.width) }}
+        >
+          <div className="flex shrink-0 items-center justify-end px-2.5 pt-2.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDetailLayout((l) => ({ ...l, collapsed: true }))}
+              title="Collapse the detail panel"
+              aria-label="Collapse the detail panel"
+            >
+              <ChevronRight size={14} />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1">
+            {selectedEx ? (
+              <DetailPane key={selectedEx.id} ex={selectedEx} onClose={() => setSelected(null)} />
+            ) : (
+              <DetailEmpty />
+            )}
+          </div>
         </section>
       )}
       {exportMenu && (

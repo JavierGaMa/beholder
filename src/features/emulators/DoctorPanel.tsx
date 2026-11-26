@@ -106,11 +106,13 @@ export function DoctorPanel({
         <Button
           variant="ghost"
           size="sm"
+          icon={RefreshCw}
           onClick={run}
           disabled={loading || busy}
           title="Run the capture health checks again"
+          className={clsx("shrink-0 whitespace-nowrap", loading && "[&_svg]:animate-spin")}
         >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Run checks again
+          Run checks again
         </Button>
       </div>
 
