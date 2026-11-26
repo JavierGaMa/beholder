@@ -131,6 +131,10 @@ impl<'a> AdbDevice<'a> {
         self.runner.run(&["-s", &self.serial, "shell", cmd])
     }
 
+    pub fn exec(&self, cmd: &str) -> Result<Output, DeviceError> {
+        self.shell(cmd)
+    }
+
     pub fn has_staged_cert(&self, filename: &str) -> Result<bool, DeviceError> {
         Ok(self
             .plain_shell(&format!("ls /data/local/tmp/beholder-ca-stage/{filename}"))?

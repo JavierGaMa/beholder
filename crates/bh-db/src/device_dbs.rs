@@ -1,11 +1,14 @@
 use crate::types::{DbError, DbFile, SnapshotInfo};
-use bh_device::{AdbDevice, CommandRunner, DeviceError, Output};
+use bh_device::{
+    is_emulator_serial, root_access, AdbDevice, CommandRunner, DeviceError, Output, RootAccess,
+    SU_GRANT_HINT,
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const ROOT_HINT: &str =
-    "reading app databases requires adb root; use a rooted emulator image (Google APIs)";
+const ROOT_HINT: &str = "reading app databases requires adb root, su (Magisk) or a debuggable app (run-as); on emulators use a Google APIs image";
+const SU_STAGING: &str = "/data/local/tmp/beholder-db";
 
 fn to_db_error(e: DeviceError) -> DbError {
     match e {
@@ -35,6 +38,21 @@ fn ensure_component(kind: &str, value: &str, allow_hyphen: bool) -> Result<(), D
         Ok(())
     } else {
         Err(DbError::Other(format!("invalid {kind}: {value}")))
+    }
+}
+
+fn is_valid_serial(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':'))
+}
+
+fn ensure_serial(serial: &str) -> Result<(), DbError> {
+    if is_valid_serial(serial) {
+        Ok(())
+    } else {
+        Err(DbError::Other(format!("invalid serial: {serial}")))
     }
 }
 
@@ -104,7 +122,7 @@ pub fn list_databases(
     serial: &str,
     package: &str,
 ) -> Result<Vec<DbFile>, DbError> {
-    ensure_component("serial", serial, true)?;
+    ensure_serial(serial)?;
     ensure_component("package name", package, false)?;
     let dirs = [
         format!("/data/data/{package}/databases"),
@@ -136,6 +154,12 @@ pub fn list_databases(
         }
     }
     if merged.is_empty() && !failures.is_empty() {
+        if !is_emulator_serial(serial) {
+            match list_unprivileged(runner, serial, package) {
+                Ok(files) => return Ok(files),
+                Err(strategies) => failures.extend(strategies),
+            }
+        }
         return Err(DbError::Other(format!(
             "cannot list databases of {package}:\n{}\n{ROOT_HINT}",
             failures.join("\n")
@@ -153,10 +177,13 @@ pub fn snapshot_dir(
     package: &str,
     db_name: &str,
 ) -> Result<PathBuf, DbError> {
-    ensure_component("serial", serial, true)?;
+    ensure_serial(serial)?;
     ensure_component("package name", package, false)?;
     ensure_component("database name", db_name, true)?;
-    Ok(dest_root.join(serial).join(package).join(db_name))
+    Ok(dest_root
+        .join(serial.replace(':', "_"))
+        .join(package)
+        .join(db_name))
 }
 
 fn pull_file(
@@ -170,6 +197,234 @@ fn pull_file(
     runner
         .run(&["-s", serial, "pull", remote, &local.to_string_lossy()])
         .map_err(to_db_error)
+}
+
+fn pull_as_root(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    remote_base: &str,
+    dir: &Path,
+    db_name: &str,
+) -> Result<(), DbError> {
+    let mut out = pull_file(runner, serial, remote_base, dir)?;
+    if !out.success {
+        let combined = format!("{}{}", out.stdout, out.stderr).to_lowercase();
+        if combined.contains("does not exist") || combined.contains("no such file") {
+            return Err(DbError::NotFound(format!(
+                "database {db_name} not found on device: {}{}",
+                out.stdout.trim(),
+                out.stderr.trim()
+            )));
+        }
+        AdbDevice::new(runner, serial).root().map_err(to_db_error)?;
+        out = pull_file(runner, serial, remote_base, dir)?;
+        if !out.success {
+            return Err(DbError::CommandFailed {
+                program: "adb pull".into(),
+                args: vec![remote_base.to_string()],
+                stderr: format!("{}{}", out.stdout, out.stderr),
+            });
+        }
+    }
+
+    for suffix in ["-wal", "-shm"] {
+        let _ = pull_file(runner, serial, &format!("{remote_base}{suffix}"), dir);
+    }
+    Ok(())
+}
+
+fn with_strategies(error: DbError, strategies: &[String]) -> DbError {
+    let detail = format!("{}\n{ROOT_HINT}", strategies.join("\n"));
+    match error {
+        DbError::CommandFailed {
+            program,
+            args,
+            stderr,
+        } => DbError::CommandFailed {
+            program,
+            args,
+            stderr: format!("{stderr}\n{detail}"),
+        },
+        other => DbError::Other(format!("{other}\n{detail}")),
+    }
+}
+
+fn has_su(runner: &dyn CommandRunner, serial: &str, failures: &mut Vec<String>) -> bool {
+    match root_access(runner, serial) {
+        Ok(RootAccess::Su) => true,
+        Ok(RootAccess::SuDenied) => {
+            failures.push(format!("su: {SU_GRANT_HINT}"));
+            false
+        }
+        Ok(_) => false,
+        Err(e) => {
+            failures.push(format!("su: {e}"));
+            false
+        }
+    }
+}
+
+fn listed(out: Result<Output, DeviceError>, strategy: &str) -> Result<Vec<DbFile>, String> {
+    let out = out.map_err(|e| format!("{strategy}: {e}"))?;
+    let combined = format!("{}{}", out.stdout, out.stderr);
+    if combined.contains("No such file or directory") {
+        return Ok(Vec::new());
+    }
+    if !out.success || combined.to_lowercase().contains("permission denied") {
+        return Err(format!("{strategy}: {}", combined.trim()));
+    }
+    Ok(group_databases(
+        out.stdout.lines().filter_map(parse_ls_line).collect(),
+    ))
+}
+
+fn list_unprivileged(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    package: &str,
+) -> Result<Vec<DbFile>, Vec<String>> {
+    let device = AdbDevice::new(runner, serial);
+    let mut failures = Vec::new();
+    if has_su(runner, serial, &mut failures) {
+        let out = AdbDevice::new(runner, serial)
+            .with_su()
+            .exec(&format!("ls -l /data/data/{package}/databases"));
+        match listed(out, "su") {
+            Ok(files) => return Ok(files),
+            Err(e) => failures.push(e),
+        }
+    }
+    let out = device.exec(&format!("run-as {package} ls -l databases"));
+    match listed(out, "run-as") {
+        Ok(files) => Ok(files),
+        Err(e) => {
+            failures.push(e);
+            Err(failures)
+        }
+    }
+}
+
+fn pull_unprivileged(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    package: &str,
+    db_name: &str,
+    dir: &Path,
+) -> Result<(), Vec<String>> {
+    let mut failures = Vec::new();
+    if has_su(runner, serial, &mut failures) {
+        match pull_with_su(runner, serial, package, db_name, dir) {
+            Ok(()) => return Ok(()),
+            Err(e) => failures.push(format!("su: {e}")),
+        }
+    }
+    match pull_with_run_as(runner, serial, package, db_name, dir) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            failures.push(format!("run-as: {e}"));
+            Err(failures)
+        }
+    }
+}
+
+fn pull_with_su(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    package: &str,
+    db_name: &str,
+    dir: &Path,
+) -> Result<(), DbError> {
+    let root = AdbDevice::new(runner, serial).with_su();
+    let staging = format!("{SU_STAGING}/{package}");
+    let step = |cmd: String| -> Result<(), DbError> {
+        let out = root.exec(&cmd).map_err(to_db_error)?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(DbError::Other(format!(
+                "'{cmd}' failed: {}{}",
+                out.stdout.trim(),
+                out.stderr.trim()
+            )))
+        }
+    };
+    let copy = |file: &str| -> Result<(), DbError> {
+        step(format!(
+            "cp /data/data/{package}/databases/{file} {staging}/{file} && chmod 644 {staging}/{file}"
+        ))?;
+        let out = pull_file(runner, serial, &format!("{staging}/{file}"), dir)?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(DbError::Other(format!(
+                "adb pull {staging}/{file} failed: {}{}",
+                out.stdout.trim(),
+                out.stderr.trim()
+            )))
+        }
+    };
+    let result = step(format!(
+        "mkdir -p {staging} && chmod 755 {SU_STAGING} {staging}"
+    ))
+    .and_then(|()| copy(db_name))
+    .map(|()| {
+        for suffix in ["-wal", "-shm"] {
+            let _ = copy(&format!("{db_name}{suffix}"));
+        }
+    });
+    let _ = step(format!("rm -rf {staging}"));
+    result
+}
+
+fn pull_with_run_as(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    package: &str,
+    db_name: &str,
+    dir: &Path,
+) -> Result<(), DbError> {
+    let device = AdbDevice::new(runner, serial);
+    for suffix in ["", "-wal", "-shm"] {
+        let file = format!("{db_name}{suffix}");
+        let remote = format!("databases/{file}");
+        let stat = device
+            .exec(&format!("run-as {package} stat -c %s {remote}"))
+            .map_err(to_db_error)?;
+        let Some(expected) = stat
+            .success
+            .then(|| stat.stdout.trim().parse::<u64>().ok())
+            .flatten()
+        else {
+            if suffix.is_empty() {
+                return Err(DbError::Other(format!(
+                    "cannot read {remote}: {}{}",
+                    stat.stdout.trim(),
+                    stat.stderr.trim()
+                )));
+            }
+            continue;
+        };
+        let local = dir.join(&file);
+        let out = runner
+            .run_to_file(
+                &[
+                    "-s",
+                    serial,
+                    "exec-out",
+                    &format!("run-as {package} cat {remote}"),
+                ],
+                &local,
+            )
+            .map_err(to_db_error)?;
+        let actual = std::fs::metadata(&local).map(|m| m.len()).unwrap_or(0);
+        if !out.success || actual != expected {
+            return Err(DbError::Other(format!(
+                "copy of {remote} is incomplete: expected {expected} bytes, got {actual}. {}",
+                out.stderr.trim()
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn pull_snapshot(
@@ -188,29 +443,12 @@ pub fn pull_snapshot(
     std::fs::create_dir_all(&dir)
         .map_err(|e| DbError::Other(format!("create snapshot dir {}: {e}", dir.display())))?;
 
-    let mut out = pull_file(runner, serial, &remote_base, &dir)?;
-    if !out.success {
-        let combined = format!("{}{}", out.stdout, out.stderr).to_lowercase();
-        if combined.contains("does not exist") || combined.contains("no such file") {
-            return Err(DbError::NotFound(format!(
-                "database {db_name} not found on device: {}{}",
-                out.stdout.trim(),
-                out.stderr.trim()
-            )));
+    if let Err(error) = pull_as_root(runner, serial, &remote_base, &dir, db_name) {
+        if is_emulator_serial(serial) || matches!(error, DbError::NotFound(_)) {
+            return Err(error);
         }
-        AdbDevice::new(runner, serial).root().map_err(to_db_error)?;
-        out = pull_file(runner, serial, &remote_base, &dir)?;
-        if !out.success {
-            return Err(DbError::CommandFailed {
-                program: "adb pull".into(),
-                args: vec![remote_base],
-                stderr: format!("{}{}", out.stdout, out.stderr),
-            });
-        }
-    }
-
-    for suffix in ["-wal", "-shm"] {
-        let _ = pull_file(runner, serial, &format!("{remote_base}{suffix}"), &dir);
+        pull_unprivileged(runner, serial, package, db_name, &dir)
+            .map_err(|strategies| with_strategies(error, &strategies))?;
     }
 
     let mut size_bytes = 0u64;
@@ -275,7 +513,7 @@ pub fn apply_to_device(
     db_name: &str,
     snapshot_path: &Path,
 ) -> Result<(), DeviceError> {
-    if !is_valid_component(serial, true) {
+    if !is_valid_serial(serial) {
         return Err(DeviceError::Other(format!("invalid serial: {serial}")));
     }
     if !is_valid_component(package, false) {
@@ -850,5 +1088,159 @@ mod tests {
         assert!(runner.calls.lock().unwrap().is_empty());
         drop(conn);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    const DENIED: &str = "adb: error: failed to stat remote object: Permission denied";
+    const NO_ROOT: &str = "adbd cannot run as root in production builds";
+
+    fn deny_listing(runner: &FakeRunner) {
+        runner.enqueue_fail("ls: /data/data/com.x/databases: Permission denied");
+        runner.enqueue_fail("ls: /data/user/0/com.x/databases: Permission denied");
+    }
+
+    fn shell_commands(runner: &FakeRunner) -> Vec<String> {
+        runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c[2] == "shell")
+            .map(|c| c[3].clone())
+            .collect()
+    }
+
+    fn temp_dest(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("bh-db-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn phone_with_su_lists_through_su() {
+        let runner = FakeRunner::new();
+        deny_listing(&runner);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_ok("/system/bin/su");
+        runner.enqueue_ok("uid=0(root)");
+        runner.enqueue_ok(LS_OUTPUT);
+        let files = list_databases(&runner, "R5CT91", "com.x").unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            shell_commands(&runner).last().unwrap(),
+            "su -c 'ls -l /data/data/com.x/databases'"
+        );
+    }
+
+    #[test]
+    fn phone_without_root_lists_through_run_as() {
+        let runner = FakeRunner::new();
+        deny_listing(&runner);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_fail("");
+        runner.enqueue_ok(LS_OUTPUT);
+        let files = list_databases(&runner, "R5CT91", "com.x").unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            shell_commands(&runner).last().unwrap(),
+            "run-as com.x ls -l databases"
+        );
+    }
+
+    #[test]
+    fn phone_listing_failure_names_each_strategy() {
+        let runner = FakeRunner::new();
+        deny_listing(&runner);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_fail("");
+        runner.enqueue_fail("run-as: package not debuggable: com.x");
+        let msg = list_databases(&runner, "R5CT91", "com.x")
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("run-as: package not debuggable: com.x"), "{msg}");
+        assert!(msg.contains("Permission denied"), "{msg}");
+        assert!(msg.contains("Magisk"), "{msg}");
+    }
+
+    #[test]
+    fn emulator_listing_never_falls_back() {
+        let runner = FakeRunner::new();
+        deny_listing(&runner);
+        assert!(list_databases(&runner, "emulator-5554", "com.x").is_err());
+        assert_eq!(runner.calls.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn phone_pull_uses_run_as_with_wal_and_shm() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail(DENIED);
+        runner.enqueue_fail(NO_ROOT);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_fail("");
+        for body in ["main", "wal!!", "shm"] {
+            runner.enqueue_ok(&body.len().to_string());
+            runner.enqueue_ok(body);
+        }
+        let dest = temp_dest("run-as");
+        let info = pull_snapshot(&runner, "R5CT91", "com.x", "app.db", &dest).unwrap();
+        assert_eq!(std::fs::read(&info.local_path).unwrap(), b"main");
+        assert_eq!(
+            std::fs::read(format!("{}-wal", info.local_path)).unwrap(),
+            b"wal!!"
+        );
+        assert_eq!(info.size_bytes, 12);
+        let calls = runner.calls.lock().unwrap();
+        assert!(calls.iter().any(|c| c[2..]
+            == ["exec-out", "run-as com.x cat databases/app.db-shm"]));
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn phone_pull_rejects_a_truncated_copy() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail(DENIED);
+        runner.enqueue_fail(NO_ROOT);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_fail("");
+        runner.enqueue_ok("4096");
+        runner.enqueue_ok("run-as: boom");
+        let dest = temp_dest("truncated");
+        let msg = pull_snapshot(&runner, "R5CT91", "com.x", "app.db", &dest)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("expected 4096 bytes"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn phone_pull_uses_su_and_removes_the_staging_copy() {
+        let runner = FakeRunner::new();
+        runner.enqueue_fail(DENIED);
+        runner.enqueue_fail(NO_ROOT);
+        runner.enqueue_ok("uid=2000(shell)");
+        runner.enqueue_ok("/system/bin/su");
+        runner.enqueue_ok("uid=0(root)");
+        runner.enqueue_ok("");
+        runner.enqueue_ok("");
+        runner.enqueue_ok("pulled");
+        runner.enqueue_ok("");
+        runner.enqueue_ok("pulled");
+        runner.enqueue_fail("No such file");
+        runner.enqueue_ok("");
+        let dest = temp_dest("su");
+        pull_snapshot(&runner, "R5CT91", "com.x", "app.db", &dest).unwrap();
+        let shell = shell_commands(&runner);
+        assert!(shell.iter().any(|c| c.starts_with("su -c ")
+            && c.contains("cp /data/data/com.x/databases/app.db-wal ")));
+        assert_eq!(
+            shell.last().unwrap(),
+            "su -c 'rm -rf /data/local/tmp/beholder-db/com.x'"
+        );
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn wireless_serials_are_valid_and_safe_as_folder_names() {
+        let dir = snapshot_dir(Path::new("/tmp"), "192.168.1.20:5555", "com.x", "app.db").unwrap();
+        assert_eq!(dir, Path::new("/tmp/192.168.1.20_5555/com.x/app.db"));
     }
 }

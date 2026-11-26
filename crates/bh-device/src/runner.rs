@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 
@@ -26,6 +26,19 @@ pub struct Output {
 
 pub trait CommandRunner: Send + Sync {
     fn run(&self, args: &[&str]) -> Result<Output, DeviceError>;
+
+    fn run_to_file(&self, args: &[&str], dest: &Path) -> Result<Output, DeviceError> {
+        let out = self.run(args)?;
+        if out.success {
+            write_output(dest, out.stdout.as_bytes())?;
+        }
+        Ok(out)
+    }
+}
+
+fn write_output(dest: &Path, bytes: &[u8]) -> Result<(), DeviceError> {
+    std::fs::write(dest, bytes)
+        .map_err(|e| DeviceError::Other(format!("write {}: {e}", dest.display())))
 }
 
 pub struct RealRunner {
@@ -84,6 +97,21 @@ impl CommandRunner for RealRunner {
             .map_err(|e| DeviceError::Other(e.to_string()))?;
         Ok(Output {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            success: out.status.success(),
+        })
+    }
+
+    fn run_to_file(&self, args: &[&str], dest: &Path) -> Result<Output, DeviceError> {
+        let out = Command::new(&self.adb_path)
+            .args(args)
+            .output()
+            .map_err(|e| DeviceError::Other(e.to_string()))?;
+        if out.status.success() {
+            write_output(dest, &out.stdout)?;
+        }
+        Ok(Output {
+            stdout: String::new(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
             success: out.status.success(),
         })

@@ -13,12 +13,16 @@ Beholder can capture from a physical Android phone connected over adb. Enable US
 
 | Phone | HTTPS | Other features |
 | --- | --- | --- |
-| Without root | Only apps that trust user certificates | Logcat, shell, APK install, plain HTTP |
+| Without root | Only apps that trust user certificates | Logcat, shell, APK install, plain HTTP, databases of debuggable apps |
 | With Magisk | Apps without certificate pinning | The above, plus the database viewer |
 
 ## Magisk
 
 When `su` works from the adb shell, **Unlock** in the device setup mounts the Beholder certificate over the system store. Allow Shell in the Magisk Superuser tab if the request is denied. The mount disappears on reboot, and the cleanup removes it. Restart the app you want to inspect so it picks up the certificate.
+
+## Databases
+
+When `adb root` is not available, the database viewer reads through `su` on Magisk phones, or through `run-as` for debuggable apps. The `-wal` and `-shm` files are copied together with the database. Some manufacturers disable `run-as`. Writing changes back to a phone still needs `adb root`.
 
 ## Limits
 
