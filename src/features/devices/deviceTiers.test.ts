@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Device, DeviceReport, TierState } from "../../store/types";
-import { wizardModel } from "./deviceTiers";
+import { capturableApps, wizardModel } from "./deviceTiers";
 
 const phone = (state: Device["state"]): Device => ({
   serial: "R5CT91",
@@ -90,5 +90,14 @@ describe("wizardModel", () => {
     const model = wizardModel("R5CT91", phone("Online"), null);
     expect(model.canCapture).toBe(true);
     expect(model.cards[1]?.detail).toBe("Checking the phone…");
+  });
+});
+
+describe("capturableApps", () => {
+  it("leaves the companion out of the app picker", () => {
+    expect(
+      capturableApps([{ package: "com.x.app" }, { package: "dev.beholder.app" }]),
+    ).toEqual(["com.x.app"]);
+    expect(capturableApps(undefined)).toEqual([]);
   });
 });

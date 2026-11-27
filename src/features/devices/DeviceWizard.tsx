@@ -15,7 +15,7 @@ import type { TierId } from "../../store/types";
 import { startCapture } from "../capture/startCapture";
 import { DoctorPanel } from "../emulators/DoctorPanel";
 import { DeviceWizardView } from "./DeviceWizardView";
-import { wizardModel, type CardAction } from "./deviceTiers";
+import { capturableApps, wizardModel, type CardAction } from "./deviceTiers";
 import { useDeviceWizard } from "./store";
 
 const COMPANION_RELEASES = "https://github.com/JavierGaMa/BeholdersApk/releases";
@@ -80,7 +80,7 @@ function WizardBody({ serial }: { serial: string }) {
         onAction={onAction}
         onCapture={() => void run(() => startCapture(serial))}
         onDoctor={() => setDoctor((v) => !v)}
-        apps={(appsQ.data ?? []).map((a) => a.package)}
+        apps={capturableApps(appsQ.data)}
         selectedApp={isTarget ? targetPackage : null}
         onSelectApp={setTargetPackage}
         onGetCompanion={() => void run(() => openExternal(COMPANION_RELEASES))}

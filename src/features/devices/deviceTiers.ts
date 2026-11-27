@@ -63,6 +63,12 @@ function companionState(report: DeviceReport): CompanionState {
   return report.probe.companion_version ? "outdated" : "missing";
 }
 
+const COMPANION_PACKAGE = "dev.beholder.app";
+
+export function capturableApps(apps: { package: string }[] | undefined): string[] {
+  return (apps ?? []).map((a) => a.package).filter((name) => name !== COMPANION_PACKAGE);
+}
+
 export function wizardModel(
   serial: string,
   device: Device | null,

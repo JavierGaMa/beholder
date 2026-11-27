@@ -155,7 +155,7 @@ export function CommandBar() {
             <button
               ref={t.ref}
               type="button"
-              className="press focus-ring flex h-7 min-w-0 shrink-0 items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold text-txt hover:bg-surface-2"
+              className="press focus-ring flex h-7 min-w-0 items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold text-txt hover:bg-surface-2"
               onClick={() => {
                 void refreshAvds();
                 void refreshDevices();
@@ -233,12 +233,16 @@ export function CommandBar() {
         </button>
       </div>
 
-      {error && (
-        <div className="anim-pop-in absolute right-2 top-full z-40 w-80 max-w-[calc(100vw-1rem)]">
-          <ErrorBox message={error} />
-        </div>
-      )}
+      {error && <FloatingError message={error} />}
     </header>
+  );
+}
+
+export function FloatingError({ message }: { message: string }) {
+  return (
+    <div className="anim-pop-in absolute right-2 top-full z-40 w-80 max-w-[calc(100vw-1rem)] rounded-md bg-[var(--surface-2-solid)] shadow-[var(--shadow-3)]">
+      <ErrorBox message={message} />
+    </div>
   );
 }
 
