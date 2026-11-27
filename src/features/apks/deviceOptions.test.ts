@@ -3,7 +3,7 @@ import type { AvdInfo, Device } from "../../store/types";
 import { applyBootEvent, buildDeviceOptions, onlineDevices } from "./deviceOptions";
 
 function device(partial: Partial<Device>): Device {
-  return { serial: "emulator-5554", state: "Online", is_emulator: true, ...partial };
+  return { serial: "emulator-5554", state: "Online", is_emulator: true, model: null, ...partial };
 }
 
 function avd(partial: Partial<AvdInfo>): AvdInfo {

@@ -180,10 +180,10 @@ export function DoctorPanel({
             icon={RotateCcw}
             disabled={busy}
             onClick={() => applyFix("reboot")}
-            title="Last resort — full emulator reboot"
+            title="Last resort — full device reboot"
             className="hover:bg-danger/10! hover:text-danger!"
           >
-            Reboot emulator
+            {serial.startsWith("emulator-") ? "Reboot emulator" : "Reboot phone"}
           </Button>
         </div>
       )}

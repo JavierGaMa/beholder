@@ -92,7 +92,7 @@ export function OnboardingPanel({
         const p = await invoke<number>("capture_start", { serial: serialRef.current });
         setPort(p);
         setCapture(true, p);
-        useTraffic.getState().setTarget(serialRef.current, avdName);
+        useTraffic.getState().setTarget(serialRef.current, avdName, "emulator");
         setStatus(STEP_CAPTURE, "done");
         setStatus(STEP_DONE, "done");
         setDetail("");

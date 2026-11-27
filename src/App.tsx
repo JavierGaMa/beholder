@@ -42,6 +42,9 @@ import { rememberActiveSection } from "./features/settings/sections";
 import { ConsoleView } from "./features/console/ConsoleView";
 import { OnboardingPanel } from "./features/emulators/OnboardingPanel";
 import { SetupView } from "./features/setup/SetupView";
+import { DeviceWizard } from "./features/devices/DeviceWizard";
+import { shouldOpenSetup } from "./features/setup/shouldOpenSetup";
+import type { Device } from "./store/types";
 import { UpdateBanner } from "./features/updater/UpdateBanner";
 import { Palette } from "./features/palette/Palette";
 import { buildPaletteCommands } from "./features/palette/commands";
@@ -142,9 +145,12 @@ export default function App() {
           applyUiConfig(c);
         })
         .catch(() => {});
-      invoke<{ status: string }[]>("run_host_doctor")
-        .then((checks) => {
-          if (checks.some((c) => c.status === "fail")) {
+      Promise.all([
+        invoke<{ id: string; status: string }[]>("run_host_doctor"),
+        invoke<Device[]>("list_devices").catch(() => []),
+      ])
+        .then(([checks, devices]) => {
+          if (shouldOpenSetup(checks, devices)) {
             useTraffic.getState().setSetupOpen(true);
           }
         })
@@ -387,6 +393,8 @@ export default function App() {
       <ShortcutsOverlay />
 
       <Toaster />
+
+      <DeviceWizard />
 
       <Modal
         open={setupOpen}

@@ -554,6 +554,7 @@ function DeviceMaintenance() {
       setCapture(false);
       setMsg("Proxy reverted on all emulators.");
     } catch (e) {
+      setCapture(false);
       setMsg(String(e));
     } finally {
       setBusy(false);
@@ -566,8 +567,9 @@ function DeviceMaintenance() {
     try {
       await invoke("full_cleanup");
       setCapture(false);
-      setMsg("Proxy reverted and CA removed from all emulators.");
+      setMsg("Proxy reverted and CA removed from all connected devices.");
     } catch (e) {
+      setCapture(false);
       setMsg(String(e));
     } finally {
       setBusy(false);

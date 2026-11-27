@@ -5,6 +5,7 @@ pub struct Device {
     pub serial: String,
     pub state: DeviceState,
     pub is_emulator: bool,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

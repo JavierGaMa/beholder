@@ -1,10 +1,12 @@
 mod apks;
 mod batch;
 mod commands;
+mod companion_session;
 mod config;
 mod console;
 mod discovery;
 mod metro;
+mod proxy_restore;
 mod routes;
 mod state;
 mod window_blur;
@@ -20,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            tauri::async_runtime::spawn(commands::retry_companion_stops(app.handle().clone()));
             let agent_cfg = app
                 .path()
                 .app_local_data_dir()
@@ -125,6 +128,10 @@ pub fn run() {
             commands::apply_host_fix,
             commands::preview_shell_env,
             commands::create_avd,
+            commands::probe_device,
+            commands::push_user_ca,
+            commands::open_security_settings,
+            commands::install_system_ca,
             commands::run_doctor,
             commands::apply_doctor_fix,
             commands::clear_stale_proxies,
@@ -192,11 +199,23 @@ pub fn run() {
                 if let Some(metro_task) = state.metro_task.lock().await.take() {
                     metro_task.stop().await;
                 }
+                if let Some(tunnel_task) = state.tunnel_task.lock().await.take() {
+                    tunnel_task.stop().await;
+                }
+                let port = state.proxy.lock().await.as_ref().map(|h| h.port);
+                let through_companion = *state.companion.lock().await;
                 let serial = state.active_serial.lock().await.clone();
                 if let Some(serial) = serial {
                     if let Ok(runner) = bh_device::RealRunner::discover() {
-                        let device = bh_device::AdbDevice::new(&runner, &serial);
-                        let _ = bh_device::ProxyConfigurator::clear_proxy(&device);
+                        let dir = app_handle.path().app_local_data_dir().ok();
+                        if through_companion {
+                            if let Err(e) =
+                                companion_session::stop(&runner, dir.as_deref(), &serial)
+                            {
+                                eprintln!("{e}");
+                            }
+                        }
+                        proxy_restore::release_device(&runner, dir.as_deref(), &serial, port);
                     }
                 }
                 if let Some(console) = app_handle.try_state::<state::ConsoleState>() {

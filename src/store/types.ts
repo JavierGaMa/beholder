@@ -118,6 +118,7 @@ export interface Device {
   serial: string;
   state: "Online" | "Offline" | "Unauthorized" | "Unknown";
   is_emulator: boolean;
+  model: string | null;
 }
 
 export interface AvdInfo {
@@ -149,4 +150,32 @@ export interface ApkEntry {
   date: string | null;
   size_bytes: number;
   last_modified: string;
+}
+
+export type RootAccess = "none" | "adb_root" | "su" | "su_denied";
+export type TierId = "basic" | "user_ca" | "full";
+export type TierState = "ready" | "action" | "locked";
+
+export interface DeviceProbe {
+  serial: string;
+  model: string;
+  android_release: string;
+  sdk: number | null;
+  is_emulator: boolean;
+  root: RootAccess;
+  system_ca_installed: boolean;
+  companion_version: string | null;
+  user_ca_installed: boolean | null;
+}
+
+export interface TierStatus {
+  tier: TierId;
+  state: TierState;
+  detail: string;
+}
+
+export interface DeviceReport {
+  probe: DeviceProbe;
+  tiers: TierStatus[];
+  companion_desktop: boolean;
 }

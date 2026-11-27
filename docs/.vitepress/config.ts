@@ -38,6 +38,7 @@ export default defineConfig({
             { text: "Local routes", link: "/guide/routes" },
             { text: "Emulator management", link: "/guide/emulators" },
             { text: "Doctor", link: "/guide/doctor" },
+            { text: "Physical devices", link: "/guide/physical-devices" },
             { text: "Exports", link: "/guide/exports" },
           ],
         },

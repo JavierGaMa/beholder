@@ -17,11 +17,13 @@ import {
   SquareTerminal,
   Trash2,
   Waves,
+  Smartphone,
 } from "lucide-react";
 import { useTraffic, type View } from "../../store/traffic";
 import { useShortcuts } from "../shortcuts/store";
 import { useRoutes } from "../routes/store";
 import { useConnect } from "../routes/connectStore";
+import { useDeviceWizard } from "../devices/store";
 import { toast } from "../../components/ui/toast";
 import { fuzzyScore } from "./fuzzy";
 
@@ -128,6 +130,20 @@ export function buildPaletteCommands(handlers: PaletteHandlers): PaletteCommand[
         useTraffic.getState().setSettingsOpen(false);
         useTraffic.getState().setActiveView("routes");
         useConnect.getState().open();
+      },
+    },
+    {
+      id: "device-setup",
+      label: "Device setup",
+      section: "Actions",
+      icon: Smartphone,
+      run: () => {
+        const { targetKind, targetSerial } = useTraffic.getState();
+        if (targetKind === "device" && targetSerial) {
+          useDeviceWizard.getState().open(targetSerial);
+        } else {
+          toast("Select a physical device as target first", "danger");
+        }
       },
     },
     {

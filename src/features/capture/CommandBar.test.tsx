@@ -16,7 +16,7 @@ vi.stubGlobal(
   })(),
 );
 
-const { CommandBar } = await import("./CommandBar");
+const { CommandBar, FloatingError } = await import("./CommandBar");
 const { useTraffic } = await import("../../store/traffic");
 const { useRoutes } = await import("../routes/store");
 const { routesQueryKey, routesHealthQueryKey } = await import("../../queries/routes");
@@ -63,14 +63,14 @@ describe("CommandBar", () => {
     for (const view of ALL_VIEWS) {
       setStore({ activeView: view });
       const html = render();
-      expect(html, view).toContain('title="Select emulator target"');
+      expect(html, view).toContain('title="Select target"');
       expect(html, view).toContain(">Capture</button>");
       expect(html, view).toContain("Search or run a command");
     }
   });
 
   it("disables capture until a running target is selected", () => {
-    expect(render()).toMatch(/<button[^>]*disabled=""[^>]*title="Select a running emulator first"/);
+    expect(render()).toMatch(/<button[^>]*disabled=""[^>]*title="Select a running target first"/);
     setStore({ targetSerial: "emulator-5554", targetAvd: "Pixel_8_API_35" });
     const html = render();
     expect(html).toContain("Pixel_8_API_35");
@@ -92,6 +92,19 @@ describe("CommandBar", () => {
     expect(html).not.toContain(">Capture</button>");
     expect(html).toContain("Proxy :8080, Metro :8081, checking health");
     expect(html).toContain('title="Capture doctor"');
+  });
+
+  it("lets the target button shrink so its name truncates instead of overlapping", () => {
+    setStore({ targetSerial: "localhost:5555", targetAvd: "sdk gphone64 arm64" });
+    const button = render().match(/<button[^>]*title="Select target"[^>]*>/)?.[0] ?? "";
+    expect(button).toContain("min-w-0");
+    expect(button).not.toContain("shrink-0");
+  });
+
+  it("draws the capture error over an opaque background", () => {
+    const html = renderToStaticMarkup(<FloatingError message="cannot reach the companion" />);
+    expect(html).toContain("bg-[var(--surface-2-solid)]");
+    expect(html).toContain("cannot reach the companion");
   });
 
   it("no longer renders request counters or a sidebar toggle", () => {

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { Check, ChevronDown, CircleDot, Play, Plus, RotateCcw } from "lucide-react";
+import { ChevronDown, Play, RotateCcw } from "lucide-react";
 import { invoke, isTauri } from "../../lib/tauri";
 import { qError } from "../../lib/query";
-import { loadBodyCapMb } from "../../lib/prefs";
-import { useAdbDevicesQuery } from "../../queries/devices";
+import { useAdbDevicesQuery, useInvalidateDevices } from "../../queries/devices";
 import { useAvdsQuery, useInvalidateEmulators } from "../../queries/emulators";
+import { buildTargetItems } from "./targetItems";
+import { startCapture } from "./startCapture";
+import { useDeviceWizard } from "../devices/store";
 import { useCaptureHealthQuery, type CaptureCheckT } from "../../queries/captureHealth";
 import { useRoutesStatus } from "../../queries/routes";
 import type { AvdInfo } from "../../store/types";
@@ -13,7 +15,7 @@ import { useTraffic } from "../../store/traffic";
 import { usePalette } from "../palette/store";
 import { ErrorBox } from "../../components/ui/ErrorBox";
 import { Button } from "../../components/ui/Button";
-import { Menu, type MenuOption } from "../../components/ui/Menu";
+import { Menu } from "../../components/ui/Menu";
 import { formatElapsed, healthSummary, type HealthTone } from "./captureStatus";
 
 const MACOS_WINDOW_CONTROLS_INSET = 76;
@@ -37,6 +39,8 @@ export function CommandBar() {
   const metro = useTraffic((s) => s.metro);
   const targetSerial = useTraffic((s) => s.targetSerial);
   const targetAvd = useTraffic((s) => s.targetAvd);
+  const targetName = useTraffic((s) => s.targetName);
+  const targetPackage = useTraffic((s) => s.targetPackage);
   const setTarget = useTraffic((s) => s.setTarget);
   const setActiveView = useTraffic((s) => s.setActiveView);
   const setCapture = useTraffic((s) => s.setCapture);
@@ -47,6 +51,7 @@ export function CommandBar() {
   const healthQ = useCaptureHealthQuery(captureOn);
   const checks = healthQ.data ?? [];
   const refreshAvds = useInvalidateEmulators();
+  const refreshDevices = useInvalidateDevices();
   const avds = avdsQ.data ?? [];
   const adbError = qError(adbQ.error) ?? qError(avdsQ.error);
   const [busy, setBusy] = useState(false);
@@ -54,16 +59,20 @@ export function CommandBar() {
 
   useEffect(() => {
     void refreshAvds();
+  }, [refreshAvds]);
+
+  const onlineSerials = (adbQ.data ?? [])
+    .filter((d) => d.state === "Online")
+    .map((d) => d.serial)
+    .join(",");
+  useEffect(() => {
     if (isTauri) {
       invoke("clear_stale_proxies").catch(() => {});
     }
-  }, [refreshAvds]);
-
-  const running = avds.filter((a) => a.running);
-  const stopped = avds.filter((a) => !a.running);
+  }, [onlineSerials]);
 
   async function selectAvd(avd: AvdInfo) {
-    setTarget(avd.running ? avd.serial : null, avd.name);
+    setTarget(avd.running ? avd.serial : null, avd.name, "emulator");
     if (!avd.running) {
       try {
         await invoke("launch_avd", { name: avd.name });
@@ -82,12 +91,7 @@ export function CommandBar() {
         await invoke("capture_stop");
         setCapture(false);
       } else if (targetSerial) {
-        const capMb = loadBodyCapMb();
-        const port = await invoke<number>("capture_start", {
-          serial: targetSerial,
-          bodyCap: Math.round(capMb * 1024 * 1024),
-        });
-        setCapture(true, port);
+        await startCapture(targetSerial);
       }
     } catch (e) {
       setCapture(false);
@@ -102,12 +106,7 @@ export function CommandBar() {
     setBusy(true);
     setError(null);
     try {
-      const capMb = loadBodyCapMb();
-      const port = await invoke<number>("capture_restart", {
-        serial: targetSerial,
-        bodyCap: Math.round(capMb * 1024 * 1024),
-      });
-      setCapture(true, port);
+      await startCapture(targetSerial, "capture_restart");
       useTraffic.getState().clear();
     } catch (e) {
       setCapture(false);
@@ -117,47 +116,21 @@ export function CommandBar() {
     }
   }
 
-  const label = targetAvd ?? targetSerial ?? "Select target";
+  const label = targetName ?? targetAvd ?? targetSerial ?? "Select target";
 
-  function targetMeta(a: AvdInfo): string {
-    return a.running || a.beholder_ready ? `API ${a.api_level ?? "?"}` : "no root";
-  }
-
-  function avdItem(a: AvdInfo): MenuOption {
-    const active = targetAvd === a.name;
-    return {
-      key: `${a.running ? "run" : "stop"}-${a.name}`,
-      label: `${a.name} · ${targetMeta(a)}${active ? " · active" : ""}`,
-      icon: active ? Check : a.running ? CircleDot : undefined,
-      onSelect: () => void selectAvd(a),
-    };
-  }
-
-  const targetItems: MenuOption[] = [];
-  if (adbError) {
-    targetItems.push({ key: "adb-error", label: adbError, danger: true, disabled: true, onSelect: () => {} });
-  } else if (avds.length === 0) {
-    targetItems.push({
-      key: "no-avds",
-      label: "No emulators found — create one below.",
-      disabled: true,
-      onSelect: () => {},
-    });
-  } else {
-    if (running.length > 0) {
-      targetItems.push({ key: "hdr-running", label: "running", disabled: true, onSelect: () => {} });
-    }
-    running.forEach((a) => targetItems.push(avdItem(a)));
-    if (stopped.length > 0) {
-      targetItems.push({ key: "hdr-stopped", label: "stopped", disabled: true, onSelect: () => {} });
-    }
-    stopped.forEach((a) => targetItems.push(avdItem(a)));
-  }
-  targetItems.push({
-    key: "create-emulator",
-    label: "Create emulator",
-    icon: Plus,
-    onSelect: () => setActiveView("emulators"),
+  const targetItems = buildTargetItems({
+    avds,
+    devices: adbQ.data ?? [],
+    targetSerial,
+    targetAvd,
+    adbError,
+    onSelectAvd: (a) => void selectAvd(a),
+    onSelectDevice: (d) => {
+      setTarget(d.serial, d.model ?? d.serial, "device");
+      useDeviceWizard.getState().openFirstTime(d.serial);
+    },
+    onSetup: (serial) => useDeviceWizard.getState().open(serial),
+    onCreate: () => setActiveView("emulators"),
   });
 
   const summary = healthSummary({
@@ -182,14 +155,15 @@ export function CommandBar() {
             <button
               ref={t.ref}
               type="button"
-              className="press focus-ring flex h-7 min-w-0 shrink-0 items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold text-txt hover:bg-surface-2"
+              className="press focus-ring flex h-7 min-w-0 items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold text-txt hover:bg-surface-2"
               onClick={() => {
                 void refreshAvds();
+                void refreshDevices();
                 t.onClick();
               }}
               aria-haspopup="menu"
               aria-expanded={t["aria-expanded"]}
-              title="Select emulator target"
+              title="Select target"
             >
               <span
                 aria-hidden="true"
@@ -204,6 +178,17 @@ export function CommandBar() {
           )}
         />
 
+        {targetPackage && targetSerial && (
+          <button
+            type="button"
+            className="press focus-ring h-7 min-w-0 max-w-48 truncate rounded-[8px] px-2 font-mono text-[11px] text-muted hover:bg-surface-2 hover:text-txt"
+            onClick={() => useDeviceWizard.getState().open(targetSerial)}
+            title="Only this app is captured"
+          >
+            {targetPackage}
+          </button>
+        )}
+
         {captureOn ? (
           <CapturePill busy={busy} onStop={toggleCapture} />
         ) : (
@@ -214,7 +199,7 @@ export function CommandBar() {
             disabled={busy || !targetSerial}
             onClick={toggleCapture}
             className="shrink-0 whitespace-nowrap"
-            title={targetSerial ? "Start capture" : "Select a running emulator first"}
+            title={targetSerial ? "Start capture" : "Select a running target first"}
           >
             Capture
           </Button>
@@ -248,12 +233,16 @@ export function CommandBar() {
         </button>
       </div>
 
-      {error && (
-        <div className="anim-pop-in absolute right-2 top-full z-40 w-80 max-w-[calc(100vw-1rem)]">
-          <ErrorBox message={error} />
-        </div>
-      )}
+      {error && <FloatingError message={error} />}
     </header>
+  );
+}
+
+export function FloatingError({ message }: { message: string }) {
+  return (
+    <div className="anim-pop-in absolute right-2 top-full z-40 w-80 max-w-[calc(100vw-1rem)] rounded-md bg-[var(--surface-2-solid)] shadow-[var(--shadow-3)]">
+      <ErrorBox message={message} />
+    </div>
   );
 }
 

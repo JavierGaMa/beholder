@@ -28,6 +28,26 @@ export async function pickRouteFile(): Promise<string | null> {
   return typeof chosen === "string" ? chosen : null;
 }
 
+export async function pickApk(): Promise<string | null> {
+  if (!isTauri) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const chosen = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Android package", extensions: ["apk"] }],
+  });
+  return typeof chosen === "string" ? chosen : null;
+}
+
+export async function openExternal(url: string): Promise<void> {
+  if (!isTauri) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
+
 const routesMock = createRoutesMock(typeof window === "undefined" ? "" : (window.location?.search ?? ""));
 
 async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -37,8 +57,33 @@ async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
       return "/opt/mock/adb" as T;
     case "list_devices":
       return [
-        { serial: "emulator-5554", state: "Online", is_emulator: true },
-        { serial: "ABC123", state: "Online", is_emulator: false },
+        { serial: "emulator-5554", state: "Online", is_emulator: true, model: "sdk gphone64 arm64" },
+        { serial: "ABC123", state: "Online", is_emulator: false, model: "SM S911B" },
+      ] as T;
+    case "probe_device":
+      return {
+        probe: {
+          serial: String(args?.serial ?? "ABC123"),
+          model: "SM-S911B",
+          android_release: "14",
+          sdk: 34,
+          is_emulator: false,
+          root: "none",
+          system_ca_installed: false,
+          companion_version: "0.3.0",
+          user_ca_installed: false,
+        },
+        companion_desktop: true,
+        tiers: [
+          { tier: "basic", state: "ready", detail: "Logcat, shell, APK install, plain HTTP and Metro." },
+          { tier: "user_ca", state: "action", detail: "Install the certificate in Settings and add the config to your debug build." },
+          { tier: "full", state: "locked", detail: "Needs Magisk root. Unlocks HTTPS of any app without pinning and the database viewer." },
+        ],
+      } as T;
+    case "console_apps":
+      return [
+        { package: "com.example.shop", pid: 4211 },
+        { package: "com.example.bank", pid: null },
       ] as T;
     case "current_proxy":
       return null as T;
